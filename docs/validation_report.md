@@ -23,7 +23,7 @@ in `docs/milestones/M0.md`, section D.
 | §7.4 | Synthetic fixed geometry gives the analytic light time | 1e-14 relative (static); tolerance + 2e-11 s (moving site) | **pass** (M3). Static: τ = d/c to rounding; uniformly moving site: fixed point = closed-form quadratic root for tolerances 1e-9 and 1e-12 s; 0.9c receding site: brentq fallback = closed form to 2e-9 s (`test_visibility.py`) |
 | §7.4 | Receiver site makes one sidereal rotation per sidereal day | 1e-6 rad; 1e-4 deg | **pass** (M3). IAU_EARTH (pck00011): the site's J2000 direction returns after one model period 86 164.0989 s (and after the IERS stellar day) to < 1e-6 rad; it turns 0.9856235° beyond a full turn per 86 400 s; `sxform` = closed form from the PCK constants to 3e-11 (`test_ground.py`) |
 | §7.4 | Beam segment intersecting the Earth/Sun is flagged as occulted | flips at R_block(1 ± 1e-6); horizon ± 1e-5 rad | **pass** (M3). Earth: through-Earth beams flagged, flips at the geodetic horizon (lat 0°, 60°), moving Earth handled in its own frame, ~2900 random segments identical to SPICE `surfpt`; Sun: flips at R☉ and at the limb + 0.5° margin, superior conjunction flagged (synthetic and with de440s); Moon: flips at R_moon, moving Moon = brute-force photon path (`test_visibility.py`, `test_access_mvp.py`) |
-| §8.5 | 1 au, normal incidence recovers S_1AU; 1/r² scaling; zero at eclipse; energy closure; A_rad ∝ 1/(εT⁴) | M4 | not yet run |
+| §8.5 | 1 au, normal incidence recovers S_1AU; 1/r² scaling; zero at eclipse; energy closure; A_rad ∝ 1/(εT⁴) | exact; 4e-15; exact; 1e-12; 1e-14 | **pass** (M4). S(1 au) = configured S_1AU bit for bit (also for 1360.8, 1500); S r² const. to 4e-15 over 0.3–1.2 au; zero incidence, back face and umbra give exactly 0 W; ledger residual ≤ 6.5e-16 (8 identities, of which the PV node, collector and inventory sums are independent checks and the rest bookkeeping; plus a fully hand-computed ledger); tiny penumbra illumination (down to 5e-324) converges and closes; A_req ratios for ε, T_lim, faces, F to 1e-14 (`test_solar.py`, `test_thermal.py`, `test_power_thermal_mvp.py`) |
 | §9 / §13.1 | Airy first-null scaling, total power normalisation, encircled energy, capture convergence, pointing monotonicity | M5 | not yet run |
 | §13.2 | End-to-end integration tests | M6 | not yet run |
 | §13.1 (ground/visibility) | Known station coordinates | 1.5 mm per component | **pass** (M3 review). NGS datasheet KG0640 (MEADES RANCH RESET, NAD 83(2011)/GRS 80) published geodetic → published X, Y, Z: ≤ 0.46 mm (`test_ground.py::test_published_station_meades_ranch_reset`) |
@@ -131,6 +131,49 @@ receiver aberration of the Sun or without its retardation; `visible` without the
 Moon flag; occultation fraction without the Moon or without Sun and Moon; median light time;
 `multiple_occulters` with ≥ 1; no below-ellipsoid surface scaling): all 10 caught by the new
 tests.
+
+## M4: solar collection, PV conversion, thermal nodes: independent checks
+
+These numbers come from `tests/unit/test_solar.py`, `tests/unit/test_thermal.py`,
+`tests/unit/test_power_chain.py` and `tests/integration/test_power_thermal_mvp.py` (SPICE test
+ran, not skipped). Details are in `docs/milestones/M4.md`.
+
+| Check | Reference | Tolerance | Measured |
+|---|---|---|---|
+| S at 1 au, normal incidence | configured `S_1AU` (1361, 1360.8, 1500 W m⁻²) | exact | exact |
+| 1/r² flux and P_PV at fixed T (0.3–1.2 au) | `S_1AU (au/r)²`, au typed in | 4e-15; 1e-14 | pass |
+| Zero incidence, back-face light, umbra (M3 geometry), penumbra | 0 W; linear in `f cos(inc)` | exact; 1e-15 | pass |
+| Fixed-normal incidence through the M3 illumination result | `cos 60° = 0.5`, `S = 4 S_1AU` at 0.5 au | 1e-15 | pass |
+| η_PV clip: linear values, clipped values, `linear_range_K` | hand values | 1e-14 | pass; 200 random laws × 2000 T never outside `[η_min, η_max] ⊂ [0, 1]` |
+| PV node, η ≡ 0 (3 α/ε/F sets, 46 distances) | `(α S/((ε_f+ε_b) σ F) + T_space⁴)^¼` | 1e-13 rel | pass; 330.98 K at 1 au (α 0.9, ε 1.8) |
+| PV node, coupled linear law (γ = −4e-4, −1.5e-3, +2e-3) | independent quartic roots (`numpy.roots`) | 1e-12 rel | pass |
+| PV balance residual (clip active) | recomputed in the test | 1e-12 P_abs | pass; root inside bracket, unique |
+| PV node at tiny P_abs (illumination 1e-11 … 5e-324, penumbra-edge sweep with the M3 overlap function) | 50-digit `Decimal` fixed-point root | 2 ulp of T | pass; converged, feasible, ledger closed (review fix: previously RuntimeError for f ≤ 1e-15) |
+| `T⁴ − T_space⁴` near `T_space` | 50-digit `Decimal` | 4ε relative | pass (naive form: O(1) relative error at 1 ulp) |
+| PV solver failure reporting | monkeypatched brentq: unconverged midpoint / unconverged true root / wrong root / root 10 ulp off | — | NaN + not converged + `RuntimeError`; 10-ulp root polished to ≤ 1 ulp |
+| Area scaling (PDF §13.2) | A and 3.7 A | 1e-14 | pass; T_pv unchanged, P_PV, Q_waste, A_req × 3.7 |
+| PV view factor scaling | `T⁴ − T_space⁴ ∝ 1/F` | 1e-13 | pass |
+| Hotter closer to the Sun | strict monotonicity of T(r), η(r), S(r) | — | pass |
+| Non-unique PV root (η = 1 below 289 K) | uniqueness condition fails | flagged | flagged, residual ≤ 1e-12 P_abs |
+| Radiator required area | `Q/(ε σ n F (T_lim⁴ − T_space⁴))`; ratios for ε, T_lim, n, F, Q | 1e-14 | pass; ∝ (450/300)⁴ exactly for T_space → 0 |
+| Radiator equilibrium T for a given area; A = A_req → T_lim | closed form | 1e-14 | pass |
+| Infeasible radiator (A = A_req/2) | `T = 2^¼ T_lim`, margin < 0 | 1e-8 (T_space⁴ term) | flagged infeasible |
+| Waste heat = on-board losses + Q_other | hand computation from P_PV | 1e-14 | pass; `P_aperture + Q_waste = P_PV + Q_other` |
+| Reflected light not waste heat | α = 0.5 equilibrium; equal-absorbed collectors with 5× reflected | 1e-13; 1e-12 | pass |
+| Ledger can fail | `Q_waste × (1 + 1e-9)` | open | detected (relative residual > 1e-11) |
+| Ledger from hand-computed terms (η ≡ 0.3, 0.4 and 1 au) | closed-form T, Q_PV,rad, P_PV, P_aperture, Q_waste | 1e-12 … 1e-14 | pass |
+| Binding margin | `margin_K = min(pv_margin_K, radiator_margin_K)`; `feasible = pv_converged & (margin_K ≥ 0)` | exact | pass (3 radiator modes × 46 distances) |
+| MVP year (SPICE, hourly, 8767 epochs) | independent `S_1AU (au/|r_sat − r_sun(t_e)|)²` from raw SPICE positions, Sun at its light-time-retarded epoch (separate fixed-point iteration in the test) | 1e-12 | pass, measured 5.6e-16; instantaneous Sun differs by 5.9e-8 (asserted > 1e-8, < 1e-7) and a 69.184 s epoch shift by 6.7e-8, so both would fail; T_pv 302.780–302.786 K, P_PV 3.6705–3.6708 MW, A_req 438.49–438.53 m², ledger 5.5e-16, evaluation 0.15 s |
+
+Mutation check (reproducible: `uv run python scripts/mutation_check_m4.py`, which restores
+every file and counts only pytest exit 1 as caught): 18 single-line source mutations of
+`solar.py`/`thermal.py`/`power_chain.py`/`visibility.py`. The 11 original ones are 1/r flux, no
+back-face clip, reflected light as PV heat, no efficiency clip, PV front face only, radiator
+faces ignored, optics loss counted twice, radiator always feasible, PV `T_space` dropped, PV
+temperature limit ignored and power conditioning dropped. The 7 added in the M4 review are PV
+representation floor dropped, float-neighbour polish dropped, unfactored `T⁴ − T_s⁴`, ledger
+floors dropped, `margin_K` = radiator margin only, brentq non-convergence ignored and
+instantaneous Sun for illumination. All 18 were caught on the final source.
 
 ## Unresolved discrepancies
 

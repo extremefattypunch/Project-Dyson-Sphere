@@ -104,6 +104,14 @@ the individual files. A new kernel set needs a new `kernel_set_id` and a schema 
 | GM of the Sun and the perturbing bodies | DE440 values, read at run time with `bodvrd` | `gm_de440.tpc` | Park et al. 2021 (AJ 161, 105) via NAIF |
 | Reference ellipsoid | WGS84 | `frames.earth_ellipsoid` | NGA.STND.0036 (WGS 84) |
 
+M4 adds no external data and no new sourced constant (it uses σ, `S_1AU`, `T_CMB` and the au
+from the table above). Its three new configuration fields
+(`collector.max_operating_temperature_K` = 400 K, `thermal.pv_view_factor` = 1.0,
+`thermal.radiator_specific_mass_kg_m2` = None) are **assumed**. The order-of-magnitude bound
+on Earth albedo/IR at the collector in `docs/model_assumptions.md` (M4) uses global-mean Bond
+albedo ≈ 0.3 and outgoing long-wave radiation ≈ 240 W m⁻² from Trenberth, Fasullo & Kiehl
+(2009), BAMS 90, 311; these values are not used by any computation.
+
 All other defaults and every value in `configs/mvp_single_satellite.yaml` are **assumed**
 scenario inputs. The MVP config is adapted from the PDF §5 example, which the PDF itself calls
 "a schema example, not a recommended engineering design".

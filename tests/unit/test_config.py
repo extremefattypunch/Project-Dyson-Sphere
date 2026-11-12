@@ -613,6 +613,7 @@ UNIT_SUFFIX = {
     "dB": "_dB",
     "K^-1": "_per_K",
     "m^2 kg^-1": "_m2_kg",
+    "kg m^-2": "_kg_m2",
     "m s^-1": "_m_s",
     "UTC ISO-8601": "_utc",
 }

@@ -962,6 +962,9 @@ class IlluminationResult:
         epochs_tdb_s: Satellite epochs [TDB s].
         illumination_fraction: Visible fraction of the solar disk, in [0, 1].
         sun_distance_m: Distance satellite - Sun centre (retarded Sun) [m].
+        sun_direction_unit: Unit vector satellite -> Sun centre (retarded Sun, geometric, no
+            aberration), J2000, shape (N, 3). Used by ``helioswarm.solar`` for the incidence
+            angle of a fixed-attitude collector.
         sun_angular_radius_rad: Apparent solar radius [rad].
         occulters: Bodies tested, in the order of ``occulted_fraction``'s columns.
         occulted_fraction: Fraction of the solar disk hidden by each occulter, (N, n_occ).
@@ -970,11 +973,13 @@ class IlluminationResult:
         radii: Body sizes used.
         source_ids: Ephemeris data ids (kernels) the Sun/occulter positions come from.
         time_scale: Time scale of ``epochs_tdb_s`` (``TDB``).
+        frame: Inertial frame of ``sun_direction_unit`` (``J2000``).
     """
 
     epochs_tdb_s: Float64Array
     illumination_fraction: Float64Array
     sun_distance_m: Float64Array
+    sun_direction_unit: Float64Array
     sun_angular_radius_rad: Float64Array
     occulters: tuple[BodyName, ...]
     occulted_fraction: Float64Array
@@ -983,8 +988,13 @@ class IlluminationResult:
     radii: OcculterRadii
     source_ids: tuple[str, ...]
     time_scale: TimeScale = field(default="TDB")
+    frame: FrameName = field(default="J2000")
 
     def __post_init__(self) -> None:
+        if self.frame != "J2000":
+            raise FrameMismatchError("IlluminationResult directions are J2000 by contract")
+        if np.asarray(self.sun_direction_unit).shape != (np.asarray(self.epochs_tdb_s).size, 3):
+            raise ValueError("sun_direction_unit must have shape (N, 3)")
         n = np.asarray(self.epochs_tdb_s).shape[0]
         for name, val in list(vars(self).items()):
             if isinstance(val, np.ndarray):
@@ -1056,6 +1066,7 @@ def satellite_illumination(
         epochs_tdb_s=t,
         illumination_fraction=np.clip(1.0 - total, 0.0, 1.0),
         sun_distance_m=d_sun,
+        sun_direction_unit=sun_vec / d_sun[:, None],
         sun_angular_radius_rad=a_sun,
         occulters=tuple(occulters),
         occulted_fraction=frac,

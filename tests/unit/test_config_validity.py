@@ -424,7 +424,11 @@ def test_receiver_heat_rejection_is_optional_and_settable(mvp_data: dict[str, An
 # models.light_time_tolerance_s, models.light_time_max_iterations and
 # models.earth_occultation_standoff_m; removing exactly those three keys from the canonical
 # JSON reproduces b12c5a85...9c18 (checked when re-pinning). schema_version is unchanged.
-MVP_CONFIG_HASH = "d0087098881aa08201665032373a01a3d9ee02b270784aa3c85eb6233695962d"
+# M4 (d0087098...962d -> 31de4816...7651) added the defaulted fields
+# collector.max_operating_temperature_K, thermal.pv_view_factor and
+# thermal.radiator_specific_mass_kg_m2; removing exactly those three keys from the canonical
+# JSON reproduces d0087098...962d (checked when re-pinning). schema_version is unchanged.
+MVP_CONFIG_HASH = "31de48164e4168a4011f4be50e5850368f491131aa80f1a03075c3b845c57651"
 
 
 def test_mvp_config_hash_is_pinned() -> None:

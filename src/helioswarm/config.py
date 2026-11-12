@@ -720,6 +720,15 @@ class CollectorConfig(_Section):
         description="Unit collector normal in J2000 for incidence_mode='fixed_normal'.",
         strict=False,
     )
+    max_operating_temperature_K: float = _field(
+        400.0,
+        unit="K",
+        provenance="assumed",
+        description="Maximum allowed PV array (cell) operating temperature; the PV thermal node "
+        "is infeasible above it. The 400 K default is an assumed scenario value, not a sourced "
+        "qualification limit: replace it with the limit of the chosen cell technology.",
+        gt=0.0,
+    )
 
     @model_validator(mode="after")
     def _check_collector(self) -> Self:
@@ -1102,6 +1111,11 @@ class ThermalConfig(_Section):
     ``A_eff = A_physical * radiating_sides * radiator_view_factor``: ``radiating_sides`` is the
     number of faces of a thin flat plate that see space (1: one face insulated; 2: both faces
     exposed); ``radiator_view_factor`` is the view factor from each face to deep space.
+
+    PV array node (M4, ``helioswarm.thermal``): a thin isothermal flat plate whose front face
+    faces the Sun, radiating from both faces with ``pv_front_emissivity`` and
+    ``pv_back_emissivity`` and view factor ``pv_view_factor`` to deep space:
+    ``P_abs - P_PV(T) = (eps_f + eps_b) * sigma * A_collector * F_pv * (T^4 - T_space^4)``.
     """
 
     emissivity: float = _field(
@@ -1169,6 +1183,24 @@ class ThermalConfig(_Section):
         provenance="assumed",
         description="Additional waste heat Q_other rejected by the radiator (PDF §8.3).",
         ge=0.0,
+    )
+    pv_view_factor: float = _field(
+        1.0,
+        unit="1",
+        provenance="assumed",
+        description="View factor from each face (front and back) of the flat PV array plate "
+        "to deep space; the remainder 1 - F of each face's hemisphere is assumed to see "
+        "surfaces at the plate temperature (no net exchange). 1.0 = isolated plate.",
+        gt=0.0,
+        le=1.0,
+    )
+    radiator_specific_mass_kg_m2: float | None = _field(
+        None,
+        unit="kg m^-2",
+        provenance="assumed",
+        description="Radiator areal mass for the radiator mass proxy m = A_rad * this value "
+        "(physical plate area). None = no mass proxy reported.",
+        gt=0.0,
     )
 
     @model_validator(mode="after")
@@ -1512,6 +1544,13 @@ class RunConfig(_Section):
             issues.append(
                 f"receiver.technology='{self.receiver.technology}' does not match "
                 f"transmitter.mode='{mode}' (requires '{required_tech}')"
+            )
+        if not self.collector.max_operating_temperature_K > self.thermal.space_temperature_K:
+            issues.append(
+                f"collector.max_operating_temperature_K="
+                f"{self.collector.max_operating_temperature_K} must exceed "
+                f"thermal.space_temperature_K={self.thermal.space_temperature_K} (the PV array "
+                "cannot be colder than the radiative sink)"
             )
         if (
             self.orbit.model == "prescribed_ephemeris_perturbed_test_particle"

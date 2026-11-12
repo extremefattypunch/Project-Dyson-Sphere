@@ -109,13 +109,17 @@ listed by `helioswarm validate-config --show-provenance`:
 - `collector.pv_efficiency_max = 1.0`, which is only the energy-conservation bound
 - `receiver.max_power_density_W_m2 = None`, `receiver.max_heat_rejection_W = None` and
   `receiver.sun_avoidance_deg = 0`, meaning these constraints are not enforced
+- `thermal.pv_view_factor = 1.0` (isolated PV plate; M4) and `collector.incidence_mode =
+  sun_tracking` in the MVP config (normal incidence at every epoch)
+- `collector.max_operating_temperature_K = 400 K` (M4) is an assumed scenario limit, neither
+  optimistic nor sourced; replace it with the qualification limit of the chosen cell
 
 Studies must override these defaults with sourced values or sweep them.
 
 ## Per-milestone sections
 
 Milestones M2–M6 add the ephemeris, access, solar/thermal, beam and link-budget models here,
-each with equations, validity ranges and references. M1, M2 and M3 follow below.
+each with equations, validity ranges and references. M1–M4 follow below.
 
 ## M1: Constants, frames and the analytic two-body orbit (L0)
 
@@ -826,3 +830,198 @@ digest) but not `schema_version`.
 The existing fields `receiver.min_elevation_deg`, `receiver.sun_avoidance_deg`,
 `models.light_time`, `models.{earth,sun,moon}_occultation` and
 `models.sun_occultation_limb_margin_deg` are used as defined in M0.
+
+## M4: Solar collection, PV conversion and thermal feasibility
+
+Modules: `helioswarm.solar` (irradiance, incidence, absorbed/reflected split, PV efficiency
+law, `SolarPowerResult`), `helioswarm.power_chain` (the on-board part of the PDF §10.1 chain,
+single owner of `eta_pc`, `eta_e2b`, `eta_optics_or_rf`) and `helioswarm.thermal` (PV node,
+radiator node, `ThermalResult`, energy ledger, time-series and distance-sweep drivers). All
+quantities are SI; every result is vectorised over epochs (TDB) or over heliocentric distance.
+
+### Solar irradiance (PDF §8.1)
+
+- `S(r) = S_1AU (au / r_sun)²` with `S_1AU = constants.solar_constant_1au_W_m2` (default
+  1361 W m⁻², IAU 2015 B3) and au = 149 597 870 700 m (IAU 2012 B2).
+- `r_sun` is the satellite – Sun-centre distance from the M3 `IlluminationResult`
+  (`sun_distance_m`): the Sun's position from the ephemeris provider (J2000 / SSB) at its
+  light-time-retarded epoch as seen from the satellite. The retarded and instantaneous Sun
+  differ by ≲ 8 km at 1 au (≲ 1e-7 in flux; checked in the MVP integration test).
+- Validity: for a spherically symmetric Sun the flux through a plane normal to the Sun
+  direction is exactly `L/(4πr²)` for any `r > R☉` (energy conservation), so the
+  inverse-square law needs no finite-disk correction at normal incidence even at 0.3 au
+  (64 R☉). Neglected: solar-cycle TSI variability (~0.1 %), spectral dependence, and the
+  O(v/c) ≈ 1e-4 Doppler/aberration change of the flux and of the sunlight direction in the
+  satellite frame.
+
+### Incidence and illumination
+
+- `collector.incidence_mode = sun_tracking`: `cos(inc) = 1` at every epoch (optimistic bound,
+  PDF §8.1).
+- `fixed_normal`: `cos(inc) = max(n · ŝ, 0)` with the J2000 unit normal `n`
+  (`collector.fixed_normal_unit_j2000`) and the satellite → Sun unit vector `ŝ`
+  (`IlluminationResult.sun_direction_unit`, added in M4; retarded Sun, geometric direction).
+  Back-face illumination (`n · ŝ < 0`) yields **zero** absorbed and electrical power: the
+  back face carries no cells, and sunlight absorbed by the back face is **not** modelled
+  (limitation: a back-lit panel is colder in the model than in reality, but it produces no
+  power either way). The Sun is a point source for the incidence angle (its 4.65e-3 rad
+  radius at 1 au matters only within that angle of grazing incidence).
+- The M3 visible solar-disk fraction `f` (conical shadow with penumbra) multiplies the flux.
+- `incident_W = S A cos(inc) f` is the sunlight intercepted by the collector plane.
+
+### Absorbed and reflected power
+
+- `absorbed_W = α · incident_W` (PDF §8.1 `P_abs = S A α cos(inc)`, times `f`);
+  `reflected_W = (1 − α) · incident_W`. The array is opaque: "reflected" covers everything
+  not absorbed.
+- Reflected sunlight leaves the spacecraft and is **not waste heat**: it appears in neither
+  node's heat load and is a separate term of the energy ledger. Because `P_abs` already
+  excludes it, the PDF §8.1 term "explicitly_modelled_reflected_or_transmitted_power" is not
+  subtracted again: `Q_PV = P_abs − P_PV`.
+
+### PV conversion (PDF §8.2, labelled local linear approximation)
+
+- `η_PV` is defined relative to **absorbed** power (fixed by the M0 schema):
+  `P_PV = P_abs · η_PV(T)`.
+- `η_PV(T) = clip(η_ref (1 + γ_T (T − T_ref)), η_min, η_max)` with `0 ≤ η_min < η_max ≤ 1`.
+  This is a local linearisation about `T_ref`, not a measured efficiency–temperature curve.
+  Its unclipped validity interval is `PvEfficiencyLaw.linear_range_K()` (the temperatures at
+  which the line reaches `η_max` and `η_min`); every `SolarPowerResult` flags samples where
+  the clip is active (`pv_efficiency_clipped`). Comparison path: a technology-specific
+  measured curve can replace `PvEfficiencyLaw` behind the same `efficiency(T)` interface.
+- Not modelled: spectral response, irradiance dependence of η, cell mismatch, degradation and
+  radiation damage, wiring losses (all would be part of η or of `η_pc`).
+
+### PV array thermal node (node a)
+
+- Geometry: thin, isothermal flat plate of area `A = collector.area_m2`, front face (cells)
+  towards the Sun, both faces radiating to deep space with IR emissivities
+  `ε_f = thermal.pv_front_emissivity`, `ε_b = thermal.pv_back_emissivity` and view factor
+  `F = thermal.pv_view_factor` from each face (M4 field, default 1.0 = isolated plate). The
+  rest `1 − F` of each face's hemisphere is assumed to see surfaces at the plate temperature
+  (no net exchange).
+- Steady state: `P_abs − P_PV(T) = (ε_f + ε_b) σ A F (T⁴ − T_space⁴)` (Stefan–Boltzmann;
+  σ CODATA 2018), `T_space = thermal.space_temperature_K`.
+- Solver: `scipy.optimize.brentq` (xtol 4 ulp of `T_lo`, rtol 4ε) on a closed-form bracket.
+  With `G = (ε_f + ε_b) σ A F` and `T_eq(η) = ((1 − η) P_abs/G + T_space⁴)^¼`: every root lies
+  in `[T_space, T_eq(η_min)]`; the monotone law lies between `η_lo` and `η_hi` (its values at
+  the two ends) there; in exact arithmetic `[T_eq(η_hi), T_eq(η_lo)]` then contains every
+  root, so a solution always exists. Uniqueness is guaranteed for `γ_T ≥ 0`, and for
+  `γ_T < 0` when `P_abs η_ref |γ_T| < 4 G T_lo³`; this sufficient condition is reported per
+  sample (`unique_root`; MVP: always true; a pathological law with η = 1 below 289 K is
+  flagged in the tests). The deviation from the plan's fixed bracket
+  `[T_space + ε, T_max_bracket]` is deliberate: the derived bracket needs no arbitrary upper
+  temperature and proves existence.
+- Floating-point handling (M4 review). For tiny `P_abs` (a sliver of Sun at penumbra entry
+  or exit; the M3 disk-overlap function gives visible fractions down to ~1e-13 within 1 µrad
+  of the umbra edge) the plate temperature is within a few ulp of `T_space`, the closed-form
+  bracket collapses to one or two float64 values, and its end-point signs can be flipped by
+  rounding. Three measures make the solve robust down to the smallest subnormal `P_abs`:
+  1. `T⁴ − T_space⁴` is evaluated as `(T − T_s)(T + T_s)(T² + T_s²)` (no cancellation;
+     ≤ 4ε relative, tested against 50-digit arithmetic), in the solver, in
+     `PvThermalNode.radiated_W` and in the radiator formulas.
+  2. The convergence criterion is `|f(T)| ≤ 1e-12 P_abs + floor`, with the float64
+     representation floor `floor = (P_abs |η_ref γ_T| + 4 G T³) spacing(T)`: no float64 `T`
+     can in general do better than about half of it. It is ~4e-17 W for the MVP plate near
+     `T_space` and matters only for `P_abs ≲ 1e-4 W`; elsewhere it is ≲ 1e-15 `P_abs`.
+  3. A brentq result above that tolerance, or a bracket end whose sign rounding flipped, is
+     polished by walking float64 neighbours (≤ 64) to the sign change. Only if all of this
+     fails is the sample NaN / not converged; `evaluate_power_thermal` then raises.
+
+  Verified: every `P_abs` from 1e-30 W to 1e8 W converges; illumination fractions 1e-11 …
+  5e-324 at 1 au match a 50-digit fixed-point solution to ≤ 2 ulp, are feasible and close the
+  ledger (`test_tiny_illumination_fraction_converges_and_closes`).
+- Limiting case: with `η ≡ 0` and `F = 1`, `T = (α S / ((ε_f + ε_b) σ) + T_space⁴)^¼`
+  (330.98 K at 1 au for α = 0.9, ε_f + ε_b = 1.8; tested).
+- Feasibility: `T ≤ collector.max_operating_temperature_K` (M4 field, default 400 K,
+  **assumed**, not a sourced qualification limit). MVP collector: 302.8 K at 1 au (feasible),
+  559 K at 0.3 au (infeasible), crossing 400 K between 0.5 and 0.7 au.
+
+### Power-electronics / transmitter radiator node (node b)
+
+- Waste heat = exactly the on-board losses of PDF §10.1, each counted once, computed by
+  `power_chain.onboard_power_chain` (the function M6 will reuse):
+  `Q_waste = P_PV (1 − η_pc) + P_dc_to_tx (1 − η_e2b) + P_beam (1 − η_optics_or_rf) + Q_other`
+  (`thermal.other_heat_load_W`).
+- **Departure from the PDF §8.3 formula.** PDF §8.3 lumps the PV heat into a single
+  radiator load, `Q_waste = Q_PV + Q_transmitter + Q_power_electronics + Q_other`. Here
+  `Q_PV = P_abs − P_PV` is radiated by the PV plate itself (node a, which therefore sets the
+  PV operating temperature), and this radiator carries only the on-board chain losses
+  (`Q_transmitter + Q_power_electronics`, split into the three §10.1 stages) plus `Q_other`.
+  Nothing is dropped: the whole-spacecraft ledger identity
+  `incident + Q_other = reflected + Q_PV,radiated + Q_rad,rejected + P_aperture` checks the
+  sum. The two-node split is the physically consistent reading of a PV array whose cells
+  dissipate their heat locally; a design that pipes PV heat to a common radiator would need
+  a conductive link, which is neglected (see below). Assigning the whole optics/RF loss to this radiator is
+  **conservative**: spill-over radiated to space would not need rejecting.
+- Geometry: a thin flat plate of physical area `A_rad` radiating from
+  `n_faces = thermal.radiating_sides` faces (1: back insulated, 2: both faces exposed), each
+  with view factor `F_rad = thermal.radiator_view_factor` to deep space, no view of the Sun
+  or of the PV array (absorbs no sunlight), emissivity `ε = thermal.emissivity`:
+  `Q_rad = ε σ A_rad n_faces F_rad (T⁴ − T_space⁴)` (PDF §8.3,
+  `A_eff = A_physical · emitting_side_factor · view_factor`).
+- Required area at the limit: `A_req = Q_waste / (ε σ n_faces F_rad (T_lim⁴ − T_space⁴))`,
+  ∝ 1/ε and ∝ 1/(T_lim⁴ − T_space⁴) (≈ 1/T_lim⁴; tested).
+- `thermal.radiator_area_m2` unset: radiator sized at the limit (`equilibrium_temperature_K
+  = T_lim`, `radiator_margin_K = 0`). Set: analytic equilibrium
+  `T = (Q_waste/(ε σ A_rad n_faces F_rad) + T_space⁴)^¼`, radiator feasible iff `T ≤ T_lim`,
+  margins `radiator_margin_K = T_lim − T` and `area_margin_m2 = A_rad − A_req`.
+- PDF-level verdict (PDF p.4 `ThermalResult` "feasible, margin"; §8.4 "feasibility flag and
+  margin to temperature limit"): `margin_K = min(pv_margin_K, radiator_margin_K)`, the binding
+  margin over both nodes, and `feasible = pv_converged & (margin_K ≥ 0)`. In the default
+  sized-at-limit mode the radiator margin is 0 by construction, so the PV node is what can
+  make a case infeasible (MVP at 0.3 au: `margin_K = −158.8 K`).
+- Mass proxy: `m = A · thermal.radiator_specific_mass_kg_m2` (M4 field, optional, assumed).
+
+### Energy ledger
+
+`thermal.energy_ledger` checks per sample, relative to `incident + Q_other`, to 1e-12:
+`incident = reflected + absorbed`; `absorbed = P_PV + Q_PV,radiated` (the solved
+temperature's radiation, so this is the solver check); `P_PV = P_dc_to_tx + loss_pc`;
+`P_dc_to_tx = P_beam + loss_e2b`; `P_beam = P_aperture + loss_optics`;
+`Q_waste = Σ losses + Q_other`; `Q_waste = Q_rad,rejected`; and the spacecraft boundary
+`incident + Q_other = reflected + Q_PV,radiated + Q_rad,rejected + P_aperture`. Measured:
+≤ 6.5e-16 (MVP year and 0.3–1.2 au sweeps).
+
+Identities that contain a solved temperature (PV node, radiator balance in the
+configured-area mode, spacecraft) are checked against `1e-12 · scale + floor`, where `floor`
+is the float64 representation floor of that temperature (`|dQ/dT| spacing(T)`; PV node as
+above, radiator `4 ε σ A_rad n F T³ spacing(T)`). Every identity also gets the smallest normal
+float64, 2.2e-308 W, the absolute precision left once powers underflow to subnormals. The
+floors matter only when `incident + Q_other` is below ~1e-4 W (MVP plate).
+
+Which identities are independent checks. The PV-node identity tests the solved temperature
+against Stefan–Boltzmann. The collector identity and the radiator inventory are sums formed
+independently of the code that produced their terms. The three chain identities hold by
+construction, since each loss is stage input minus output in `power_chain`. The radiator
+balance is a round trip, because `A_req` or `T_eq` is derived from the same `Q_waste`. The
+spacecraft identity is the algebraic sum of the others. Those guard the bookkeeping against
+regressions; they do not validate physics. The physics is validated by the hand-computed
+waste-heat test and by `test_energy_ledger_from_hand_computed_terms`, which computes every
+ledger term in closed form for a constant-efficiency plate (η = 0.3).
+
+### Neglected effects (M4)
+
+- Earth/planet albedo and IR on the collector: negligible at heliocentric distances. Upper
+  bound at d = 0.1 au from the Earth (closer than any MVP geometry): reflected
+  `A_B S (R⊕/d)²` with Bond albedo 0.3 plus emitted `240 W m⁻² (R⊕/d)²` (full disk facing the
+  collector; global-mean values, Trenberth, Fasullo & Kiehl 2009, BAMS 90, 311) is
+  1.2e-4 W m⁻², i.e. < 1e-7 of S.
+- Conduction and mutual radiation between the PV node and the radiator node; the PV
+  electrical output leaves the PV node without further dissipation there.
+- Transient (thermal-capacity) response: every epoch, including eclipse, is in steady state;
+  an eclipse epoch therefore drops to `T_space` (PV) instantly, a known non-physical limit
+  for short eclipses (none occur in the MVP year).
+- Temperature gradients through and across the plates; temperature dependence of ε and α;
+  back-face absorption of sunlight (fixed attitude, see above).
+
+### Configuration fields added in M4
+
+All `assumed`, with defaults; they change the config hash (re-pinned `d0087098…962d` →
+`31de4816…7651`; removing exactly these three keys reproduces the old digest) but not
+`schema_version`:
+
+- `collector.max_operating_temperature_K`: 400 K (> 0; the schema also requires it to exceed
+  `thermal.space_temperature_K`).
+- `thermal.pv_view_factor`: 1.0, range (0, 1].
+- `thermal.radiator_specific_mass_kg_m2`: None (no mass proxy), > 0 when set.
