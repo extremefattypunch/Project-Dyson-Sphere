@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "helioswarm-*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked environment
+        run: uv sync --all-extras --locked
+      - name: Ruff lint
+        run: uv run --locked ruff check .
+      - name: Ruff format
+        run: uv run --locked ruff format --check .
+      - name: Mypy (strict, src)
+        run: uv run --locked mypy src
+      - name: Pytest
+        run: uv run --locked pytest -q
+      # SPICE kernels (M2+) will be fetched by scripts/fetch_kernels.py and cached here.
