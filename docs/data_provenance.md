@@ -99,6 +99,18 @@ the air-mass comparison, and HCIPy 0.7.1 (from `uv.lock`). The new M5 configurat
 `atmosphere.itu_r_exceedance_percent`, `atmosphere.itu_r_min_elevation_deg`, and from the M5
 review `atmosphere.itu_r_polarization_tilt_deg`) are **assumed**.
 
+### M6: run outputs, validation references and the optional JAX backend
+
+M6 adds no external data set. Provenance of what it uses or produces:
+
+| Item | Provenance |
+|---|---|
+| Run outputs (`timeseries.parquet`, `summary.json`, `manifest.json`, figures, reports) | Written to `$HELIOSWARM_RUNS_DIR` on netscratch (90-day purge; regenerable from the configs with `helioswarm run` / `slurm/run.sbatch`). Every run's `manifest.json` records git commit + dirty flag, package versions, kernel SHA-256, ITU-R versions, seed and host. Nothing large is committed. |
+| `validate-models` references | Closed forms in `helioswarm.validation`; JPL Horizons DE441 Earth-wrt-Sun positions (6 epochs, retrieved 2026-11-12, query in `tests/unit/test_ephemeris.py::HORIZONS_QUERY`, values copied verbatim into `validation.HORIZONS_EARTH_WRT_SUN_KM`); ITU-R SG3 validation examples via `itur` 0.4.0's test file (as in M5); HCIPy 0.7.1 (xcheck extra); exact SI constants (2019 SI: k_B = 1.380649e-23 J/K, h = 6.62607015e-34 J s) for the independent Stefan–Boltzmann value.; after the M6 review also: IERS Bulletin C leap seconds (TAI−UTC 32 s from 1999, 37 s from 2017), TT−TAI = 32.184 s and the USNO Circular 179 (Kaplan 2005, eq. 2.6) TDB−TT series for the time-scale check; REBOUND IAS15 (xcheck extra) for the orbit cross-check. |
+| JAX (optional `jax` / `gpu` extras) | `jax` / `jaxlib` 0.12.0.1 from PyPI (Apache-2.0), pinned in `uv.lock`, Python ≥ 3.12 only. The `gpu` extra adds `jax-cuda12-plugin`/`jax-cuda12-pjrt` and the NVIDIA CUDA 12 runtime wheels (`nvidia-*`, ~4.4 GB; project environment total 6.0 GB on holylabs, checked with `du`; nothing written to `$HOME`). Used only by `helioswarm.capture_batch` and the GPU benchmark (`slurm/gpu_bench.sbatch`). |
+| Microwave MVP scenario values | `configs/mvp_single_satellite_microwave.yaml`: every transmitter/receiver value is **assumed** (documented in the file header); 2.45 GHz is the PDF §2 illustrative carrier. |
+| Sweep values | `configs/optical_1au_sweep.yaml`: heliocentric radii and receiver radii from the PDF §2 scenario table; aperture diameters 10 m (PDF §5 example), 30 m and 100 m (assumed); relabelled `swept` per point. |
+
 ## Sourced constants and defaults
 
 | Quantity | Value | Where | Source |

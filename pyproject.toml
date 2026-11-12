@@ -49,6 +49,16 @@ xcheck = [
 itur = [
     "itur>=0.4.0,<0.5",
 ]
+# Optional JAX backend of the batched Airy capture kernel (helioswarm.capture_batch; selected by
+# `--backend jax`). CPU jaxlib only: enough to run the backend and its reference tests anywhere.
+jax = [
+    "jax>=0.12,<0.13; python_version >= '3.12'",
+]
+# GPU (CUDA 12) build of the same backend: jaxlib CUDA plugin + NVIDIA runtime wheels (~4.4 GB of
+# nvidia-* wheels). Only for the gpu_test benchmark job; never needed for the CPU reference.
+gpu = [
+    "jax[cuda12]>=0.12,<0.13; python_version >= '3.12' and sys_platform == 'linux'",
+]
 
 [project.scripts]
 helioswarm = "helioswarm.cli:main"
@@ -122,7 +132,7 @@ init_typed = true
 warn_required_dynamic_aliases = true
 
 [[tool.mypy.overrides]]
-module = ["spiceypy.*", "rebound.*", "hcipy.*", "scipy.*", "itur.*"]
+module = ["spiceypy.*", "rebound.*", "hcipy.*", "scipy.*", "itur.*", "pyarrow.*", "jax.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------------------------------------
@@ -137,6 +147,7 @@ markers = [
     "slow: long-running test (still run in the acceptance gates)",
     "spice: requires the SPICE kernel set (see data/kernels/README.md)",
     "xcheck: independent cross-check against an optional library (rebound, hcipy)",
+    "gpu: needs a real CUDA device for the JAX backend (skipped without one; run by slurm/gpu_bench.sbatch)",
 ]
 filterwarnings = ["error"]
 

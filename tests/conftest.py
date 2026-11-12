@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterator
 from typing import Any
 
@@ -11,6 +12,11 @@ import spiceypy
 from helioswarm.kernels import KernelError, KernelSet, LoadedKernels, fetch_kernels
 
 from config_helpers import load_mvp_data
+
+# The optional JAX backend is tested on the CPU unless the caller selected a platform
+# (slurm/gpu_bench.sbatch exports JAX_PLATFORMS=cuda for the @pytest.mark.gpu test). Without
+# this, jaxlib's CUDA plugin (gpu extra) logs a cuInit failure on nodes without a GPU.
+os.environ.setdefault("JAX_PLATFORMS", "cpu")
 
 
 @pytest.fixture

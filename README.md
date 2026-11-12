@@ -23,13 +23,21 @@ You need Python ≥ 3.11 and [uv](https://docs.astral.sh/uv/).
 ```bash
 git clone git@github.com:extremefattypunch/Project-Dyson-Sphere.git
 cd Project-Dyson-Sphere
-uv sync --all-extras --locked        # exact environment from uv.lock (dev + xcheck extras)
+uv sync --locked --extra dev --extra xcheck --extra itur --extra jax   # exact env from uv.lock
 ```
+
+Do **not** use `uv sync --all-extras`: it also installs the `gpu` extra (`jax[cuda12]`, ~4.4 GB
+of NVIDIA wheels on Linux), which only the GPU benchmark needs. Add `--extra gpu` explicitly
+for that (`slurm/gpu_bench.sbatch`).
 
 Extras:
 
 - `dev` adds pytest, ruff, mypy and pre-commit.
 - `xcheck` adds REBOUND and HCIPy, which are used only for independent cross-check tests.
+- `itur` adds the ITU-R P.618/P.676/P.840 wrapper (`models.atmosphere: itu_r`, microwave).
+- `jax` adds CPU JAX for the optional batched capture backend (`--backend jax`; Python ≥ 3.12).
+- `gpu` adds the CUDA 12 JAX build (~4.4 GB of NVIDIA wheels); only the GPU benchmark needs it.
+  CI installs every extra except `gpu`.
 
 ### Harvard FASRC Cannon cluster (Hekstra lab)
 
@@ -37,7 +45,7 @@ On the cluster, source the environment script **before every uv command**:
 
 ```bash
 source scripts/cluster_env.sh
-uv sync --all-extras --locked
+uv sync --locked --extra dev --extra xcheck --extra itur --extra jax   # + --extra gpu for the GPU benchmark
 ```
 
 The script keeps everything out of `/n/home05`:
@@ -57,27 +65,76 @@ there can be regenerated.
 
 ```bash
 uv run helioswarm fetch-kernels          # download + verify the SPICE kernels (~33 MB, once)
-uv run helioswarm validate-config configs/mvp_single_satellite.yaml
 uv run helioswarm validate-config configs/mvp_single_satellite.yaml --show-provenance
-uv run helioswarm validate-config configs/mvp_single_satellite.yaml --write-resolved /tmp/resolved.yaml
+uv run helioswarm run configs/mvp_single_satellite.yaml --out runs/mvp            # ~1 min
+uv run helioswarm plot runs/mvp                       # redraw figures/ + report.md from saved data
+uv run helioswarm sweep configs/optical_1au_sweep.yaml --out runs/optical_sweep   # 45 runs
+uv run helioswarm validate-models --report docs/validation_report.md              # ~1 min
 ```
 
-What these commands do:
+- `validate-config` checks a configuration (exit 1 with every problem listed if invalid);
+  `--show-provenance` lists every parameter with unit and provenance (`measured`, `sourced`,
+  `assumed`, `swept`); `--write-resolved` writes it with all defaults explicit. A sweep file
+  (`sweep_schema_version`) is recognised and every grid point is validated without running, so
+  `helioswarm validate-config configs/*.yaml` checks every shipped file.
+- `run` executes the single-satellite vertical slice (orbit → illumination → solar/thermal →
+  retarded-time access and occultation → beam capture with pointing errors → atmosphere →
+  receiver limits → grid) and writes a run directory:
 
-- `validate-config` prints `OK: … (schema_version 1, config_hash <sha256>)` and exits with
-  status 0 when the configuration is valid.
-- If the configuration is invalid, it lists every problem with its field path and the offending
-  value, then exits with status 1.
-- `--show-provenance` lists every resolved parameter with its unit and its provenance
-  (`measured`, `sourced`, `assumed` or `swept`).
-- `--write-resolved` writes the configuration with all defaults made explicit.
-- `fetch-kernels` downloads the SPICE kernels listed in `data/kernels/kernels.json` into
-  `$HELIOSWARM_KERNEL_DIR` (or `data/kernels/`). It verifies the size, SHA-256 and NAIF MD5 of
-  every file, skips files that are already present and valid, and never overwrites a mismatch.
-  The SPICE tests fetch the kernels themselves if they are missing.
+  | File | Content |
+  |---|---|
+  | `config_resolved.yaml` | the configuration with all defaults |
+  | `manifest.json` | git commit + dirty flag, package versions, kernel SHA-256, ITU-R versions, seed, host, Slurm job, timings |
+  | `timeseries.parquet` | per epoch: states (J2000/SSB), access flags, reason codes, every power stage of PDF §10.1, thermal outputs, beam diagnostics (units in column names) |
+  | `summary.json` | P_grid mean/median/p05/p95/peak, availability, capacity factor (denominator defined), outages, delivered energy, efficiencies, unavailability breakdown, diurnal-aliasing diagnostic |
+  | `figures/`, `report.md` | plots and a one-page report drawn from the saved files only |
+  | `logs/run.log` | warnings, integrator/solver diagnostics, stage wall times |
 
-Simulation commands such as `run`, `plot`, `sweep` and `validate-models` arrive in later
-milestones. They do not exist yet.
+  Without `--out` the directory is `$HELIOSWARM_RUNS_DIR/<project.name>` (else
+  `runs/<project.name>`); an existing run directory is replaced only with `--overwrite`. The
+  config field `project.output_dir` is informational only and is **not** used by `run`.
+- `sweep` runs a deterministic Cartesian grid over dotted configuration keys (each point a full
+  validated run; `--summary-only` skips time series and figures) and collates
+  `sweep_summary.parquet` (status `ok`, `failed`, `incomplete` or `missing` per point); failed
+  points are recorded with their error, never dropped. The shipped `optical_1au_sweep.yaml`
+  applies **no Sun-avoidance constraint** (`receiver.sun_avoidance_deg` = 0): at 0.7 au part of
+  the delivered energy arrives while the satellite is within a few degrees of the Sun as seen
+  from the receiver (quantified in `docs/milestones/M6.md`).
+- `validate-models` runs the programmatic checks of PDF §7.4 (circular orbits, Horizons,
+  sidereal rotation, occultation, light time), §8.5 (solar flux, zero incidence/eclipse,
+  energy closure, radiator), §9 (beam), §10.5 (capacity-factor reference link), §13.1 (link
+  budget, SRP, time scales), §13.2 (end to end) and §13.3 (REBOUND, HCIPy, ITU-R, convergence)
+  and writes value, reference, tolerance and pass/fail into the generated block of
+  `docs/validation_report.md`; a check whose optional library is missing is reported as
+  "not run" and listed as unresolved.
+- `--backend jax` (with the `jax` or `gpu` extra) evaluates the Airy capture through the batched
+  JAX kernel; the default `numpy` is the reference.
+
+### Slurm (Harvard Cannon; see `slurm/`)
+
+Long runs go to Slurm jobs, never the interactive session. Create the log directory once
+(`mkdir -p /n/netscratch/hekstra_lab/Lab/ian_poon/logs`), then from the repository:
+
+```bash
+sbatch slurm/run.sbatch configs/mvp_single_satellite.yaml           # -> $HELIOSWARM_RUNS_DIR/<stem>/
+sbatch slurm/run.sbatch configs/mvp_single_satellite_microwave.yaml
+JID=$(sbatch --parsable --array=0-4 slurm/sweep_array.sbatch configs/optical_1au_sweep.yaml \
+      $HELIOSWARM_RUNS_DIR/optical_1au_sweep)
+# test QOS: max 5 submitted jobs per user -> submit the collation after the array has finished
+sbatch --export=ALL,COLLATE_ONLY=1 slurm/sweep_array.sbatch \
+      configs/optical_1au_sweep.yaml $HELIOSWARM_RUNS_DIR/optical_1au_sweep
+sbatch slurm/validate_models.sbatch                                  # rewrites docs/validation_report.md
+sbatch slurm/profile.sbatch configs/mvp_single_satellite.yaml        # cProfile + stage timings
+sbatch slurm/gpu_bench.sbatch                                        # gpu_test, 1 GPU: CPU vs GPU kernel
+seff <jobid>; jobstats <jobid>                                       # right-sizing check after each job
+```
+
+All templates use `#!/bin/bash -l`, source `scripts/cluster_env.sh`, run `uv run --locked`,
+use a node-local `TMPDIR=/scratch/${USER}_${SLURM_JOB_ID}` (removed on exit), log to
+`/n/netscratch/hekstra_lab/Lab/ian_poon/logs/%x-%j.out` and write outputs under
+`$HELIOSWARM_RUNS_DIR`. Resource requests are the measured values in
+`docs/milestones/M6.md` (section D). The vertical slice is single-threaded and CPU-bound (the
+orbit integration is ~86 % of a run), so only the GPU benchmark requests a GPU.
 
 Development checks:
 
@@ -112,7 +169,7 @@ The schema follows these rules:
 | M3 Access + light time | ground sites, Earth rotation, retarded-time targeting, occultation | implemented |
 | M4 Solar + thermal | S(r), PV efficiency law, PV and radiator thermal balance | implemented |
 | M5 Beam physics | Airy/Gaussian/Fresnel optics, microwave aperture, capture, pointing, atmosphere | implemented |
-| M6 End-to-end single satellite | link budget, run outputs, metrics, figures, validation report | planned |
+| M6 End-to-end single satellite | link budget, system run, metrics, run outputs, CLI run/plot/sweep/validate-models, Slurm templates, optional JAX/GPU capture kernel | implemented |
 | M7 Constellation | multiple satellites, scheduling, receiver capacity | not authorised |
 | M8 Optimisation/uncertainty | sweeps, constrained optimisation, sensitivity | not authorised |
 | M9 Paper package | frozen configs, figures, methods/validation notes | not authorised |

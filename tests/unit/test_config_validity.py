@@ -436,7 +436,11 @@ def test_receiver_heat_rejection_is_optional_and_settable(mvp_data: dict[str, An
 # M5 review (874f79f0...cb4b -> ad186cc3...5b62) added the defaulted field
 # atmosphere.itu_r_polarization_tilt_deg (the ITU-R rain polarisation tilt is a physical input);
 # removing exactly that key reproduces 874f79f0...cb4b (checked when re-pinning).
-MVP_CONFIG_HASH = "ad186cc301b42e1ab4c23fcbccf96847983b4dea0c952d6d9413b37fc1ee5b62"
+# M6 (ad186cc3...5b62 -> 3db50d83...ef7e) added the defaulted field
+# transmitter.min_pointing_efficiency (None = not enforced; the pointing availability condition
+# of PDF §10.4); removing exactly that key reproduces ad186cc3...5b62 (checked when re-pinning).
+# schema_version is unchanged.
+MVP_CONFIG_HASH = "3db50d831d9546c79850b95e1857f8cab67d1a4385ade096e9e6cbe1a70eef7e"
 
 
 def test_mvp_config_hash_is_pinned() -> None:

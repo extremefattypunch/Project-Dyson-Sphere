@@ -147,3 +147,32 @@ def test_module_invocation(tmp_path: Path) -> None:
         text=True,
     )
     assert proc.returncode == 0, proc.stderr
+
+
+def test_validate_config_accepts_sweep_files(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The shipped sweep validates as a sweep (45 points), not as a run configuration.
+    sweep = MVP_CONFIG.parent / "optical_1au_sweep.yaml"
+    assert main(["validate-config", str(sweep)]) == 0
+    out = capsys.readouterr()
+    assert "valid helioswarm sweep file" in out.out
+    assert "45 points" in out.out
+    assert out.err == ""
+    # Provenance/resolved output is for run configurations only.
+    assert main(["validate-config", str(sweep), "--show-provenance"]) == 1
+    assert "not sweep files" in capsys.readouterr().err
+    # A sweep with an invalid point (e >= 1) is rejected without running anything.
+    bad = _write(
+        tmp_path,
+        {
+            "sweep_schema_version": 1,
+            "name": "bad",
+            "base_config": str(MVP_CONFIG),
+            "parameters": {"orbit.eccentricity": [0.0, 1.5]},
+        },
+        "bad_sweep.yaml",
+    )
+    assert main(["validate-config", str(bad)]) == 1
+    assert "eccentricity" in capsys.readouterr().err
+    assert not (tmp_path / "out").exists()

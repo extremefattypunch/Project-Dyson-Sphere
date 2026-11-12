@@ -10,6 +10,15 @@
 #   - schema_version added (schema versioning, PDF p.9; required, no default).
 #   - receiver.technology added: optical links need a laser-photovoltaic receiver (PDF §10.4).
 #   - Omitted fields take the documented schema defaults (see the resolved dump).
+#
+# Receiver limits and safety (PDF §10.4; laser-photovoltaic technology case): only the PDF
+# example's max_input_power_W = 1e12 W is set, and it never binds (captured power <= ~15 kW).
+# No max_power_density_W_m2 and no max_heat_rejection_W are set, deliberately: this project has
+# no sourced laser-PV flux, eye-safety or heat-rejection limit to use, and inventing one would
+# be an unlabelled assumption. The M6 run gives a peak incident density of ~5e-3 W/m^2 (about
+# 1e-5 of the solar constant), so no plausible limit binds for this design; a study at higher
+# flux (larger aperture, shorter range) must set a sourced value. The microwave rectenna config
+# makes its own, separate statement.
 
 schema_version: 1
 

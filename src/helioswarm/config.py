@@ -251,7 +251,9 @@ class ProjectConfig(_Section):
         unit="-",
         provenance="assumed",
         kind="metadata",
-        description="Suggested run output directory; not used by validate-config.",
+        description="Informational only: not read by validate-config or run. `helioswarm "
+        "run` writes to --out, else $HELIOSWARM_RUNS_DIR/<project.name>, else "
+        "runs/<project.name>.",
     )
     description: str = _field(
         "",
@@ -905,6 +907,19 @@ class TransmitterConfig(_Section):
         ge=0.0,
         le=0.1,
     )
+    min_pointing_efficiency: float | None = _field(
+        None,
+        unit="1",
+        provenance="assumed",
+        description="Pointing availability condition (PDF §10.4: a link is unavailable if "
+        "pointing uncertainty violates the configured conditions): the link is declared "
+        "unavailable (reason 'pointing', P_grid = 0) at epochs where the pointing efficiency "
+        "E[capture] / capture(perfect pointing) (BeamResult.pointing_loss) is below this value. "
+        "None = not enforced (the efficiency is still applied to the captured power and "
+        "reported).",
+        gt=0.0,
+        le=1.0,
+    )
 
     @model_validator(mode="after")
     def _check_transmitter(self) -> Self:
@@ -1018,7 +1033,9 @@ class SiteConfig(_Section):
 class ReceiverConfig(_Section):
     """Ground receiver network and receiver/grid conversion (PDF §10.1, §10.4).
 
-    ``P_receiver = P_captured * conversion_efficiency``; ``P_grid = P_receiver * grid_efficiency``.
+    ``P_receiver = P_accepted * conversion_efficiency``; ``P_grid = P_receiver * grid_efficiency``,
+    with ``P_accepted`` the captured power after the receiver limits below (``P_accepted =
+    P_captured`` when no limit binds).
 
     Receiver limits (PDF §10.4) act on defined stages of that chain:
 
@@ -1028,7 +1045,8 @@ class ReceiverConfig(_Section):
       receiver-saturation loss; then ``P_receiver = P_accepted * conversion_efficiency``.
     * ``max_heat_rejection_W`` bounds the receiver waste heat
       ``Q_rx = P_accepted * (1 - conversion_efficiency)`` (all accepted power not converted to
-      electricity is assumed absorbed as heat).
+      electricity is assumed absorbed as heat), i.e. ``P_accepted <= Q_max / (1 -
+      conversion_efficiency)`` (M6: enforced as a clip, flagged as receiver saturation).
     * ``max_power_density_W_m2`` bounds the peak incident beam power density.
     """
 
@@ -1073,7 +1091,8 @@ class ReceiverConfig(_Section):
     conversion_efficiency: float = _field(
         unit="1",
         provenance="assumed",
-        description="eta_receiver_conversion = P_receiver / P_captured.",
+        description="eta_receiver_conversion = P_receiver / P_accepted, with P_accepted = "
+        "P_captured after the receiver input/heat limits (= P_captured when no limit binds).",
         gt=0.0,
         le=1.0,
     )

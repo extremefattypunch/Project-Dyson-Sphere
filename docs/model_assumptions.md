@@ -48,9 +48,11 @@ efficiency has exactly one owner (PDF §10.1):
 | Transmitter optics/feed | `P_aperture = P_beam · η_optics_or_rf`. This is a separate physical loss and not an "aperture efficiency", because beam models are normalised to aperture power. Spill-over of source power outside the aperture edge (e.g. `exp(−2a²/w0²)` for a Gaussian laser clipped at radius `a`) belongs here; no beam model applies it again. | `transmitter.optics_or_rf_efficiency` |
 | Atmosphere | `P_atm = P_aperture · η_atm`; zenith scenario factors scaled with the plane-parallel air mass `X = 1/sin(el)`, or ITU-R P.618 slant-path attenuation (`itu_r`, M5) | `atmosphere.*`, `models.atmosphere` |
 | Capture | `P_captured = P_atm · η_capture`; `η_capture = BeamResult.capture_fraction` (diffraction × pointing × wavefront × lattice factor, M5) | `models.beam`, `transmitter.*`, `receiver.radius_m`, `receiver.orientation` |
-| Receiver input limit | `P_accepted = min(P_captured, P_max_in)`; the excess is reported as receiver saturation. The limit acts on captured beam (optical/RF) power, **before** conversion. | `receiver.max_input_power_W` |
+| Receiver input limit | `P_accepted = min(P_captured, P_max_in, Q_max/(1 − η_rx))`; the excess is reported as receiver saturation (M6: `receiver_clipped_W`, flag `RECEIVER_SATURATION`, link still available). The limit acts on captured beam (optical/RF) power, **before** conversion. | `receiver.max_input_power_W`, `receiver.max_heat_rejection_W` |
 | Receiver conversion | `P_receiver = P_accepted · η_rx` (equal to `P_captured · η_rx` while the receiver is not saturated) | `receiver.conversion_efficiency` |
-| Receiver waste heat | `Q_rx = P_accepted · (1 − η_rx)` must not exceed the receiver's thermal rejection capability (not enforced when unset). Not a power stage; it is a constraint. | `receiver.max_heat_rejection_W` |
+| Receiver waste heat | `Q_rx = P_accepted · (1 − η_rx)` must not exceed the receiver's thermal rejection capability (not enforced when unset). Not a power stage; M6 enforces it as the second bound on `P_accepted` above. | `receiver.max_heat_rejection_W` |
+| Power-density beam abort (M6) | if `P_atm · I_peak/W > max_power_density_W_m2` the transmitter is not operated at that epoch (all stages from `P_PV,tx` on are 0; reason `POWER_DENSITY_ABORT`). The schema defines abort only, no throttling. | `receiver.max_power_density_W_m2` |
+| Pointing availability (M6) | link unavailable where `E[η]/η(perfect pointing) < min_pointing_efficiency` | `transmitter.min_pointing_efficiency` |
 | Grid conditioning | `P_grid = P_receiver · η_grid` | `receiver.grid_efficiency` |
 
 The stage order is copied from PDF §10.1 exactly. It applies the atmosphere factor before the
@@ -119,7 +121,7 @@ Studies must override these defaults with sourced values or sweep them.
 ## Per-milestone sections
 
 Milestones M2–M6 add the ephemeris, access, solar/thermal, beam and link-budget models here,
-each with equations, validity ranges and references. M1–M5 follow below.
+each with equations, validity ranges and references. M1–M6 follow below.
 
 ## M1: Constants, frames and the analytic two-body orbit (L0)
 
@@ -1234,3 +1236,158 @@ refraction-induced beam bending; thermal blooming; aperture obscuration (seconda
 struts); partial coherence and finite laser linewidth; the scattered (halo) part of the
 wavefront-error power; receiver depth along the beam; tropospheric scintillation (ITU-R
 option); grating-lobe power that might reach other receivers.
+
+## M6: Link budget, system orchestration, metrics and run outputs
+
+Modules: `link_budget.py`, `system.py`, `metrics.py`, `io.py`, `manifest.py`, `plotting.py`,
+`report.py`, `sweep.py`, `validation.py`, `capture_batch.py` (optional JAX backend). Implementation
+notes and measured numbers: `docs/milestones/M6.md`.
+
+### Link budget (PDF §10.1, §10.4; `helioswarm.link_budget`)
+
+```
+P_PV,tx    = P_PV · 1[transmitting]                      operating decision (system)
+P_dc_to_tx = P_PV,tx · η_pc        P_beam = P_dc_to_tx · η_e2b        P_aperture = P_beam · η_o
+                                                        (power_chain.onboard_power_chain, M4)
+P_atm      = P_aperture · η_atm                         (atmosphere.atmospheric_transmission, M5)
+P_captured = P_atm · η_capture                          (BeamResult.capture_fraction, M5)
+P_accepted = min(P_captured, P_max_in, Q_max/(1 − η_rx))  receiver limits
+P_receiver = P_accepted · η_rx      P_grid = P_receiver · η_grid
+```
+
+- **One owner per factor.** The on-board stages come only from `onboard_power_chain` (the same
+  function the M4 radiator uses). `η_capture` already contains diffraction (pattern normalised
+  to `P_aperture`, so there is no extra aperture efficiency; the taper is inside the pattern),
+  pointing (Rice expectation), the Ruze wavefront factor and the lattice grating-lobe factor,
+  each applied once in `beam.evaluate_beam`. Gaussian spill-over belongs to `η_optics_or_rf`.
+  `η_atm` is applied once and depends only on elevation.
+- **Invariants** (checked at construction of every `LinkBudgetResult`): every η in [0, 1], and
+  every stage ≤ the previous stage. Multiplying by a factor in [0, 1] is monotone in IEEE
+  arithmetic (`fl(x·η) ≤ x`), so the checks are exact.
+- **Disabled epochs** (link not enabled by the availability conditions) carry 0 W in every stage
+  from `P_PV,tx` on; their atmosphere and capture factors are recorded as 0 (transmission of a
+  blocked / unevaluated path). `P_PV` is still reported (generated but not transmitted).
+- **Receiver limits** are engineering constraints of the chain (PDF §10.4), not post-processing:
+  the input limit acts on `P_captured` (M0 field definition); the heat-rejection limit is
+  enforced as `P_accepted ≤ Q_max/(1 − η_rx)`; both are *clipping* (the link stays available,
+  flag `RECEIVER_SATURATION`). The power-density limit is a *beam abort* evaluated on the peak
+  irradiance of the aberration-free pattern on the beam-normal plane, `P_atm · I_peak/W` (an
+  upper bound: wavefront and pointing errors only lower the peak).
+- **Technology cases.** Optical (`laser_photovoltaic`) and microwave (`rectenna`) receivers are
+  separate configurations with their own conversion efficiencies and limits; nothing is shared
+  between them in code.
+
+### Availability conditions and reason codes (`helioswarm.system`)
+
+Per epoch a `uint32` bitmask `reason_code` records every condition that holds:
+
+| Bit | Reason | Blocking | Source |
+|---|---|---|---|
+| 0 | `BELOW_MIN_ELEVATION` | yes | M3 apparent elevation < `receiver.min_elevation_deg` |
+| 1 | `EARTH_OCCULTATION` | yes | M3 beam segment enters the WGS 84 ellipsoid |
+| 2 | `SUN_OCCULTATION` | yes | M3 beam passes within the solar limb + margin |
+| 3 | `MOON_OCCULTATION` | yes | M3 beam enters the Moon |
+| 4 | `SUN_AVOIDANCE` | yes | M3 Sun–receiver–satellite angle < `receiver.sun_avoidance_deg` |
+| 5 | `ECLIPSE` | yes | M3 illumination fraction 0 (umbra; no power to transmit) |
+| 6 | `THERMAL` | yes | M4 `ThermalResult.feasible` false |
+| 7 | `WEATHER` | yes | hard optical outage of the weather scenario (zenith transmittance 0) |
+| 8 | `POINTING` | yes | `E[η]/η(0) < transmitter.min_pointing_efficiency` (if set) |
+| 9 | `POWER_DENSITY_ABORT` | yes | beam abort (above) |
+| 16 | `RECEIVER_SATURATION` | no (limiting) | receiver input/heat clip |
+| 17 | `PARTIAL_ECLIPSE` | no (limiting) | 0 < illumination fraction < 1 |
+
+Available = no blocking bit; then and only then `P_grid > 0` is possible. The *primary* reason
+of an unavailable epoch is the first blocking bit in the table order (geometry before spacecraft
+state before link conditions), so primary fractions sum to `1 − availability`.
+
+Policies (the schema defines no alternatives, so none is offered):
+
+- **Thermal infeasibility → transmitter not operated.** The thermal state is evaluated at the
+  full operating point (transmitter on) at every epoch; the off-state PV temperature (all
+  absorbed power dissipated in the cells, or shunted) is not modelled.
+- **Eclipse.** Umbra blocks; penumbra only scales `P_PV` through the M4 illumination fraction.
+- **Weather.** The MVP weather is a deterministic scenario over the whole window (PDF §10.2);
+  cloud statistics are a later extension.
+- **Single receiver site.** Several sites need receiver scheduling to avoid double counting
+  (PDF §10.4/§11.2, M7), so `run_single_satellite` rejects them.
+- **Determinism.** No stochastic step exists in M6 (pointing jitter enters through deterministic
+  quadrature); the run takes an explicit `numpy.random.Generator` seeded from `project.seed`
+  and records that it was not drawn from.
+
+### Capacity factor denominator (rated power)
+
+`rated_power_W` is the `P_grid` the configured system delivers at reference conditions:
+satellite at the window-mean heliocentric distance, collector at normal incidence and fully
+illuminated, receiver at the window-mean satellite range with the beam at zenith (elevation 90°:
+full receiver projection, air mass 1), the configured pointing errors, receiver limits applied.
+Atmosphere at the reference: for `models.atmosphere = scenario` the **clear-sky** scenario values
+replace the configured weather (`none`: transmission 1); for `itu_r` the configured ITU-R
+gas + cloud + rain attenuation exceeded `itu_r_exceedance_percent` of the time is used at zenith
+(the ITU-R path has no separate clear-sky state, so this reference is **not** clear sky; for the
+microwave MVP, p = 1 %, η_atm,ref = 0.987). `capacity_factor = ⟨P_grid⟩ / rated_power_W`; it can
+exceed 1 only if the actual geometry is better than the window means (it is ≈ availability ×
+(mean capture at actual elevations / zenith capture)).
+
+The run's operating policies apply to the reference exactly as to any epoch (M6 review): a
+thermally infeasible reference operating point is not operated and a reference beam above the
+power-density limit is aborted; in both cases `rated_power_W = 0` and the capacity factor is
+undefined (null). `summary.json` (`capacity_factor_denominator`) and `sweep_summary.parquet`
+carry `reference_thermal_feasible`, `reference_power_density_abort` and
+`reference_eta_atmosphere`, so a zero or null value always states its cause. (Before the M6
+review the thermal verdict was not applied to the reference: thermally infeasible sweep points at
+0.3/0.5 au reported a non-zero, undeliverable rated power with capacity factor 0.)
+
+### Metrics (PDF §10.5, `helioswarm.metrics`)
+
+- **Sampling convention.** Sample k represents `[t_k − Δt/2, t_k + Δt/2]` clipped to the window
+  (trapezoid weights: `Δt` inside, `Δt/2` at the ends). Delivered energy `E = Σ w_k P_grid,k`,
+  time-mean power `E/T`, availability and reason fractions are weighted the same way.
+- **Percentiles** (median, p05, p95) are unweighted sample percentiles (numpy `linear`).
+- **Outages** are maximal runs of unavailable samples; duration = sum of their weights,
+  resolution ±Δt at each end; outages touching the window ends are reported as censored.
+- **End-to-end efficiency** = `E_grid / E_incident` with `E_incident` the sunlight incident on
+  the collector; also the mean of `P_grid/P_incident` over available epochs.
+- **Diurnal aliasing diagnostic.** `hour_angle_max_gap_rad = g` (largest unsampled gap of the
+  satellite's hour angle at the site, M3), effective distinct phases `2π/g`, per-edge resolution
+  `g/2π`; a warning is raised (summary, run log, report) when `g/2π > 0.005`.
+- **Time axis.** Metrics use the emission epochs. Power arrives at `t_a = t_e + τ`;
+  `dt_a/dt_e − 1` and the Doppler energy factor are of order `|ṙ|/c ≤ 1e-5` for the MVP, so the
+  received-power time axis and energy differ by ~1e-5 relative (neglected; named).
+
+### Run outputs, provenance and reproducibility (PDF §5, §14.1)
+
+`config_resolved.yaml`, `manifest.json` (config hash, schema version, git commit + dirty flag,
+Python and package versions via `importlib.metadata`, OS, CPU model, host, Slurm ids, JAX
+devices, seed, kernel names/URLs/SHA-256, ITU-R recommendation versions and polarisation tilt,
+time-scale and frame conventions, wall-clock start/end, per-stage wall time),
+`timeseries.parquet` (zstd; units in column names; frame/origin/time scale and the constant
+efficiencies in the schema metadata), `summary.json` (computed from the saved table), `figures/`
+and `report.md` (drawn from saved files only), `logs/run.log`. Wall-clock values appear only in
+the manifest and the log, so `summary.json` and the time-series content hash
+(`timeseries_content_sha256`, SHA-256 of the Arrow IPC stream) are bitwise reproducible.
+
+### Batched capture kernel and optional JAX/GPU backend (`helioswarm.capture_batch`)
+
+The same Airy capture physics as M5 with fixed quadrature shapes per batch (at least the M5
+panel resolution for every point), evaluated as one array program on numpy or JAX. JAX 0.12 has
+no accurate `j0/j1` (probed: `jax.scipy.special.bessel_jn` returns NaN for x < 1 and O(1) errors
+for x > 60), so the JAX path computes `J0, J1` by the N-point periodic trapezoidal rule of their
+integral representations, exact up to aliasing terms `J_{N∓n}(x)` (< 1e-16 with
+`N − 1 ≥ x + 12 x^{1/3} + 30`; tested to 1e-13 against scipy). Percentiles are exact on monotone
+`η(d)`; otherwise the point falls back to the M5 per-point reference. Selected with
+`--backend jax` (airy_far_field only; any other model raises `NotImplementedError`). The CPU
+reference remains the default.
+
+### Configuration field added in M6
+
+- `transmitter.min_pointing_efficiency` (default `None` = not enforced, `assumed`): pointing
+  availability condition (PDF §10.4).
+
+### Neglected effects (M6)
+
+- Receiver-side scheduling and capacity sharing (M7), cloud statistics and site diversity.
+- Off-state thermal behaviour; thermal inertia (M4 steady state).
+- Arrival-time/Doppler rescaling of received power (~1e-5).
+- The capacity-factor reference uses window means, not a design point; it is a normalisation,
+  not a nameplate rating.
+

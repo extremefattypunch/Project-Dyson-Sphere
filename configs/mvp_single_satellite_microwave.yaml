@@ -1,0 +1,108 @@
+# helioswarm run configuration: single-satellite MICROWAVE baseline (2.45 GHz).
+#
+# Same orbit, collector, thermal and receiver site as configs/mvp_single_satellite.yaml (the
+# PDF §5 example), with the transmission technology switched to microwave. The PDF fixes no
+# microwave design: every transmitter/receiver value below is an ASSUMED scenario value
+# (provenance 'assumed' in the schema; `helioswarm validate-config ... --show-provenance`),
+# chosen to be generous rather than realistic, so that a negative result is not an artefact
+# of a small aperture:
+#   - carrier 2.45 GHz (PDF §2 "example: 2.45 GHz", illustrative only): lambda = c / f;
+#   - a 1 km filled phased array (half-wavelength 0.06 m lattice, no grating lobes),
+#     10 dB parabolic-on-pedestal taper;
+#   - DC-to-RF efficiency 0.70, pointing jitter 1 urad (~1 % of lambda/D = 1.2e-4 rad);
+#   - a 10 km-radius horizontal rectenna (the largest PDF §2 receiver radius), RF-to-DC
+#     conversion 0.85 (a rectenna is a different technology case from the optical
+#     laser-PV receiver, PDF §10.4);
+#   - ITU-R P.618/P.676/P.840 Earth-space attenuation at the receiver site, exceeded 1 % of the
+#     time (models.atmosphere = itu_r; recommendation versions are recorded in the manifest).
+#   - receiver limits and safety (PDF §10.4; rectenna technology case, separate from the
+#     laser-PV case): max_input_power_W = 1e12 W (non-binding, kept from the optical example;
+#     captured power <= ~1 W). No max_power_density_W_m2 and no max_heat_rejection_W are set:
+#     the computed peak incident density is ~4e-9 W/m^2, many orders of magnitude below RF
+#     exposure reference levels for the general public (of order 10 W/m^2 at GHz frequencies,
+#     ICNIRP 2020 guidelines) and below any rectenna design density, so no limit can bind for
+#     this design. A design that concentrates more power on the rectenna must set a sourced
+#     exposure/density limit here.
+# Expected outcome (M5): at ~1.15 au the diffraction-limited footprint (first null
+# 1.22 lambda R / D ~ 2.6e7 m) dwarfs the receiver, so capture is ~1e-6: a negative result that
+# is reported, not tuned away.
+
+schema_version: 1
+
+project:
+  name: "single_satellite_microwave_baseline"
+  seed: 20261111
+  output_dir: "runs/single_satellite_microwave_baseline"
+  description: "MVP orbit with a 2.45 GHz, 1 km phased-array transmitter and a 10 km rectenna"
+
+time:
+  start_utc: "2030-01-01T00:00:00"
+  duration_days: 365.25
+  output_step_s: 3600
+  integrator_step_s: 300
+
+frames:
+  inertial: "J2000"
+  origin: "SOLAR SYSTEM BARYCENTER"
+  earth_fixed: "IAU_EARTH"
+
+orbit:
+  model: "prescribed_ephemeris_perturbed_test_particle"
+  initial_epoch_utc: "2030-01-01T00:00:00"
+  semimajor_axis_au: 1.0
+  eccentricity: 0.0
+  inclination_deg: 0.0
+  raan_deg: 0.0
+  arg_periapsis_deg: 0.0
+  true_anomaly_deg: 30.0
+  include_planetary_perturbations: true
+  include_solar_radiation_pressure: true
+  cr: 1.3
+  area_to_mass_m2_kg: 0.02
+
+collector:
+  area_m2: 10000
+  pv_efficiency_reference: 0.30
+  reference_temperature_K: 300
+  temperature_coefficient_per_K: -0.0004
+  absorptivity: 0.90
+  incidence_mode: "sun_tracking"
+
+transmitter:
+  mode: "microwave"
+  wavelength_m: 0.12236426857142857   # c / 2.45 GHz = 299792458 / 2.45e9 m
+  aperture_diameter_m: 1000.0
+  electrical_to_beam_efficiency: 0.70
+  pointing_sigma_rad: 1.0e-6
+  aperture_illumination: "parabolic_on_pedestal"
+  edge_taper_dB: 10.0
+  array_element_spacing_m: 0.06
+  array_element_pattern_exponent: 1.0
+
+receiver:
+  sites:
+    - name: "example_site"
+      latitude_deg: 0.0
+      longitude_deg: 0.0
+      altitude_m: 0.0
+  technology: "rectenna"
+  radius_m: 10000
+  min_elevation_deg: 10
+  conversion_efficiency: 0.85
+  grid_efficiency: 0.97
+  max_input_power_W: 1.0e12
+
+thermal:
+  emissivity: 0.90
+  radiator_temperature_limit_K: 450
+  radiating_sides: 2
+  radiator_view_factor: 1.0
+
+atmosphere:
+  itu_r_exceedance_percent: 1.0
+
+models:
+  beam: "aperture_far_field"
+  atmosphere: "itu_r"
+  light_time: true
+  sun_occultation: true
