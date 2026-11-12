@@ -6,7 +6,8 @@ validation claim; validation outcomes live in `docs/validation_report.md`.
 
 ## Conventions (M0)
 
-- **Units.** All computation is in SI: m, s, kg, W, rad, K. The astronomical unit, degrees, days
+- **Units.** All computation is in SI: m, s, kg, W, rad, K. Fixed physical constants live only
+  in `helioswarm.constants` (M1), each with its source. The astronomical unit, degrees, days
   and dB appear only at the configuration/IO boundary, in field names that carry the unit
   (`semimajor_axis_au`, `inclination_deg`, `duration_days`, `edge_taper_dB`). Conversions:
   - 1 au = 149 597 870 700 m exactly (IAU 2012 Resolution B2);
@@ -110,5 +111,152 @@ Studies must override these defaults with sourced values or sweep them.
 
 ## Per-milestone sections
 
-Milestones M1–M6 will add the orbit, ephemeris, access, solar/thermal, beam and link-budget
-models here, each with equations, validity ranges and references.
+Milestones M2–M6 will add the ephemeris, access, solar/thermal, beam and link-budget models
+here, each with equations, validity ranges and references.
+
+## M1: Constants, frames and the analytic two-body orbit (L0)
+
+### Constants (`helioswarm.constants`)
+
+`constants.py` is the only place a fixed physical constant is written as a number. A test
+(`test_constants_are_not_hard_coded_elsewhere`) scans the numeric literals of every other source
+module for the constants' digit strings. Configurable quantities (S_1AU) take their default from
+here.
+
+| Symbol | Value | Source |
+|---|---|---|
+| au | 149 597 870 700 m (exact) | IAU 2012 Resolution B2 |
+| c | 299 792 458 m s⁻¹ (exact) | SI definition of the metre |
+| GM☉ | 1.3271244004127942 × 10²⁰ m³ s⁻² (TDB-compatible) | DE440 via NAIF `gm_de440.tpc` (`BODY10_GM`, km³ s⁻² × 10⁹); Park et al. 2021, AJ 161, 105 |
+| σ | 5.670374419 × 10⁻⁸ W m⁻² K⁻⁴ | CODATA 2018 (= 2π⁵k_B⁴/(15h³c²) with exact SI constants) |
+| S☉ᴺ | 1361 W m⁻² (default of `constants.solar_constant_1au_W_m2`) | IAU 2015 Resolution B3; Kopp & Lean 2011 |
+| R☉ᴺ | 6.957 × 10⁸ m | IAU 2015 Resolution B3 |
+| a_WGS84, 1/f | 6 378 137 m, 298.257223563 | NGA.STND.0036 (WGS 84) |
+| ERA rate | 1.00273781191135448 rev per UT1 day | IERS Conventions 2010 (TN 36), eq. 5.15 |
+| Stellar ("sidereal") day | 86400 s / ERA rate = 86 164.0989 s | derived. This is the inertial rotation period, not the equinox-referenced mean sidereal day (86 164.0905 s) |
+| ε₀ | 84 381.448″ | IAU 1976 (Lieske et al. 1977); the ECLIPJ2000 definition in SPICE |
+| day | 86 400 s | definition |
+
+**GM☉ and time scale.** The DE440 GM is TDB-compatible, and it is consistent with the TDB epochs
+used everywhere (`epoch_tdb_s`). As an independent check it agrees with the IAU 1976 Gaussian
+value k²·au³/d² to 5.0 × 10⁻¹². M2 must check that the value SPICE loads from `gm_de440.tpc`
+equals this constant to float64 round-off.
+
+### Frames (`helioswarm.frames`)
+
+**State containers.**
+
+- Every Cartesian state is a `CartesianState` and every time series a `CartesianTrajectory`.
+  Both are frozen with read-only arrays. Each carries its `frame` (SPICE name), its `origin`
+  (SPICE body name) and its `epoch_tdb_s`, which is TDB seconds past J2000 (SPICE ET), with
+  `time_scale = "TDB"`.
+- Supported frames: `J2000`, `ECLIPJ2000`. Supported origins: `SUN`,
+  `SOLAR SYSTEM BARYCENTER`. Others are rejected.
+- `require_same_frame_and_origin` must guard every subtraction of two states.
+
+**ECLIPJ2000 → J2000.** This is a fixed passive rotation about the common x-axis (the J2000
+equinox): `v_J2000 = R_x(−ε₀) v_ECL`, with
+
+```
+R_x(−ε₀) = [[1, 0, 0], [0, cos ε₀, −sin ε₀], [0, sin ε₀, cos ε₀]]
+```
+
+The ecliptic pole maps to (0, −sin ε₀, cos ε₀). The rotation is time-independent because both
+frames are inertial, and it never changes the origin. Moving from the Sun to the SSB needs the
+ephemeris (M2).
+
+**Validity.** ECLIPJ2000 is the *mean* ecliptic of J2000 as SPICE defines it, not an
+ecliptic of date. Using it as a fixed frame is exact by definition, so there is no
+approximation. M2 cross-checks the matrix against SPICE `pxform`.
+
+### Orbit model L0 (`helioswarm.orbit`)
+
+The model is the two-body problem of a massless test particle about a point-mass Sun, with
+μ = GM☉. Nothing else is included: no planets, no SRP and no relativistic terms. That is the
+L0 level of PDF §6.2. It is valid as a baseline and for unit tests; its deviation from the real
+trajectory ("orbit drift") is assessed against L1 in M2.
+
+The orbital elements `(a, e, i, Ω, ω, ν)` are osculating at `epoch_tdb_s`. They are
+Sun-centred and refer to the x–y plane of `frame`, which is `ECLIPJ2000` for configured orbits.
+Only elliptic orbits are supported (0 ≤ e < 1, a > 0), and the schema enforces perihelion
+> R☉ᴺ.
+
+**Equations** (Vallado, *Fundamentals of Astrodynamics and Applications*, 4th ed., ch. 2,
+Alg. 9/10; Curtis, *Orbital Mechanics for Engineering Students*):
+
+- Kepler III: `n = √(μ/a³)`, `T = 2π/n`. The period does not depend on e.
+- Orbit equation `r = p/(1 + e cos ν)` with `p = a(1 − e²)`.
+- Elements to state, with `P = (cos Ω, sin Ω, 0)`, `Q = (−sin Ω cos i, cos Ω cos i, sin i)`
+  and `u = ω + ν`:
+  - `r = r (cos u P + sin u Q)`
+  - `v = √(μ/p) [−(sin u + e sin ω) P + (cos u + e cos ω) Q]`
+
+  This is algebraically identical to the perifocal vectors rotated by R₃(−Ω)R₁(−i)R₃(−ω).
+  The tests compare against that textbook form.
+- State to elements:
+  - `h = r × v`
+  - `ε = v²/2 − μ/r` and `a = −μ/(2ε)`; ε ≥ 0 is rejected
+  - `e = (v × h)/μ − r/|r|`
+  - `i = atan2(√(h_x² + h_y²), h_z)`
+  - `Ω = atan2(h_x, −h_y)`
+  - `u = atan2(r·Q, r·P)` with `Q = ĥ × P`
+  - `ω = atan2(e·Q, e·P)` and `ν = u − ω`
+- Anomalies use Broucke & Cefola (1973) forms, which are continuous across revolutions:
+  - `ν = E + 2 atan2(β sin E, 1 − β cos E)`
+  - `E = ν − 2 atan2(β sin ν, 1 + β cos ν)`, with `β = e/(1 + √(1 − e²))`
+  - `M = E − e sin E`
+
+**Singular-case conventions.** Both directions use the same conventions, so state round trips
+are exact to round-off.
+
+| Case | Test | Convention | Effect on the state |
+|---|---|---|---|
+| Equatorial | sin i < 10⁻¹³ | i := 0 or π; Ω := 0, so the node line is +x. Retrograde angles are measured clockwise seen from +z. | ≤ r·sin i (< 0.02 m at 1 au) |
+| Circular | e < 10⁻¹³ | e := 0; ω := 0; ν := argument of latitude u | ≤ ~2ea (< 0.03 m at 1 au) |
+| Circular and equatorial | both | ν := true longitude | as above |
+
+Both thresholds lie above the measured float64 noise. That noise is |e| ≤ 8.5 × 10⁻¹⁶ for an
+exactly circular state and sin i ≤ 8.3 × 10⁻¹⁷ after an ECLIPJ2000↔J2000 round trip.
+
+**Kepler's equation.**
+
+1. M is reduced to x = |M mod [−π, π)| ∈ [0, π] (M already in [−π, π) is used unchanged, so
+   small |M| carries no reduction round-off). There the root is bracketed by
+   [x, min(x + e, π)].
+2. Newton's method starts from Danby's guess x + 0.85e. Each iterate is clipped into the
+   shrinking bracket.
+3. On [0, π] the function f(E) = E − e sin E − x is increasing and convex, so in exact
+   arithmetic the clipped Newton iteration converges monotonically for every M and every
+   e < 1.
+4. In float64 it stops when |ΔE| ≤ 10⁻¹² rad (after that step the error is
+   O(e·ΔE²/(1 − e))) **or** when the residual is at round-off, |f(E)| ≤ 4 ε max(x, E). The
+   second (backward-error) test is needed because f is evaluated with an absolute error of a
+   few ε·E, so near e → 1 the root is only determined to ~ε·E/(1 − e cos E). For
+   10⁻¹⁰ ≤ 1 − e ≤ 10⁻⁸ and small M that exceeds 10⁻¹² rad; with only the |ΔE| test Newton
+   fell into a round-off 2-cycle and raised (M1 review). The forward error after a
+   round-off stop is ≲ 2√2 ε/√(1 − e), below 10⁻¹² rad for every M when 1 − e > 4 × 10⁻⁷.
+   The tolerance is absolute: for |E| ≪ 10⁻¹² rad the relative error of E can be large, but
+   its absolute error stays ≤ 10⁻¹² rad.
+5. The cap is 50 iterations. Exceeding it raises `KeplerConvergenceError` with the worst M and
+   the last correction.
+
+Measured over M ∈ [−20, 20]: 4–7 iterations for e ≤ 0.9, 11 for e = 0.999 and 20 for
+e = 0.999999. The backward error is ≤ 8.9 × 10⁻¹⁶ rad on the reduced anomaly. For
+1 − e ∈ {3·10⁻⁸, 10⁻⁸, 3·10⁻⁹, 10⁻⁹, 10⁻¹⁰, 10⁻¹²} and 200 000 log-spaced M ∈ [10⁻³²⁰, 3.1]
+every element converges (25–37 iterations), and against a cancellation-free reference the
+forward error is ≤ 0.11 of the round-off bound 8 ε E/(1 − e cos E).
+
+**Propagation.** `propagate_kepler` computes M(t) = M₀ + n(t − t₀) and then E, ν and r, v with
+fixed (a, e, i, Ω, ω). It works forward and backward in time, and it is vectorised over an
+array of TDB epochs. A state input is first converted with `state_to_elements` and needs an
+explicit μ. The output is in the frame of the elements, with origin `SUN`. There is no
+truncation error. Round-off in M grows as ε_mach·|n Δt|, about 10⁻¹³ rad after 100 revolutions.
+
+**Configuration hook.** `elements_from_config(orbit, *, epoch_tdb_s, mu_m3_s2=GM☉)`. The
+conversions au → m (exact) and deg → rad happen in the config accessors, which is the IO
+boundary. The epoch must be passed in TDB because UTC → TDB conversion needs the leap-second
+kernel and is done only through SPICE `str2et` (M2). This module never converts time scales.
+
+**Not modelled at L0.** Planetary perturbations, SRP and Poynting–Robertson drag, relativistic
+corrections, and the Sun's motion about the SSB. The heliocentric L0 state must be moved to SSB
+with the ephemeris before it is combined with SSB-origin states (M2).

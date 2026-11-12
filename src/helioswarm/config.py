@@ -39,7 +39,13 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from pydantic_core import PydanticUndefined
 
-from helioswarm.constants import AU_M, SECONDS_PER_DAY, SOLAR_RADIUS_NOMINAL_M
+from helioswarm.constants import (
+    AU_M,
+    CMB_TEMPERATURE_K,
+    SECONDS_PER_DAY,
+    SOLAR_IRRADIANCE_NOMINAL_1AU_W_M2,
+    SOLAR_RADIUS_NOMINAL_M,
+)
 
 SCHEMA_VERSION: Final[int] = 1
 """Configuration schema version understood by this package."""
@@ -331,7 +337,10 @@ class OrbitConfig(_Section):
     """Initial osculating heliocentric orbit of the (single) satellite and force-model flags.
 
     Elements are Sun-centred and referred to the ECLIPJ2000 frame at ``initial_epoch_utc``;
-    they are converted to a J2000/SSB state before propagation (M1/M2).
+    the L0 model (``two_body_kepler``, M1) propagates these Sun-centred ECLIPJ2000 elements
+    directly and the resulting trajectory is rotated to J2000 afterwards (``frames.py``); the
+    origin shift Sun -> SSB needs the Sun's ephemeris state (M2). The L1 model (M2) converts
+    the initial state to J2000/SSB before integration.
     """
 
     model: Literal["two_body_kepler", "prescribed_ephemeris_perturbed_test_particle"] = _field(
@@ -1006,10 +1015,11 @@ class ThermalConfig(_Section):
         gt=0.0,
     )
     space_temperature_K: float = _field(
-        2.725,
+        CMB_TEMPERATURE_K,
         unit="K",
         provenance="sourced",
-        source="CMB temperature 2.72548 K, Fixsen (2009) ApJ 707, 916",
+        source="CMB temperature 2.72548 K, Fixsen (2009) ApJ 707, 916 "
+        "(helioswarm.constants.CMB_TEMPERATURE_K)",
         description="Radiative sink temperature T_space (deep-space background).",
         gt=0.0,
     )
@@ -1232,7 +1242,7 @@ class ConstantsConfig(_Section):
     """Physical constants that a study may vary (each with a sourced default)."""
 
     solar_constant_1au_W_m2: float = _field(
-        1361.0,
+        SOLAR_IRRADIANCE_NOMINAL_1AU_W_M2,
         unit="W m^-2",
         provenance="sourced",
         source="IAU 2015 Resolution B3, nominal total solar irradiance S_sun^N = 1361 W m^-2",

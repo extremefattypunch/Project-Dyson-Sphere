@@ -102,7 +102,7 @@ def test_defaults_are_filled_and_documented(mvp_data: dict[str, Any]) -> None:
     cfg = parse_config(mvp_data)
     # Sections absent from the YAML are created with documented defaults.
     assert cfg.constants.solar_constant_1au_W_m2 == 1361.0
-    assert cfg.thermal.space_temperature_K == 2.725
+    assert cfg.thermal.space_temperature_K == 2.72548  # T_CMB, Fixsen (2009) ApJ 707, 916
     assert cfg.atmosphere.optical_zenith_transmittance_cloudy == 0.0
     assert cfg.models.fraunhofer_max_fresnel_number == 0.5
     meta = field_meta(type(cfg.constants), "solar_constant_1au_W_m2")
@@ -502,7 +502,7 @@ def test_resolved_dump_round_trips(tmp_path: Path) -> None:
     # Defaults absent from the input are explicit in the dump.
     resolved = yaml.safe_load(text)
     assert resolved["constants"]["solar_constant_1au_W_m2"] == 1361.0
-    assert resolved["thermal"]["space_temperature_K"] == 2.725
+    assert resolved["thermal"]["space_temperature_K"] == 2.72548
     assert resolved["frames"]["earth_ellipsoid"] == "WGS84"
     assert f"config_hash_sha256: {config_hash(cfg)}" in text
     path = tmp_path / "resolved.yaml"
@@ -536,7 +536,7 @@ def test_hash_invariant_under_equivalent_spellings(mvp_data: dict[str, Any]) -> 
     assert config_hash(parse_config(reordered)) == base
     # (2) defaults written explicitly
     explicit = set_path(copy.deepcopy(mvp_data), "constants.solar_constant_1au_W_m2", 1361.0)
-    set_path(explicit, "thermal.space_temperature_K", 2.725)
+    set_path(explicit, "thermal.space_temperature_K", 2.72548)
     assert config_hash(parse_config(explicit)) == base
     # (3) user-ordered mapping (provenance_overrides) in a different key order; pydantic keeps
     # schema order for fields, so this is the case that needs sort_keys in canonical_json.

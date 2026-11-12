@@ -370,7 +370,10 @@ def test_receiver_heat_rejection_is_optional_and_settable(mvp_data: dict[str, An
 # when the MVP file, the schema (fields/defaults) or the canonical serialisation changes. Update
 # it deliberately together with such a change (and bump schema_version if the change is
 # backward-incompatible); an unexplained change re-keys every run manifest.
-MVP_CONFIG_HASH = "381090d714ac38682ee490fb9ab5b09ac040e17077e82a727c7942e617817274"
+# History: M0 381090d7...7274; M1 review changed the thermal.space_temperature_K default from
+# 2.725 to the cited Fixsen (2009) value 2.72548 K (constants.CMB_TEMPERATURE_K). With
+# 2.725 set explicitly the M0 digest is reproduced, so that default is the only change.
+MVP_CONFIG_HASH = "37999a0901899794057eefa07308b6204f73055408a9b7b67edbb04bd8a35fc2"
 
 
 def test_mvp_config_hash_is_pinned() -> None:

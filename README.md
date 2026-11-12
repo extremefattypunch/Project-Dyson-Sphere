@@ -102,7 +102,7 @@ The schema follows these rules:
 | Milestone | Content | Status |
 |---|---|---|
 | M0 Scaffold | env + lock, package layout, config schema, `validate-config`, lint/type/test, CI | implemented |
-| M1 Analytic orbit | constants, two-body elements ↔ state, Kepler propagation, invariants | planned |
+| M1 Analytic orbit | constants, two-body elements ↔ state, Kepler propagation, invariants | implemented |
 | M2 Ephemeris geometry | SPICE kernels, UTC→TDB, ephemeris provider, L1 propagator, SRP | planned |
 | M3 Access + light time | ground sites, Earth rotation, retarded-time targeting, occultation | planned |
 | M4 Solar + thermal | S(r), PV efficiency law, PV and radiator thermal balance | planned |
