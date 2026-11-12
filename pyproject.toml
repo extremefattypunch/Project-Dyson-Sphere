@@ -96,7 +96,7 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["helioswarm"]
-known-local-folder = ["config_helpers"]
+known-local-folder = ["config_helpers", "geometry_helpers"]
 
 [tool.ruff.format]
 quote-style = "double"

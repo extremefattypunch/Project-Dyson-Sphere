@@ -71,6 +71,12 @@ the individual files. A new kernel set needs a new `kernel_set_id` and a schema 
 | GM⊕ = 3.986004418 × 10¹⁴ m³ s⁻² (TT), L_B = 1.550519768 × 10⁻⁸ | IERS Conventions (2010), Table 1.1 | `gm_de440` Earth GM check |
 | EM-barycentre mean elements a = 1.00000261 au, e = 0.01671123 | Standish, *Keplerian Elements for Approximate Positions of the Major Planets*, JPL SSD, Table 1 | Perihelion and aphelion distance check |
 | Anomalistic year 365.259636 d | Explanatory Supplement to the Astronomical Almanac | EMB perihelion-interval check |
+| IERS-B Earth orientation (UT1 − UTC, polar motion) | `astropy-iers-data` 0.2026.11.9 bundled with astropy 8.0.2 (from `uv.lock`), read offline (`iers.conf.auto_download = False`) | IAU_EARTH vs ITRS → GCRS cross-check (M3) |
+| WGS 84 b = 6 356 752.3142 m, e² = 6.69437999014e-3 | NGA.STND.0036 (WGS 84, 2014), table 3.1 | Derived-constant check (M3) |
+| Station KG0640 MEADES RANCH RESET: NAD 83(2011) 39°13′26.71220″ N, 98°32′31.74540″ W, h = 573.961 m; X = −734 972.563 m, Y = −4 893 188.492 m, Z = 4 011 982.811 m | U.S. National Geodetic Survey datasheet (datasheet95 v8.12.5.20), https://www.ngs.noaa.gov/cgi-bin/ds_mark.prl?PidBox=KG0640, retrieved 2026-11-12; GRS 80 1/f = 298.257222101 (Moritz, J. Geodesy 74, 2000) | Published-station geodetic → Cartesian check (M3 review) |
+| ERA = 2π(0.7790572732640 + 1.00273781191135448 D_UT1) | IERS Conventions (2010), eq. 5.15 | IAU_EARTH rotation-angle decomposition (M3 review) |
+| IAU 2006/2000A celestial-to-terrestrial matrix | ERFA `c2t06a` (pyerfa, installed with astropy from `uv.lock`) | IAU_EARTH offset at 2000–2040 with UT1 = UTC (M3 review) |
+| Transmission light time and stellar aberration (`XCN`, `XCN+S`) | SPICE `spkcpt` with the project kernel set | End-to-end retarded targeting / point-ahead check (M3 review) |
 
 ## Sourced constants and defaults
 
@@ -85,7 +91,10 @@ the individual files. A new kernel set needs a new `kernel_set_id` and a schema 
 | Earth Rotation Angle rate | 1.00273781191135448 rev / UT1 day | `helioswarm.constants.EARTH_ROTATION_ANGLE_RATE_REV_PER_UT1_DAY` | IERS Conventions (2010), TN 36, eq. 5.15 |
 | Stellar ("sidereal") day | 86 164.0989 s (derived) | `helioswarm.constants.STELLAR_DAY_S` | 86400 s / ERA rate |
 | Mean obliquity of J2000 | 84 381.448″ | `helioswarm.constants.OBLIQUITY_J2000_ARCSEC` | IAU 1976 (Lieske et al. 1977, A&A 58, 1); ECLIPJ2000 definition in NAIF Frames Required Reading |
-| Nominal solar radius | 6.957 × 10⁸ m | `helioswarm.constants.SOLAR_RADIUS_NOMINAL_M` | IAU 2015 Resolution B3 |
+| Nominal solar radius | 6.957 × 10⁸ m | `helioswarm.constants.SOLAR_RADIUS_NOMINAL_M` | IAU 2015 Resolution B3 (equal to `pck00011` `BODY10_RADII`; M3 reads the PCK value at run time and a test checks the two agree) |
+| Lunar mean radius | 1 737 400 m | `helioswarm.constants.MOON_RADIUS_M` | IAU WGCCRE 2015 (Archinal et al. 2018, Celest. Mech. Dyn. Astron. 130, 22); equal to `pck00011` `BODY301_RADII` |
+| WGS 84 b, e² (derived) | a(1 − f), f(2 − f) | `helioswarm.constants.WGS84_SEMIMINOR_AXIS_M`, `WGS84_FIRST_ECCENTRICITY_SQUARED` | NGA.STND.0036 table 3.1 |
+| IAU Earth rotation model | α₀ = −0.641 T, δ₀ = 90 − 0.557 T, W = 190.147 + 360.9856235 d (deg) | `pck00011.tpc` (read by SPICE, `IAU_EARTH` frame) | IAU WGCCRE 2009 (Archinal et al. 2011, Celest. Mech. Dyn. Astron. 109, 101); not updated in the 2015 report |
 | Day | 86 400 s | `helioswarm.constants.SECONDS_PER_DAY` | Definition used by IAU/SPICE (Julian day) |
 | Solar irradiance at 1 au | 1361 W m⁻² (default; configurable) | `constants.solar_constant_1au_W_m2` (default taken from `helioswarm.constants`) | IAU 2015 Resolution B3, nominal total solar irradiance |
 | Deep-space sink temperature | 2.72548 K (default, `helioswarm.constants.CMB_TEMPERATURE_K`) | `thermal.space_temperature_K` | Fixsen (2009), ApJ 707, 916: T_CMB = 2.72548 K |

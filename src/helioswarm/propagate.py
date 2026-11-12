@@ -81,10 +81,16 @@ from helioswarm.ephemeris import (
     EphemerisProvider,
     HermiteEphemerisCache,
     shift_state_origin,
+    shift_trajectory_origin,
 )
-from helioswarm.frames import CartesianState, CartesianTrajectory, transform_state
+from helioswarm.frames import (
+    CartesianState,
+    CartesianTrajectory,
+    transform_state,
+    transform_trajectory,
+)
 from helioswarm.kernels import LoadedKernels
-from helioswarm.orbit import elements_from_config, elements_to_state
+from helioswarm.orbit import elements_from_config, elements_to_state, propagate_kepler
 from helioswarm.srp import SrpModel, srp_acceleration_m_s2
 from helioswarm.timescale import TimeGrid, time_grid_from_config, utc_to_tdb_s
 
@@ -768,6 +774,38 @@ def satellite_initial_state(
     return SatelliteState(state=ssb, force_model=force_model_from_config(orbit, constants))
 
 
+def l0_reference_trajectory(
+    orbit: OrbitConfig,
+    epochs_tdb_s: ArrayLike,
+    *,
+    initial_epoch_tdb_s: float,
+    ephemeris: EphemerisProvider,
+) -> CartesianTrajectory:
+    """L0 (two-body Kepler) reference trajectory of the configured orbit, in J2000 / SSB.
+
+    The *orbit-drift* reference of PDF §7.3: the configured osculating Sun-centred ECLIPJ2000
+    elements at ``initial_epoch_tdb_s`` with ``mu = GM_sun`` of the provider (no planets, no
+    SRP), propagated in closed form (:func:`helioswarm.orbit.propagate_kepler`), rotated to
+    J2000 (``R_x(-eps_0)``) and shifted to the SSB with the provider's Sun state at each epoch
+    (``r_SSB = r_helio + r_sun(t)``). Its initial state equals :func:`satellite_initial_state`,
+    so ``|r_L1(t) - r_L0(t)|`` is the drift caused by the planets and SRP.
+
+    Args:
+        orbit: Orbit section of the configuration.
+        epochs_tdb_s: Output epochs [TDB s past J2000].
+        initial_epoch_tdb_s: Osculation epoch of the elements [TDB s past J2000].
+        ephemeris: Provider of the Sun's state and GM.
+
+    Returns:
+        J2000 / SSB trajectory [m, m s^-1].
+    """
+    elements = elements_from_config(
+        orbit, epoch_tdb_s=initial_epoch_tdb_s, mu_m3_s2=ephemeris.gm_m3_s2("SUN")
+    )
+    helio = propagate_kepler(elements, epochs_tdb_s).trajectory
+    return shift_trajectory_origin(transform_trajectory(helio, "J2000"), SSB, ephemeris)
+
+
 class KernelSetMismatchError(ValueError):
     """The loaded SPICE kernel set is not the one the configuration names."""
 
@@ -863,6 +901,7 @@ __all__ = [
     "heliocentric_l1_acceleration_m_s2",
     "initial_state_from_config",
     "integrator_settings_from_config",
+    "l0_reference_trajectory",
     "l1_acceleration_m_s2",
     "point_mass_acceleration_m_s2",
     "propagate_l1",

@@ -420,7 +420,11 @@ def test_receiver_heat_rejection_is_optional_and_settable(mvp_data: dict[str, An
 # M2 review (f2d46ab0...7561 -> b12c5a85...9c18) added the defaulted field
 # frames.ephemeris_kernel_set (the kernel set is a physical input of the run); removing that
 # one key from the canonical JSON reproduces the previous digest (checked when re-pinning).
-MVP_CONFIG_HASH = "b12c5a85b2bf84ca4284e17845d8abfc473e9bcfc4aa558716164e6df2939c18"
+# M3 (b12c5a85...9c18 -> d0087098...962d) added the defaulted numerical fields
+# models.light_time_tolerance_s, models.light_time_max_iterations and
+# models.earth_occultation_standoff_m; removing exactly those three keys from the canonical
+# JSON reproduces b12c5a85...9c18 (checked when re-pinning). schema_version is unchanged.
+MVP_CONFIG_HASH = "d0087098881aa08201665032373a01a3d9ee02b270784aa3c85eb6233695962d"
 
 
 def test_mvp_config_hash_is_pinned() -> None:

@@ -1334,6 +1334,39 @@ class ModelsConfig(_Section):
         ge=0.0,
         le=90.0,
     )
+    light_time_tolerance_s: float = _field(
+        1.0e-9,
+        unit="s",
+        provenance="assumed",
+        kind="numerical",
+        description="Convergence tolerance |tau_new - tau| of the retarded-time (light-time) "
+        "iteration (PDF §7.1). 1e-9 s is 0.3 m of light path; the fixed point contracts by "
+        "~|v_site|/c ~ 1e-4 per iteration, so it is reached in 3-4 iterations.",
+        gt=0.0,
+        le=1.0e-3,
+    )
+    light_time_max_iterations: int = _field(
+        50,
+        unit="1",
+        provenance="assumed",
+        kind="numerical",
+        description="Maximum fixed-point iterations of the light-time solution; epochs that do "
+        "not converge fall back to a bracketed root solve (brentq) and are flagged.",
+        ge=2,
+        le=1000,
+    )
+    earth_occultation_standoff_m: float = _field(
+        1.0,
+        unit="m",
+        provenance="assumed",
+        kind="numerical",
+        description="Length of the beam segment next to the receiver that the Earth-ellipsoid "
+        "blockage test skips, so the receiver end point on the surface does not count as an "
+        "intersection (sites below the ellipsoid are tested against the similar ellipsoid "
+        "through the site). Blind only for |elevation| < standoff/(2a) ~ 8e-8 rad at 1 m.",
+        gt=0.0,
+        le=1000.0,
+    )
     fraunhofer_max_fresnel_number: float = _field(
         0.5,
         unit="1",

@@ -120,6 +120,7 @@ _FORBIDDEN_LITERALS = {
     "WGS84 a": r"6_?378_?137",
     "WGS84 1/f": r"298\.257223563",
     "solar radius": r"6\.957e|695_?700",
+    "Moon radius": r"1_?737_?400|1\.7374e",
     "solar constant": r"^1_?361(\.0*)?$",
     "CMB temperature": r"^2\.725",
 }

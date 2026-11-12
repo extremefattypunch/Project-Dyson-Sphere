@@ -109,7 +109,7 @@ The schema follows these rules:
 | M0 Scaffold | env + lock, package layout, config schema, `validate-config`, lint/type/test, CI | implemented |
 | M1 Analytic orbit | constants, two-body elements ↔ state, Kepler propagation, invariants | implemented |
 | M2 Ephemeris geometry | SPICE kernels, UTC→TDB, ephemeris provider, L1 propagator, SRP | implemented |
-| M3 Access + light time | ground sites, Earth rotation, retarded-time targeting, occultation | planned |
+| M3 Access + light time | ground sites, Earth rotation, retarded-time targeting, occultation | implemented |
 | M4 Solar + thermal | S(r), PV efficiency law, PV and radiator thermal balance | planned |
 | M5 Beam physics | Airy/Gaussian/Fresnel optics, microwave aperture, capture, pointing, atmosphere | planned |
 | M6 End-to-end single satellite | link budget, run outputs, metrics, figures, validation report | planned |

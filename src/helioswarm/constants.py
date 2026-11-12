@@ -79,6 +79,15 @@ SOLAR_RADIUS_NOMINAL_M: Final[float] = 6.957e8
 695 700 km)."""
 
 # ---------------------------------------------------------------------------------------------
+# Moon
+# ---------------------------------------------------------------------------------------------
+
+MOON_RADIUS_M: Final[float] = 1_737_400.0
+"""Mean radius of the Moon [m] (sphere). IAU WGCCRE 2015 report: Archinal et al. (2018),
+Celest. Mech. Dyn. Astron. 130, 22, table 5 (1737.4 km); identical to ``BODY301_RADII`` of the
+NAIF text PCK ``pck00011.tpc`` (a test reads the kernel and compares)."""
+
+# ---------------------------------------------------------------------------------------------
 # Earth
 # ---------------------------------------------------------------------------------------------
 
@@ -91,6 +100,14 @@ WGS84_INVERSE_FLATTENING: Final[float] = 298.257223563
 
 WGS84_FLATTENING: Final[float] = 1.0 / WGS84_INVERSE_FLATTENING
 """WGS 84 ellipsoid flattening f [1] (derived: 1 / WGS84_INVERSE_FLATTENING)."""
+
+WGS84_SEMIMINOR_AXIS_M: Final[float] = WGS84_SEMIMAJOR_AXIS_M * (1.0 - WGS84_FLATTENING)
+"""WGS 84 ellipsoid semi-minor (polar) axis b = a (1 - f) [m] (derived; 6 356 752.314 2 m,
+NGA.STND.0036 table 3.1)."""
+
+WGS84_FIRST_ECCENTRICITY_SQUARED: Final[float] = WGS84_FLATTENING * (2.0 - WGS84_FLATTENING)
+"""WGS 84 first eccentricity squared e^2 = f (2 - f) [1] (derived; 6.694 379 990 14e-3,
+NGA.STND.0036 table 3.1)."""
 
 EARTH_ROTATION_ANGLE_RATE_REV_PER_UT1_DAY: Final[float] = 1.00273781191135448
 """Rate of the Earth Rotation Angle [revolutions per UT1 day of 86400 s]. IERS Conventions
@@ -128,6 +145,7 @@ __all__ = [
     "CMB_TEMPERATURE_K",
     "EARTH_ROTATION_ANGLE_RATE_REV_PER_UT1_DAY",
     "GM_SUN_M3_S2",
+    "MOON_RADIUS_M",
     "M_PER_KM",
     "OBLIQUITY_J2000_ARCSEC",
     "OBLIQUITY_J2000_RAD",
@@ -137,7 +155,9 @@ __all__ = [
     "SPEED_OF_LIGHT_M_S",
     "STEFAN_BOLTZMANN_W_M2_K4",
     "STELLAR_DAY_S",
+    "WGS84_FIRST_ECCENTRICITY_SQUARED",
     "WGS84_FLATTENING",
     "WGS84_INVERSE_FLATTENING",
     "WGS84_SEMIMAJOR_AXIS_M",
+    "WGS84_SEMIMINOR_AXIS_M",
 ]

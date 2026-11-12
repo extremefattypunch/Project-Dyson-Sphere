@@ -115,7 +115,7 @@ Studies must override these defaults with sourced values or sweep them.
 ## Per-milestone sections
 
 Milestones M2–M6 add the ephemeris, access, solar/thermal, beam and link-budget models here,
-each with equations, validity ranges and references. M2 follows M1 below.
+each with equations, validity ranges and references. M1, M2 and M3 follow below.
 
 ## M1: Constants, frames and the analytic two-body orbit (L0)
 
@@ -571,3 +571,258 @@ meaning.
   (`initial_state_from_config`, `propagate_l1_from_config`) refuse a loaded kernel set with a
   different id, so the configuration pins the ephemeris and GM data (the manifest's SHA-256
   values pin the files).
+
+## M3: Ground sites, Earth rotation, light-time targeting, occultation and access
+
+Modules: `helioswarm.ground` (sites, Earth orientation, inertial site states) and
+`helioswarm.visibility` (light time, pointing, receiver geometry, occultation, illumination,
+PDF §7.3 diagnostics). Every state is J2000 / SSB at TDB epochs. The Earth-fixed site is kept
+apart from its inertial state (`GroundSite` vs `SiteTrajectory`, PDF §3).
+
+### Ground sites (WGS 84)
+
+- **Geodetic → Earth-fixed** (NGA.STND.0036; Hofmann-Wellenhof et al., *GNSS*, 2008,
+  eq. 2.31): `N = a/√(1 − e² sin²φ)`, `x = (N + h) cos φ cos λ`, `y = (N + h) cos φ sin λ`,
+  `z = (N(1 − e²) + h) sin φ`, with `a = 6 378 137 m`, `e² = f(2 − f)` (derived constants
+  `WGS84_SEMIMINOR_AXIS_M`, `WGS84_FIRST_ECCENTRICITY_SQUARED`, checked against NGA table 3.1).
+  Agrees with SPICE `georec` and astropy/ERFA `gd2gc` to < 1 mm (measured ~1e-9 m).
+- **Local frame**: up = ellipsoid normal (geodetic vertical)
+  `(cos φ cos λ, cos φ sin λ, sin φ)`; east `(−sin λ, cos λ, 0)`; north
+  `(−sin φ cos λ, −sin φ sin λ, cos φ)`; east × north = up (checked against the gradient of the
+  ellipsoid equation and SPICE `surfnm`).
+- Sites are fixed to the Earth-fixed frame `IAU_EARTH`. Terrain, plate motion, tides and the
+  difference between WGS 84 and ITRF coordinates (centimetres) are not modelled.
+
+### Earth orientation (`IAU_EARTH`, a documented approximation)
+
+- `v_J2000 = R(t) v_IAU_EARTH` with `R = [W]₃[π/2 − δ₀]₁[π/2 + α₀]₃)ᵀ` (NAIF PCK Required
+  Reading) and the `pck00011.tpc` constants (IAU WGCCRE 2009; the 2015 report gives no new Earth
+  values): `α₀ = 0° − 0.641° T`, `δ₀ = 90° − 0.557° T`, `W = 190.147° + 360.9856235° d` (T
+  centuries, d days of TDB past J2000). SPICE `sxform` returns `R` and the exact `dR/dt`; a test
+  re-evaluates the closed form from the kernel-pool constants (agreement 3e-11, the float64
+  spacing of W ~ 7e4 rad). The rotation period of the model is 86 400 × 360/360.9856235 s
+  = 86 164.0989 s; it differs from the IERS 2010 stellar day (`constants.STELLAR_DAY_S`) by
+  3.1e-8 relative. A site returns to its J2000 direction after one period to < 1e-6 rad (pole
+  precession 2.7e-7 rad/day) and turns 0.9856235° beyond a full turn per 86 400 s.
+- **Accuracy: rotation angle (the dominant term).** The IAU angle of the prime meridian
+  measured from the J2000 x-axis, `90° + α₀ + W = 280.147° − 0.641° T + 360.9856235° d`, is a
+  linear function of TDB. The Earth actually turns by the IERS Earth Rotation Angle of UT1,
+  `ERA = 2π(0.7790572732640 + 1.00273781191135448 D_UT1)` (IERS Conventions 2010, eq. 5.15).
+  The offset about the pole is therefore `ω[(TT − UT1) − 75.06 s − 0.554 s/yr · (t − J2000)]`:
+  - **Constant part.** The IAU W₀ = 190.147° matches ERA only for TT − UT1 = 75.06 s at J2000.
+    The actual value was 63.8 s, so the IAU frame is already −0.047° = −8.2e-4 rad (−11 s of
+    rotation, 5.2 km at the equator) off at J2000.
+  - **Secular part.** The IAU rate (W rate plus the −0.641°/century node term) is 6.3e-6
+    deg/day slower than the ERA rate: −4.04e-5 rad/yr, i.e. −0.55 s of rotation per year
+    while TT − UT1 is constant. The growth of TT − UT1 (+5.5 s from 2000 to 2020) partly
+    offset this drift in the past.
+  - **Nutation does not enter this angle.** The closed form above matches ERFA `c2t06a`
+    (IAU 2006/2000A, UT1 = UTC, no polar motion) to ≤ 2.4e-8 rad at 2000, 2020, 2030 and
+    2040; the equation of the equinoxes (≤ 1.2 s) and ΔT drift alone, which earlier versions
+    of this section blamed, cannot produce the 11 s offset at J2000.
+  - **Simulated epochs.** With TT − UT1 held at its 2017–2026 value (~69.2 s), the offset is
+    −1.64e-3 rad (−22.5 s of rotation, 10.5 km at the equator) in 2030 and −2.04e-3 rad (−28 s,
+    13.0 km) in 2040, growing ~0.26 km/yr at the equator; the real value depends on the
+    unpredictable future TT − UT1 (a few seconds).
+- **Accuracy: pole (secondary).** IAU_EARTH omits nutation (pole offset up to
+  √((17.2″ sin 23.4°)² + 9.2″²) = 11.5″ = 5.6e-5 rad ≈ 0.36 km at the surface; measured
+  3.3–4.7e-5 rad) and polar motion (~0.3″, ~10 m).
+- **Measured against IERS (past epochs).** astropy's IERS-based ITRS → GCRS (IAU 2006/2000A,
+  bundled IERS-B, no network; `tests/unit/test_ground.py`), equatorial site:
+
+  | Epoch (UTC) | Site position | Pole direction | Rotation angle about the pole |
+  |---|---|---|---|
+  | 2005-03-01 | 6.14 km | 4.4e-5 rad | −9.6e-4 rad |
+  | 2020-06-15 | 7.89 km | 3.7e-5 rad | −1.24e-3 rad |
+  | 2023-01-01 | 8.65 km | 3.9e-5 rad | −1.36e-3 rad |
+
+  The site velocity differs by ω·|Δr| (0.45–0.63 m/s). The ERFA test
+  (`test_iau_earth_rotation_angle_offset_is_the_w_definition_against_era`) pins the
+  decomposition and the 2030/2040 values above.
+- **Consequence.** For the simulated epochs (2030+) UT1 cannot be predicted to better than a
+  few seconds, so no model can place the site in inertial space to better than ~1 km years
+  ahead. The IAU offset (~23 s in 2030) shifts the simulated site along its parallel, i.e. it
+  shifts the diurnal access pattern by ~23 s (growing ~0.55 s/yr); access fractions and
+  elevation statistics are unaffected. It is *not* a pointing error in the simulation, because
+  the simulated transmitter aims at the simulated site. Comparisons with real passes would need
+  an ITRS (IERS) Earth orientation; the astropy and ERFA comparison tests are the path for that.
+
+### Inertial site state
+
+`r_site(t) = r_⊕(t) + R(t) r_ef`, `v_site(t) = v_⊕(t) + Ṙ(t) r_ef` (= ω × r), with the Earth
+(NAIF 399) geometric J2000/SSB state from the ephemeris provider. Checked: velocity vs central
+differences (< 1e-4 m/s), |ω × r| = ω ρ (rel 1e-7; the pole-precession part of ω is 4.8e-8).
+
+### Retarded-time (light-time) targeting (PDF §7.1)
+
+- Grid epochs are **emission** epochs `t_e`. The light time τ solves
+  `c τ = |r_site(t_e + τ) − r_sat(t_e)|` by the PDF's fixed-point iteration
+  (`τ₀ = |r_site(t_e) − r_sat(t_e)|/c`; contraction factor ≤ |v_site|/c ≈ 1e-4), vectorised over
+  the grid, with `models.light_time_tolerance_s` (1e-9 s = 0.3 m of path) and
+  `models.light_time_max_iterations` (50). Unconverged epochs fall back to `scipy.optimize.brentq`
+  on `f(τ) = |r_site(t_e + τ) − r_sat| − cτ` (bracket [0, 2ᵏ·2τ₀]) and are flagged
+  (`LightTimeSolution.method`). Stored: `t_emit_tdb_s`, `t_arrival_tdb_s`, iterations, method,
+  residual `|cτ − |ρ||`. MVP year: 3 iterations at every epoch, residual ≤ 3 mm, no fallback.
+- Float64 epochs ~1e9 s are spaced 1.2e-7 s, so `t_arrival` is represented to ~6e-8 s
+  (≤ 2 mm of site motion).
+- `models.light_time = false` selects the *instantaneous geometry approximation*: the site at
+  `t_e`, `t_arrival = t_e`, and `light_time_s = range/c` reported but not applied. The aim
+  then differs from the retarded aim by ~|v_⊥|/c (asin(v/c) exactly for a site moving
+  perpendicular to the line of sight; tested), i.e. ~1e-4 rad.
+- **Neglected (stated, PDF §7.1):** relativistic light propagation. For the MVP geometry
+  (two 1 au orbits 70° apart, path 1.15 au, impact parameter 0.82 au) the Shapiro delay
+  `(2GM☉/c³) ln((r₁ + r₂ + R)/(r₁ + r₂ − R))` is 1.3e-5 s (3.9 km of path; it moves the
+  arrival epoch, not the aim: 1.3e-5 s × 30 km/s = 0.4 m of site motion). The gravitational
+  bending of the path displaces the beam transversely at the receiver by ~2.4 km (1.4e-8 rad
+  as seen from the transmitter; numerical integration of the weak-field transverse acceleration
+  `2GM b/(c² r³)`, coordinate-dependent at this level), about 0.14 λ/D for a 1 µm, 10 m
+  aperture. Near superior conjunction both grow (1.1e-4 s and ~2e-6 rad for a path passing
+  ~2 solar radii from the Sun, heliocentric separation 179°), where the link is blocked anyway. A real link would point closed-loop on a receiver beacon
+  (reciprocal path), which removes the bending to first order; the simulator's flat-space
+  aim is self-consistent.
+
+### Pointing (beam direction) and aberration
+
+- `u = (r_site(t_a) − r_sat(t_e))/|…|` (J2000): the geometric photon direction in the
+  barycentric frame. It contains the point-ahead for the **target's** motion
+  (`target_motion_point_ahead_rad`, the angle to the site's emission-epoch position:
+  5.9e-5 rad max for the MVP year).
+- **Transmitter aberration (implemented, not neglected).** The transmitter, moving with
+  `v_sat` relative to the barycentric frame, must point along the Lorentz-aberrated direction
+  `u′ = [u + (γ − 1)(u·b̂)b̂ − γβ]/[γ(1 − β·u)]`, `β = v_sat/c` (Rindler, *Relativity*, 2006,
+  §4.4); to first order `u′ = u − β + (u·β)u`, magnitude `|β_⊥| ≤ |v|/c ≈ 1e-4 rad`.
+  Stored as `transmit_direction_tx_frame_unit` and `transmitter_aberration_rad` (5.9e-5 rad
+  max for the MVP year, ~600 optical beam widths λ/D = 1e-7 rad). Net angle between `u′` and
+  the emission-epoch line of sight: 1.11–1.18e-4 rad (relative speed 34 km/s). Checks: inverse
+  transformation round trip, exact case `u = ŷ, v = βc x̂ → (−β, 1/γ, 0)`, and a comoving
+  transmitter/receiver pair whose two corrections cancel to < 3β² (a sign error leaves 2e-4).
+- **Pointing rate** (inertial, analytic): `τ′ = u·(v_site − v_sat)/(c − u·v_site)`,
+  `ρ′ = v_site(1 + τ′) − v_sat`, `u̇ = (I − uuᵀ)ρ′/|ρ|`, `pointing_rate_rad_s = |u̇|`;
+  matches central differences to 1e-6 relative. MVP year: mean 1.99e-7 rad/s (the line
+  between two near-co-orbiting bodies turns at the mean motion 2π/yr).
+- **Range rate** `range_rate_m_s = u·(v_site(t_a) − v_sat(t_e))` (relative radial velocity,
+  positive when separating); `light_time_rate = dτ/dt_e`, with `c·τ′ = range_rate/(1 − u·v_site/c)`
+  (exact identity, tested).
+
+### Receiver geometry
+
+- Apparent direction to the satellite in the receiver's rest frame:
+  `s = −u′(u, v_site(t_a))` (same aberration formula with the site's orbital + rotational
+  velocity). This keeps elevation consistent with the Earth-blockage test (photon path in the
+  Earth's translating frame); the two differ only by the rotation speed, 465 m/s / c = 1.6e-6
+  rad. Without it, the barycentric direction would misplace the horizon by up to 1e-4 rad.
+- Elevation `atan2(s·up, |s − (s·up)up|)` (geodetic up at `t_a`); azimuth
+  `atan2(s·east, s·north)` from north through east. **No atmospheric refraction** (it raises
+  the apparent elevation by ~0.1° at 10°; the min-elevation constraint applies to the
+  unrefracted elevation).
+- Sun separation: angle between `s` and the apparent direction of the Sun's centre (light
+  leaving the Sun at `t_a − τ_☉`, two fixed-point steps, aberrated the same way). The Sun's
+  SSB speed (~13 m/s) makes the remaining epoch error negligible.
+- Flags: `below_min_elevation = elevation < receiver.min_elevation_deg`;
+  `sun_avoidance_violation = sun_separation < receiver.sun_avoidance_deg` (0 → never).
+
+### Occultation of the beam segment (PDF §6.4)
+
+- The beam is the straight segment `r_sat(t_e) → r_site(t_a)`. Each occulter B is tested in
+  its own (Galilean) comoving frame: the segment `p₀ = r_sat(t_e) − r_B(t_e)` →
+  `p₁ = r_site(t_a) − r_B(t_a)` is the exact photon path relative to a uniformly moving body;
+  B's acceleration bends it by ≤ |a_B|τ²/8 (Sun ~0.03 m; Moon ≤ 9e-3 m s⁻² × (600 s)²/8
+  ≈ 0.4 km ≪ R_moon). A test compares with a brute-force photon/Moon sampling for a Moon moving
+  at 100 km/s (static-Moon treatment off by 4e7 m).
+- **Earth**: segment–ellipsoid intersection in `IAU_EARTH` at `t_a`
+  (`p₀ = R(t_a)ᵀ(r_sat(t_e) − r_⊕(t_e))`, `p₁ = r_ef`). Scaling `(x/a, y/a, z/b)` maps the
+  WGS 84 ellipsoid to the unit sphere, so the test is `min_{s∈[0, s_max]}|p₀′ + s(p₁′ − p₀′)| < 1`.
+  The last `models.earth_occultation_standoff_m` (1 m) next to the receiver are excluded
+  (`s_max = 1 − standoff/L`) because the receiver lies on the surface; this is blind only for
+  |elevation| < standoff/(2a) ≈ 8e-8 rad. Sites with h < 0 are tested against the WGS 84
+  ellipsoid scaled by `k = √((x² + y²)/a² + z²/b²) < 1`, the similar ellipsoid that passes
+  exactly through the site, so the site lies on the tested surface as it does for h = 0. Its
+  normal at the site differs from the geodetic up by ≤ ~e²|h|/a (5.3e-7 rad at h = −1000 m), so
+  blockage and apparent elevation < 0 agree to that level. (The M3 version lowered both axes
+  by |h|; that is not a parallel surface and left the site ~1.4 mm inside it at h = −1000 m,
+  which flagged every ray below ~1e-3 rad of elevation as Earth-blocked. Fixed in the M3
+  review.) The Earth's rotation during the last 2a/c ≈ 43 ms of the path
+  (≤ 20 m at the surface) is neglected. Cross-checked against SPICE `surfpt` on ~2900 random
+  segments (identical outcomes). No atmosphere/terrain margin: the min-elevation constraint
+  plays that role.
+- **Sun**: blocked if the segment comes closer to the Sun's centre than
+  `R_block = d sin(min(asin(R☉/d) + m, π/2))`, `d` = receiver–Sun distance,
+  `m = models.sun_occultation_limb_margin_deg`. For a satellite beyond the Sun this is exactly
+  "within (apparent solar radius + margin) of the Sun's centre as seen from the receiver", the
+  configured meaning of the margin (the M3 brief's `R☉(1 + margin)` is a fractional variant of
+  the same idea; the existing angular field was kept). With m = 0 it is the IAU 2015 nominal
+  sphere (695 700 km = `pck00011` `BODY10_RADII`). A satellite *in front of* the Sun near its
+  direction is not occulted but is caught by the Sun-avoidance angle.
+- **Moon**: blocked if the segment comes closer to the Moon's centre than R_moon = 1737.4 km
+  (IAU WGCCRE 2015 = `pck00011` `BODY301_RADII`; `constants.MOON_RADIUS_M`).
+- `visible = not (earth_blocked or sun_blocked or moon_blocked or below_min_elevation or
+  sun_avoidance_violation)`; `occulted_by` names the first blocking body (EARTH, SUN, MOON).
+  Checks disabled in `models.*_occultation` are not evaluated (flag false, distance NaN).
+
+### Satellite illumination (conical shadow with penumbra)
+
+- From the satellite at `t_e`, the Sun and each occulter (Earth, Moon) are uniform disks of
+  apparent radius `asin(R/d)` at their light-time-retarded positions (two fixed-point steps;
+  the occulter's ~30 km/s motion over a few hundred seconds is comparable to the Earth's
+  radius, so the correction matters; tested). Hidden fraction = circle–circle overlap area of
+  the two disks (planar formula on the sky, evaluated with `atan2` for conditioning near
+  tangency; Montenbruck & Gill 2000, §3.4.2) / (π r☉²): 0 apart, 1 in the umbra,
+  (r_B/r☉)² annular. Only occulters nearer than the Sun count. Earth: sphere of the equatorial
+  radius (conservative; oblateness moves the shadow edge by ≤ 21 km). Moon: mean radius.
+- Neglected: limb darkening (during partial phases the hidden *power* fraction differs from
+  the hidden *area* fraction computed here; not quantified in M3), the
+  small-angle error O(r²) ≈ 2e-5 relative at 1 au, atmospheric refraction/extinction of the
+  Earth's limb, and planets as occulters. If two occulters overlap the solar disk at once their
+  fractions are summed (an upper bound on the loss if they also overlap each other) and the
+  epoch is flagged `multiple_occulters`.
+- `IlluminationResult` records the ephemeris kernel ids it was computed from (`source_ids`)
+  and its time scale (`TDB`), like `AccessResult`.
+- MVP year: illumination 1.0 at every epoch (the satellite trails the Earth by ~70°; the
+  Earth–Sun separation seen from the satellite is ≥ 53.7°).
+
+### Orbital outputs and diagnostics (PDF §7.3)
+
+`summarize_access(access, orbit_drift=…)` → `AccessSummary`: access, occultation (any, Earth,
+Sun, Moon), below-min-elevation and Sun-avoidance fractions (of grid samples = of time on the
+TDB-uniform grid); Earth range min/mean/max; light time min/mean/max; range rate min/max;
+pointing rate mean/max; transmitter aberration and target point-ahead maxima; maximum
+elevation; light-time solver diagnostics; the diurnal-sampling diagnostic
+`hour_angle_max_gap_rad` (below); and the orbit drift `|r_L1 − r_L0|` (max, final)
+against `propagate.l0_reference_trajectory` (the configured elements propagated in closed form
+with μ = GM☉, no planets, no SRP, shifted to the SSB with the provider's Sun; equal to Sun-only
+L1 to < 1e-2 m over a year, tested).
+
+**MVP year (2030, hourly, site 0°N 0°E, min elevation 10°):** range 1.122–1.180 au (the
+satellite trails the Earth by ~70°, so 2 sin 35° au ≈ 1.15 au), light time 559.9 / 574.5 /
+588.9 s (min/mean/max), range rate −1.31 … +1.33 km/s, pointing rate 1.99e-7 rad/s mean,
+access fraction 0.4220, Earth occultation 0.5004, Sun/Moon occultation 0, Sun separation
+53.7–56.1°, orbit drift vs L0 1.21e7 m max (planets and SRP partly cancel; M2 measured
+3.25e7 m for planets alone and 3.74e7 m for SRP alone). The access computation takes ~1.2–1.6
+s for the 8767 epochs.
+
+**Sampling caveat (hourly aliasing).** The satellite's synodic day is within minutes of the
+solar day, so an hourly grid samples nearly the same 24 hour angles every day. The hourly
+access fraction (0.4220) is therefore quantised and differs from the analytic diurnal fraction
+for an equatorial site, mean of `acos(sin 10°/cos δ)/π` = 0.4420, by 0.020 (≤ 1/24). With
+5-minute steps over 30 days the two agree to < 0.005 (tested). The summary now reports this
+explicitly: `AccessSummary.hour_angle_max_gap_rad` is the largest gap between the sampled
+satellite hour angles at the site (`satellite_hour_angle_rad`, `max_circular_gap_rad`). A
+diurnal window's fraction is resolved only to roughly gap/(2π) per window edge (an
+order-of-magnitude guide, not a bound). MVP year at 3600 s: gap 8.6° (gap/2π = 0.024, against
+the observed 0.020 bias); 30 days at 300 s: 0.07°. M6 metrics must use an output step that
+resolves the diurnal pattern (or is incommensurate with the day) when reporting availability,
+and should check this diagnostic.
+
+### Configuration fields added in M3
+
+All `assumed`, `numerical`, with defaults; they change the config hash (re-pinned:
+`b12c5a85…9c18` → `d0087098…962d`; removing exactly these three keys reproduces the old
+digest) but not `schema_version`.
+
+- `models.light_time_tolerance_s`: 1e-9 s, range (0, 1e-3].
+- `models.light_time_max_iterations`: 50, range [2, 1000].
+- `models.earth_occultation_standoff_m`: 1 m, range (0, 1000].
+
+The existing fields `receiver.min_elevation_deg`, `receiver.sun_avoidance_deg`,
+`models.light_time`, `models.{earth,sun,moon}_occultation` and
+`models.sun_occultation_limb_margin_deg` are used as defined in M0.

@@ -20,13 +20,14 @@ in `docs/milestones/M0.md`, section D.
 | §7.4 | Circular two-body orbit preserves radius and energy *within the selected integrator tolerance* — L1 numerical propagator (planets off) | 1e-12 (= rtol) | **pass** (M2). L1 Sun-only (Sun at rest), circular 1 au, i = 0.3 rad, 3 years, rtol 1e-12, 1-day step cap: max abs(r/a − 1) = 4.7e-15, energy drift 5.6e-15 (`test_l1_propagation::test_circular_orbit_radius_is_preserved_within_integrator_tolerance`) |
 | §7.4 | Orbital period matches Kepler's third law | 1e-10 relative | **pass** (M1). The period was measured independently by a DOP853 integration (rtol 1e-12) with a return-direction event for a ∈ {0.4, 1, 5.2}, e ∈ {0, 0.5, 0.9}; max deviation from 2π√(a³/μ) is 2.5e-12. T(1 au) with GM☉(DE440) equals the Gaussian year 2π/k to 1e-10 |
 | §7.4 | Earth–Sun distance agrees with SPICE at selected epochs | 1 m (Horizons); 11.2 km (epv00) | **pass** (M2). de440s vs JPL Horizons (DE441) at 6 TDB epochs 2000–2050, including the 2024 perihelion and aphelion: position ≤ 5.4e-2 m, velocity ≤ 1.5e-7 m/s. vs ERFA epv00 at 41 epochs 1900–2100: 7.1 km, 3.1 mm/s (documented epv00 maxima 11.2 km, 5.0 mm/s) |
-| §7.4 | Synthetic fixed geometry gives the analytic light time | M3 | not yet run |
-| §7.4 | Receiver site makes one sidereal rotation per sidereal day | M3 | not yet run |
-| §7.4 | Beam segment intersecting the Earth/Sun is flagged as occulted | M3 | not yet run |
+| §7.4 | Synthetic fixed geometry gives the analytic light time | 1e-14 relative (static); tolerance + 2e-11 s (moving site) | **pass** (M3). Static: τ = d/c to rounding; uniformly moving site: fixed point = closed-form quadratic root for tolerances 1e-9 and 1e-12 s; 0.9c receding site: brentq fallback = closed form to 2e-9 s (`test_visibility.py`) |
+| §7.4 | Receiver site makes one sidereal rotation per sidereal day | 1e-6 rad; 1e-4 deg | **pass** (M3). IAU_EARTH (pck00011): the site's J2000 direction returns after one model period 86 164.0989 s (and after the IERS stellar day) to < 1e-6 rad; it turns 0.9856235° beyond a full turn per 86 400 s; `sxform` = closed form from the PCK constants to 3e-11 (`test_ground.py`) |
+| §7.4 | Beam segment intersecting the Earth/Sun is flagged as occulted | flips at R_block(1 ± 1e-6); horizon ± 1e-5 rad | **pass** (M3). Earth: through-Earth beams flagged, flips at the geodetic horizon (lat 0°, 60°), moving Earth handled in its own frame, ~2900 random segments identical to SPICE `surfpt`; Sun: flips at R☉ and at the limb + 0.5° margin, superior conjunction flagged (synthetic and with de440s); Moon: flips at R_moon, moving Moon = brute-force photon path (`test_visibility.py`, `test_access_mvp.py`) |
 | §8.5 | 1 au, normal incidence recovers S_1AU; 1/r² scaling; zero at eclipse; energy closure; A_rad ∝ 1/(εT⁴) | M4 | not yet run |
 | §9 / §13.1 | Airy first-null scaling, total power normalisation, encircled energy, capture convergence, pointing monotonicity | M5 | not yet run |
 | §13.2 | End-to-end integration tests | M6 | not yet run |
-| §13.3 | Independent checks (REBOUND, SPICE/JPL, HCIPy, ITU-R) | M2–M6 | REBOUND and SPICE/JPL **pass** (M2, see below); HCIPy and ITU-R not yet run |
+| §13.1 (ground/visibility) | Known station coordinates | 1.5 mm per component | **pass** (M3 review). NGS datasheet KG0640 (MEADES RANCH RESET, NAD 83(2011)/GRS 80) published geodetic → published X, Y, Z: ≤ 0.46 mm (`test_ground.py::test_published_station_meades_ranch_reset`) |
+| §13.3 | Independent checks (REBOUND, SPICE/JPL, HCIPy, ITU-R) | M2–M6 | REBOUND and SPICE/JPL **pass** (M2, see below); SPICE `spkcpt` XCN/XCN+S end-to-end light time and point-ahead **pass** (M3 review); HCIPy and ITU-R not yet run |
 
 ## M1: analytic orbit (L0): independent checks
 
@@ -83,6 +84,53 @@ skipped. Details are in `docs/milestones/M2.md`.
 | REBOUND IAS15 full N-body vs L1, 1 yr | REBOUND | 10 m | 1.03 m (REBOUND's planets drift from DE440: Earth 61 km, Mercury 581 km; the satellite is only tidally sensitive). Barycentric path vs REBOUND: 565 m |
 | REBOUND vs L1, both without Neptune, 1 yr | REBOUND | 10 m | 1.4 m (dropping Neptune changes L1 by 2.9e3 m) |
 | 1PN along-track drift estimate 2β₁PN n t a (documented omission) | direct integration with/without the 1PN term | — | 55 667 m both ways (M2 review; the earlier "~10 km/yr" was an unmeasured underestimate) |
+
+## M3: ground sites, Earth rotation, light time, occultation, access: independent checks
+
+These numbers come from `tests/unit/test_ground.py`, `tests/unit/test_visibility.py` and
+`tests/integration/test_access_mvp.py`; every SPICE test ran (none skipped). Details are in
+`docs/milestones/M3.md`.
+
+| Check | Reference | Tolerance | Measured |
+|---|---|---|---|
+| WGS 84 geodetic → Earth-fixed, 8 sites (poles, h = −430 … 4205 m) | SPICE `georec`; astropy/ERFA `gd2gc` | 1 mm | ~1e-9 m; `recgeo` round trip 1e-12 rad, 1e-6 m |
+| Equator/prime meridian, poles, 90° E | (a, 0, 0), (0, 0, ±b), (0, a, 0) | exact / 1e-9 m | pass |
+| Up vector = ellipsoid normal | gradient of the ellipsoid equation; SPICE `surfnm` | 1e-14 | pass |
+| WGS 84 derived b, e² | NGA.STND.0036 table 3.1 | 1e-4 m; 1e-11 rel | pass |
+| IAU_EARTH rotation matrix and rate (4 epochs) | closed form from the `pck00011` constants (`gdpool`) | 3e-11; 2e-11 s⁻¹ | pass |
+| Site velocity | central difference; ω ρ | 1e-4 m/s; 1e-7 rel | pass |
+| IAU_EARTH vs astropy ITRS → GCRS (IERS-B, offline), equatorial site | astropy 8.0.2 / astropy-iers-data 0.2026.11.9 | site < 13 km, pole < 1e-4 rad, angle < 2e-3 rad | 6.14 / 7.89 / 8.65 km; 4.4e-5 / 3.7e-5 / 3.9e-5 rad; −0.96 / −1.24 / −1.36e-3 rad (2005 / 2020 / 2023). **Documented approximation**, see model_assumptions.md M3 |
+| IAU_EARTH rotation-angle offset = IAU angle(TDB) − ERA(UT1), 2000/2020/2030/2040, UT1 = UTC | ERFA `c2t06a`; ERA closed form (IERS 2010 eq. 5.15) | 2e-7 rad; 2030/2040 values 3e-5 rad; drift 1e-6 rad | agreement ≤ 2.4e-8 rad; −8.0e-4 (J2000), −1.64e-3 (2030, 10.5 km), −2.04e-3 rad (2040, 13.0 km); drift −4.04e-5 rad/yr at constant TT − UT1 |
+| Published station KG0640 (NGS datasheet, NAD 83(2011)/GRS 80) geodetic → XYZ | NGS published X, Y, Z | 1.5 mm per component (published rounding) | ≤ 0.46 mm (GRS 80 and WGS 84) |
+| Elevation/azimuth of placed satellites (90°, 0°, 30°) | closed form | 1e-10 deg | pass |
+| Light time, geometric and aberration-corrected transmit direction (Mars barycentre as transmitter, site 35° N 110° W 1500 m, 240 epochs, 2030) | SPICE `spkcpt` `XCN` / `XCN+S` | 1e-9 s; 1e-12 rad; 1e-8 rad | 4.5e-13 s; 2.0e-16 rad; 1.4e-9 rad (aberration 8.1–8.4e-5 rad) |
+| Sun separation with moving receiver (3e4 m/s) and moving Sun (2e4 m/s) | closed-form retarded epochs + first-order aberration of both directions | 4β² = 4e-8 rad | 2.5e-9 rad |
+| Sites below the ellipsoid (h = −300, −1000 m), rays at ±1e-5, 1e-4 rad | geodetic horizon | flag flips at the horizon | pass |
+| Multi-site `compute_access_from_config` (2 sites) | `compute_access` per site; foreign kernel set | identical arrays; `KernelSetMismatchError` | pass |
+| Instantaneous vs retarded aim, site moving ⊥ | asin(v/c) | 1e-9 rel | pass |
+| Transmitter aberration | Lorentz round trip; exact (−β, 1/γ); comoving pair cancels | 1e-15; 3β² | pass |
+| Pointing rate, dτ/dt, range rate | central differences; identity c τ′(1 − u·v/c) | 1e-6 rel; 5e-5 m/s; 1e-12 | pass |
+| Moving occulter (Moon at 100 km/s) | brute-force photon/Moon sampling | 1e-3 rel | pass (static-Moon value off by > 1e7 m) |
+| Circle overlap / occulted fraction | quadrature; r²(2π/3 − √3/2); (r_B/r☉)² | 1e-9; 1e-14 | pass; monotone in separation |
+| Penumbra with a moving Earth (light-time-retarded occulter) | quadrature with the retarded position | 1e-9 | pass (instantaneous position differs by > 1e-3) |
+| Rotating equatorial site, far satellite | (π/2 − e)/π access, ½ Earth-blocked | 3/n | pass |
+| MVP year, hourly, SPICE: light time | — | ≤ 4 iterations, residual < 1 cm | 3 iterations everywhere, residual ≤ 3 mm, 0 fallbacks |
+| MVP year: geometry | chord of two 1 au orbits 70 ± 3° apart; mean motion | 1.10–1.20 au; 10 % | 1.122–1.180 au; pointing rate 1.99e-7 rad/s |
+| MVP year: access fraction | analytic mean acos(sin 10°/cos δ)/π = 0.4420 | 1/24 (hourly aliasing); also ≤ 2·gap/(2π) with the hour-angle gap diagnostic | 0.4220; hour-angle gap 8.6° (30 days at 5 min: 0.07°) |
+| 30 days at 5 min: access fraction | same analytic expression | 0.005 | pass |
+| MVP year: Earth blockage ⇔ apparent elevation < 0 (equator) | geodetic horizon tangent to the ellipsoid | except within 3e-6 rad | pass |
+| MVP year: illumination | no eclipse geometry | exact | 1.0 everywhere |
+| L0 reference (orbit drift) | Sun-only L1 (M2) | 1e-2 m | pass |
+| Sun/Moon radii from `pck00011` | `constants` | 1e-15 rel | pass |
+
+Mutation check: 21 single-line source mutations of `ground.py`/`visibility.py` (aberration and
+rate signs, geocentric up, spherical Earth, transposed rotation, missing ω × r, no limb margin,
+no retardation, swapped azimuth, static Moon, Earth at the wrong epoch, unaberrated receiver
+direction, …): all 21 caught. M3 review: 10 further mutations (Sun separation without the
+receiver aberration of the Sun or without its retardation; `visible` without the Earth, Sun or
+Moon flag; occultation fraction without the Moon or without Sun and Moon; median light time;
+`multiple_occulters` with ≥ 1; no below-ellipsoid surface scaling): all 10 caught by the new
+tests.
 
 ## Unresolved discrepancies
 
