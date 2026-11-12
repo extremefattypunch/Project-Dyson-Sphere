@@ -428,7 +428,15 @@ def test_receiver_heat_rejection_is_optional_and_settable(mvp_data: dict[str, An
 # collector.max_operating_temperature_K, thermal.pv_view_factor and
 # thermal.radiator_specific_mass_kg_m2; removing exactly those three keys from the canonical
 # JSON reproduces d0087098...962d (checked when re-pinning). schema_version is unchanged.
-MVP_CONFIG_HASH = "31de48164e4168a4011f4be50e5850368f491131aa80f1a03075c3b845c57651"
+# M5 (31de4816...7651 -> 874f79f0...cb4b) added the defaulted fields
+# transmitter.array_element_pattern_exponent, receiver.orientation,
+# atmosphere.itu_r_exceedance_percent and atmosphere.itu_r_min_elevation_deg; removing exactly
+# those four keys from the canonical JSON reproduces 31de4816...7651 (checked when re-pinning).
+# schema_version is unchanged.
+# M5 review (874f79f0...cb4b -> ad186cc3...5b62) added the defaulted field
+# atmosphere.itu_r_polarization_tilt_deg (the ITU-R rain polarisation tilt is a physical input);
+# removing exactly that key reproduces 874f79f0...cb4b (checked when re-pinning).
+MVP_CONFIG_HASH = "ad186cc301b42e1ab4c23fcbccf96847983b4dea0c952d6d9413b37fc1ee5b62"
 
 
 def test_mvp_config_hash_is_pinned() -> None:
@@ -514,3 +522,71 @@ def test_perturbing_bodies_subset_is_accepted(mvp_data: dict[str, Any]) -> None:
     set_path(mvp_data, "orbit.perturbing_bodies", ["JUPITER BARYCENTER", "SATURN BARYCENTER"])
     cfg = parse_config(mvp_data)
     assert cfg.orbit.perturbing_bodies == ("JUPITER BARYCENTER", "SATURN BARYCENTER")
+
+
+# ---------------------------------------------------------------------------------------------
+# M5 fields: lattice element pattern, receiver orientation, ITU-R options (review M5)
+# ---------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("changes", "fragment"),
+    [
+        (
+            {"transmitter.array_element_pattern_exponent": None},
+            "transmitter.array_element_pattern_exponent (element power pattern cos^q) is "
+            "required with transmitter.array_element_spacing_m",
+        ),
+        (
+            {"transmitter.array_element_spacing_m": None},
+            "transmitter.array_element_pattern_exponent is only meaningful with "
+            "transmitter.array_element_spacing_m",
+        ),
+    ],
+)
+def test_lattice_element_exponent_goes_with_spacing(
+    mvp_data: dict[str, Any], changes: dict[str, Any], fragment: str
+) -> None:
+    data = microwave_data(mvp_data)  # sets both lattice keys
+    for path, value in changes.items():
+        set_path(data, path, value)
+    messages = _issue_messages(data)
+    assert any(fragment in m for m in messages), messages
+
+
+def test_receiver_orientation_literal(mvp_data: dict[str, Any]) -> None:
+    messages = _issue_messages(set_path(mvp_data, "receiver.orientation", "tilted"))
+    assert any("receiver.orientation" in m and "Input should be" in m for m in messages), messages
+    tracking = parse_config(set_path(mvp_data, "receiver.orientation", "tracking"))
+    assert tracking.receiver.orientation == "tracking"
+
+
+def test_itu_r_polarization_tilt_field(mvp_data: dict[str, Any]) -> None:
+    assert parse_config(mvp_data).atmosphere.itu_r_polarization_tilt_deg == 45.0
+    for bad, fragment in ((-1.0, "greater than or equal to 0"), (90.5, "less than or equal to 90")):
+        bad_data = set_path(mvp_data, "atmosphere.itu_r_polarization_tilt_deg", bad)
+        messages = _issue_messages(bad_data)
+        assert any(
+            "atmosphere.itu_r_polarization_tilt_deg" in m and fragment in m for m in messages
+        ), messages
+
+
+def test_itu_r_without_the_itur_extra_fails_early(
+    mvp_data: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # PDF §5: an unsatisfiable setting must fail at validation, not at evaluation time.
+    import importlib.util
+
+    real_find_spec = importlib.util.find_spec
+
+    def fake_find_spec(name: str, *args: Any, **kwargs: Any) -> Any:
+        return None if name == "itur" else real_find_spec(name, *args, **kwargs)
+
+    data = microwave_data(mvp_data)
+    set_path(data, "models.atmosphere", "itu_r")
+    monkeypatch.setattr(importlib.util, "find_spec", fake_find_spec)
+    messages = _issue_messages(data)
+    assert any("needs the optional dependency 'itur'" in m for m in messages), messages
+    monkeypatch.setattr(importlib.util, "find_spec", real_find_spec)
+    if real_find_spec("itur") is not None:  # the extra is installed in the gate environment
+        assert parse_config(data).models.atmosphere == "itu_r"

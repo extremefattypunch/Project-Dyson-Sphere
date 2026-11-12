@@ -616,6 +616,7 @@ UNIT_SUFFIX = {
     "kg m^-2": "_kg_m2",
     "m s^-1": "_m_s",
     "UTC ISO-8601": "_utc",
+    "%": "_percent",
 }
 
 

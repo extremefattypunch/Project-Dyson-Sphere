@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import difflib
 import hashlib
+import importlib.util
 import json
 import math
 import re
@@ -45,6 +46,7 @@ from helioswarm.constants import (
     SECONDS_PER_DAY,
     SOLAR_IRRADIANCE_NOMINAL_1AU_W_M2,
     SOLAR_RADIUS_NOMINAL_M,
+    SPEED_OF_LIGHT_M_S,
 )
 
 SCHEMA_VERSION: Final[int] = 1
@@ -75,6 +77,14 @@ OPTICAL_WAVELENGTH_RANGE_M: Final[tuple[float, float]] = (1.0e-7, 2.0e-5)
 
 MICROWAVE_WAVELENGTH_RANGE_M: Final[tuple[float, float]] = (1.0e-3, 1.0)
 """Wavelengths accepted for microwave transmission: 1 mm to 1 m (300 GHz to 300 MHz)."""
+
+ITU_R_FREQUENCY_RANGE_HZ: Final[tuple[float, float]] = (1.0e9, 55.0e9)
+"""Carrier frequencies accepted by ``models.atmosphere = "itu_r"``: the ITU-R P.618 Earth-space
+rain-attenuation method applies up to 55 GHz, and the P.676 Annex 2 gaseous approximation from
+1 GHz (domains as implemented and documented by the ``itur`` package, version 0.4.0)."""
+
+ReceiverOrientation = Literal["horizontal", "tracking"]
+AtmosphereModel = Literal["none", "scenario", "itu_r"]
 
 PerturbingBody = Literal[
     "MERCURY BARYCENTER",
@@ -868,6 +878,17 @@ class TransmitterConfig(_Section):
         "the aperture (enables the array factor). None = continuous filled aperture.",
         gt=0.0,
     )
+    array_element_pattern_exponent: float | None = _field(
+        None,
+        unit="1",
+        provenance="assumed",
+        description="Exponent q of the lattice element power pattern cos^q(theta); required "
+        "with (and only with) array_element_spacing_m. q = 1 is the ideal unit-cell element "
+        "(projected-area pattern); q sets how much power goes into visible grating lobes when "
+        "the spacing exceeds the wavelength. Must be >= 1 (large-array lobe model).",
+        ge=1.0,
+        le=20.0,
+    )
     pointing_sigma_rad: float = _field(
         unit="rad",
         provenance="assumed",
@@ -935,6 +956,16 @@ class TransmitterConfig(_Section):
                     f"transmitter.array_element_spacing_m={self.array_element_spacing_m} must be "
                     f"smaller than aperture_diameter_m={self.aperture_diameter_m}"
                 )
+        elif self.array_element_pattern_exponent is not None:
+            issues.append(
+                "transmitter.array_element_pattern_exponent is only meaningful with "
+                "transmitter.array_element_spacing_m (phased-array lattice)"
+            )
+        if self.array_element_spacing_m is not None and self.array_element_pattern_exponent is None:
+            issues.append(
+                "transmitter.array_element_pattern_exponent (element power pattern cos^q) is "
+                "required with transmitter.array_element_spacing_m"
+            )
         _raise_if(issues)
         return self
 
@@ -1075,8 +1106,18 @@ class ReceiverConfig(_Section):
         unit="W m^-2",
         provenance="assumed",
         description="Maximum allowed incident beam power density at the receiver (beam-abort "
-        "constraint). None = not enforced (peak density is still reported).",
+        "constraint), on the plane normal to the beam. None = not enforced (peak density is "
+        "still reported).",
         gt=0.0,
+    )
+    orientation: ReceiverOrientation = _field(
+        "horizontal",
+        unit="-",
+        provenance="assumed",
+        kind="model_choice",
+        description="Receiver aperture orientation: 'horizontal' (flat field, normal = local "
+        "up; projected area pi r^2 sin(elevation), modelled as the circle of equal projected "
+        "area) or 'tracking' (normal kept on the beam; projected area pi r^2).",
     )
 
     @field_validator("sites")
@@ -1270,6 +1311,37 @@ class AtmosphereConfig(_Section):
         description="Air-mass model X(elevation) = 1/sin(elevation) (plane-parallel; "
         "valid only above plane_parallel_min_elevation_deg).",
     )
+    itu_r_exceedance_percent: float = _field(
+        1.0,
+        unit="%",
+        provenance="assumed",
+        description="models.atmosphere='itu_r' only: percentage p of an average year for which "
+        "the ITU-R P.618 slant-path attenuation (gas + cloud + rain) is exceeded; the "
+        "deterministic attenuation used at every epoch. Range of the P.618 rain method: "
+        "0.001-5 %.",
+        ge=0.001,
+        le=5.0,
+    )
+    itu_r_polarization_tilt_deg: float = _field(
+        45.0,
+        unit="deg",
+        provenance="assumed",
+        description="models.atmosphere='itu_r' only: polarisation tilt angle tau relative to "
+        "the horizontal used by the ITU-R P.838/P.618 rain attenuation (45 = circular "
+        "polarisation, 0 = horizontal linear, 90 = vertical linear). Default 45: circular "
+        "polarisation assumed for the power beam (assumption, not a design value).",
+        ge=0.0,
+        le=90.0,
+    )
+    itu_r_min_elevation_deg: float = _field(
+        5.0,
+        unit="deg",
+        provenance="assumed",
+        description="models.atmosphere='itu_r' only: receiver.min_elevation_deg must be >= this "
+        "(the P.676 Annex 2 slant-path approximation is recommended for 5-90 deg).",
+        ge=5.0,
+        lt=90.0,
+    )
     plane_parallel_min_elevation_deg: float = _field(
         10.0,
         unit="deg",
@@ -1314,12 +1386,14 @@ class ModelsConfig(_Section):
         "illumination, including strongly truncated Gaussians). Microwave: aperture_far_field "
         "(Fraunhofer of the configured illumination), fresnel_hankel.",
     )
-    atmosphere: Literal["none", "scenario"] = _field(
+    atmosphere: AtmosphereModel = _field(
         unit="-",
         provenance="assumed",
         kind="model_choice",
         description="'none' = no atmospheric loss (upper bound); 'scenario' = use the "
-        "atmosphere section factors for models.weather_scenario.",
+        "atmosphere section factors for models.weather_scenario; 'itu_r' (microwave only, "
+        "needs the optional 'itur' extra) = ITU-R P.618/P.676/P.840 slant-path attenuation "
+        "exceeded atmosphere.itu_r_exceedance_percent of the time at each receiver site.",
     )
     weather_scenario: Literal["clear", "cloudy"] = _field(
         "clear",
@@ -1523,12 +1597,38 @@ class RunConfig(_Section):
                         f"models.gaussian_beam_min_truncation_ratio={limit}; use "
                         "models.beam='fresnel_hankel' for a strongly truncated aperture"
                     )
-        if self.models.atmosphere == "none" and self.models.weather_scenario != "clear":
+        if self.models.atmosphere != "scenario" and self.models.weather_scenario != "clear":
             issues.append(
                 f"models.weather_scenario='{self.models.weather_scenario}' has no effect with "
-                "models.atmosphere='none' (no atmospheric loss); use models.atmosphere="
-                "'scenario' or weather_scenario='clear'"
+                f"models.atmosphere='{self.models.atmosphere}' (only the 'scenario' model uses "
+                "it); use models.atmosphere='scenario' or weather_scenario='clear'"
             )
+        if self.models.atmosphere == "itu_r":
+            if importlib.util.find_spec("itur") is None:
+                issues.append(
+                    "models.atmosphere='itu_r' needs the optional dependency 'itur', which is "
+                    "not installed in this environment (install the extra: uv sync --extra itur)"
+                )
+            if mode != "microwave":
+                issues.append(
+                    "models.atmosphere='itu_r' (ITU-R P.618 radio-wave attenuation) requires "
+                    f"transmitter.mode='microwave' (got '{mode}')"
+                )
+            else:
+                f_hz = SPEED_OF_LIGHT_M_S / self.transmitter.wavelength_m
+                f_lo, f_hi = ITU_R_FREQUENCY_RANGE_HZ
+                if not f_lo <= f_hz <= f_hi:
+                    issues.append(
+                        f"models.atmosphere='itu_r' needs a carrier frequency in "
+                        f"[{f_lo:.6g}, {f_hi:.6g}] Hz; transmitter.wavelength_m="
+                        f"{self.transmitter.wavelength_m} gives {f_hz:.6g} Hz"
+                    )
+            if self.receiver.min_elevation_deg < self.atmosphere.itu_r_min_elevation_deg:
+                issues.append(
+                    f"receiver.min_elevation_deg={self.receiver.min_elevation_deg} is below "
+                    f"atmosphere.itu_r_min_elevation_deg={self.atmosphere.itu_r_min_elevation_deg}"
+                    " required by models.atmosphere='itu_r'"
+                )
         if self.models.atmosphere == "scenario" and (
             self.receiver.min_elevation_deg < self.atmosphere.plane_parallel_min_elevation_deg
         ):

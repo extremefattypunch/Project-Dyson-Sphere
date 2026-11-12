@@ -46,8 +46,8 @@ efficiency has exactly one owner (PDF §10.1):
 | Power conditioning | `P_dc_to_tx = P_PV · η_pc` | `transmitter.power_conditioning_efficiency` |
 | DC to beam | `P_beam = P_dc_to_tx · η_e2b` | `transmitter.electrical_to_beam_efficiency` |
 | Transmitter optics/feed | `P_aperture = P_beam · η_optics_or_rf`. This is a separate physical loss and not an "aperture efficiency", because beam models are normalised to aperture power. Spill-over of source power outside the aperture edge (e.g. `exp(−2a²/w0²)` for a Gaussian laser clipped at radius `a`) belongs here; no beam model applies it again. | `transmitter.optics_or_rf_efficiency` |
-| Atmosphere | `P_atm = P_aperture · η_atm`; zenith scenario factors scaled with the plane-parallel air mass `X = 1/sin(el)` | `atmosphere.*`, `models.atmosphere` |
-| Capture | `P_captured = P_atm · η_capture` | (beam model, M5) |
+| Atmosphere | `P_atm = P_aperture · η_atm`; zenith scenario factors scaled with the plane-parallel air mass `X = 1/sin(el)`, or ITU-R P.618 slant-path attenuation (`itu_r`, M5) | `atmosphere.*`, `models.atmosphere` |
+| Capture | `P_captured = P_atm · η_capture`; `η_capture = BeamResult.capture_fraction` (diffraction × pointing × wavefront × lattice factor, M5) | `models.beam`, `transmitter.*`, `receiver.radius_m`, `receiver.orientation` |
 | Receiver input limit | `P_accepted = min(P_captured, P_max_in)`; the excess is reported as receiver saturation. The limit acts on captured beam (optical/RF) power, **before** conversion. | `receiver.max_input_power_W` |
 | Receiver conversion | `P_receiver = P_accepted · η_rx` (equal to `P_captured · η_rx` while the receiver is not saturated) | `receiver.conversion_efficiency` |
 | Receiver waste heat | `Q_rx = P_accepted · (1 − η_rx)` must not exceed the receiver's thermal rejection capability (not enforced when unset). Not a power stage; it is a constraint. | `receiver.max_heat_rejection_W` |
@@ -119,7 +119,7 @@ Studies must override these defaults with sourced values or sweep them.
 ## Per-milestone sections
 
 Milestones M2–M6 add the ephemeris, access, solar/thermal, beam and link-budget models here,
-each with equations, validity ranges and references. M1–M4 follow below.
+each with equations, validity ranges and references. M1–M5 follow below.
 
 ## M1: Constants, frames and the analytic two-body orbit (L0)
 
@@ -1025,3 +1025,212 @@ All `assumed`, with defaults; they change the config hash (re-pinned `d0087098�
   `thermal.space_temperature_K`).
 - `thermal.pv_view_factor`: 1.0, range (0, 1].
 - `thermal.radiator_specific_mass_kg_m2`: None (no mass proxy), > 0 when set.
+
+## M5: Beam physics (aperture, propagation, capture, pointing, microwave, atmosphere)
+
+Modules: `helioswarm.aperture` (aperture fields, Fresnel/Fraunhofer core, validity, wavefront
+loss), `helioswarm.optical` (Airy, Gaussian beam), `helioswarm.capture` (finite receiver,
+projection, pointing statistics), `helioswarm.microwave` (lattice array factor),
+`helioswarm.beam` (model selection, `BeamResult`), `helioswarm.atmosphere`. Everything is
+**scalar diffraction** (no polarisation, vector or near-grazing effects, no obliquity factor,
+no non-linear optics or thermal distortion; PDF §9.2) and describes **one** transmitter: there
+is no coherent combining across satellites (PDF §9.3; `BeamResult` refuses
+`coherent_combining=True`).
+
+### Aperture fields (normalised to the power leaving the aperture)
+
+`∫₀ᵃ |A(r)|² 2πr dr = 1` (a = D/2; A in m⁻¹), zero outside the edge:
+
+| Illumination | A(r) | c² |
+|---|---|---|
+| `uniform_circular` | c | 1/(πa²) |
+| `truncated_gaussian` (w0 = 1/e² intensity radius, w0 ≤ a) | c·exp(−r²/w0²) | 1/[(πw0²/2)(1 − e^{−2a²/w0²})] |
+| `parabolic_on_pedestal` (edge intensity taper T dB, C = 10^{−T/20}) | c·[C + (1−C)(1 − r²/a²)] | 1/[πa²(C + (1−C)²/3)] |
+
+- **Spill-over owner.** The truncated field is *renormalised* inside the aperture. Source
+  power outside the edge (`exp(−2a²/w0²)` for a clipped Gaussian laser) is never emitted; it
+  is a loss of `transmitter.optics_or_rf_efficiency` (M0 definition) and is only reported as
+  `BeamFieldDiagnostics.source_spillover_fraction`.
+- **Taper efficiency** `|∫A dA|²/(πa²)` (Balanis §15.4) is a diagnostic: the propagated pattern
+  already contains it, so it is never applied as an extra "aperture efficiency" (PDF §10.1).
+
+### Propagation (Goodman, *Introduction to Fourier Optics*, 3rd ed., eq. 4-17, §4.4)
+
+- Fresnel–Hankel: `U(ρ;z) = (2π/(λz)) e^{iπρ²/(λz)} ∫₀ᵃ A(r) e^{iπr²/(λz)} J0(2πrρ/(λz)) r dr`,
+  `I = |U|²` [m⁻² per W]. Power is conserved exactly (Hankel Parseval). Evaluated with composite
+  16-node Gauss–Legendre panels sized to the fastest local oscillation (chirp `r/(λz)` + Bessel
+  `ρ/(λz)` cycles per metre) and to the Gaussian waist. Validity: the largest neglected
+  (quartic) phase of the Fresnel expansion, `π(a + ρ_max)⁴/(4λz³)` (Goodman eq. 4-18 asks for
+  `z³ ≫ π(a + ρ_max)⁴/(4λ)`), must not exceed `FRESNEL_PARAXIAL_MAX_PHASE_RAD = 0.1` rad, else
+  `BeamModelValidityError` (checked at construction for the declared `ρ_max` and again on every
+  field evaluation at the largest requested radius; the former limit of 1 rad was not a
+  sufficient condition and was tightened in the M5 review). This is an **assumed engineering threshold, not a sufficient
+  accuracy guarantee**: by the triangle inequality the absolute field error is at most
+  `φ_max ∫|A| dA/(λz)`, a pessimistic bound (Goodman §4.2.2: by stationary phase only the
+  region near ρ contributes, and the actual error is much smaller). `ρ_max` covers the receiver
+  plus the pointing window, the physical receiver radius (exact-ellipse diagnostic) and, for
+  the near-field peak-irradiance search, `a + 4λz/D`. In the
+  heliocentric regime the parameter is ~1e-20.
+- Fraunhofer: `I(ρ) = J(ρ/R)/R²`, `J(θ) = (1/λ²)|2π∫A J0(2πrθ/λ) r dr|²` [sr⁻¹ per W]
+  (paraxial, `sin θ ≈ θ`). Closed forms (u = πDθ/λ): uniform `(πa²/λ²)[2J1(u)/u]²`;
+  parabolic on pedestal `(c²(2πa²)²/λ²)[C J1(u)/u + 2(1−C) J2(u)/u²]²` (Lommel integral
+  `∫₀¹(1−t²)J0(ut)t dt = 2J2(u)/u²`); truncated Gaussian by quadrature.
+- **Validity enforcement.** `N_F = D²/(λR)` is computed for every epoch. Far-field models
+  (`airy_far_field`, `aperture_far_field`) raise `BeamModelValidityError` if
+  `N_F > models.fraunhofer_max_fresnel_number` (0.5, i.e. R ≥ 2D²/λ). Fresnel corrections to
+  the far field are second order in the edge phase πN_F/4 (on axis exactly
+  `1 − sinc²(πN_F/8) ≈ (πN_F)²/192`; tested). MVP year: N_F = 5.7–6.0e-4.
+
+### Optical models
+
+- **Airy** (uniform, far field): `I = I0[2J1(x)/x]²`, `I0 = πD²/(4λ²R²)`, `x = πDρ/(λR)`;
+  `EE(x) = 1 − J0(x)² − J1(x)²` (Rayleigh); first null `x = j₁,₁ = 3.8317`, i.e.
+  `1.21967 λR/D`, enclosing 0.8378 of the power (Born & Wolf §8.5.2). Small-x: `EE ≈ x²/4`.
+- **Gaussian beam** (separate model, not a label for the truncated Gaussian): untruncated TEM00
+  with waist w0 in the aperture plane (collimated), `w(z) = w0√(1 + (z/z_R)²)`,
+  `z_R = πw0²/λ`, `I = (2/(πw²))e^{−2ρ²/w²}`, `EE = 1 − e^{−2ρ²/w²}` (Siegman 1986, ch. 17).
+  Valid at any range; accepted only for `a/w0 ≥ models.gaussian_beam_min_truncation_ratio`.
+  Comparison path: `fresnel_hankel` with the same truncated field; their encircled energies
+  agree to 2e^{−(a/w0)²} (first-order edge-field effect, tested at a/w0 = 3) and differ by
+  > 1 % at a/w0 = 1.
+
+### Finite-receiver capture (PDF §9.4)
+
+`η(d) = ∫ I(ρ) 2φ(ρ;d,a) ρ dρ`, `φ = arccos(clip((ρ² + d² − a²)/(2ρd), −1, 1))`, split into
+`EE(max(a−d,0))` plus the band `|a−d| ≤ ρ ≤ a+d` integrated with the substitution
+`ρ = m − h cos t` (removes the square-root endpoints) and 8-node Gauss–Legendre panels
+≤ ℓ/2 in ρ (ℓ = λR/D, or w/2 for the Gaussian beam). Exact up to quadrature (≤ 1e-12
+measured). Checks: d = 0 equals EE; Gaussian beam equals the non-central χ² closed form
+`ncx2.cdf(4a²/w², 2, 4d²/w²)` to 1e-11; a 2-D Cartesian grid converges to it (2e-5 at the
+finest grid); near-field (N_F = 8) pattern agrees with the grid.
+
+### Receiver projection (`receiver.orientation`, new field)
+
+- `horizontal` (default): the disk projects to an ellipse `a × a sin(el)` normal to the beam.
+  **Named approximation:** the circle of equal projected area, `a_eff = a√(sin el)`. The
+  intensity variation over the receiver depth (`≤ 2a/R ~ 1e-8` relative) is neglected.
+  The circle is slightly optimistic (closer to the peak). Error vs the exact centred ellipse
+  (polar form `η = (1/2π)∮EE(r(ψ))dψ`, `capture_fraction_centred_ellipse`), Airy beam,
+  ℓ = λR/D:
+
+  | a/ℓ | el = 10° | el = 30° | el = 60° |
+  |---|---|---|---|
+  | 0.05 | +1.1e-3 | +3.9e-4 | +2.8e-5 |
+  | 0.07 (MVP) | +2.1e-3 | +7.5e-4 | +5.4e-5 |
+  | 0.2 | +1.7e-2 | +6.1e-3 | +4.3e-4 |
+  | 0.5 | +0.10 | +3.5e-2 | +2.3e-3 |
+  | 1.0 | +0.36 | +8.7e-2 | +3.3e-3 |
+
+  Second-order prediction for a receiver ≪ beam: relative error `κ(a − b)²/4` with the
+  pattern curvature κ (Airy: π²/(4ℓ²)); tested to 10 %. Every `BeamResult` reports the
+  per-epoch error `diagnostics.receiver_projection_error`, so a run where the approximation
+  is poor (receiver comparable to the beam at low elevation) is visible.
+- `tracking`: the receiver normal follows the beam, `a_eff = a`.
+
+### Pointing (PDF §9.5)
+
+Bias magnitude b and isotropic 2-D Gaussian jitter σ per axis (small angle) give a beam-axis
+offset at the receiver `d ~ Rice(ν = Rb, s = Rσ)` (scipy `rice(b = ν/s, scale = s)`, verified
+from its source and against the explicit density). `E[η] = ∫η(d)f(d)dd` by deterministic
+Gauss–Legendre quadrature over `[max(0, ν − 9s), ν + 9s]` (tail < 3e-18) with panels
+≤ min(s, ℓ)/2. Percentiles p05/p50/p95: exact (`η(d_{1−q})`) when η is non-increasing on the
+nodes (`exact_monotone`); otherwise (`level_set`) η(d) is sampled every min(s, ℓ)/32 across the
+window, interpolated by a cubic spline, and `P(η ≤ y)` is the exact offset-law mass of the level
+set `{d: η̃(d) ≤ y}` (spline roots + CDF differences), inverted by bisection in y to 1e-13.
+Accuracy: ≤ 1.2e-9 absolute against an independent brentq root-finding reference (test
+tolerance 1e-8); the earlier node-step quantile (review M5) was off by up to 2e-3.
+**Large bias-to-jitter ratio (named approximation).** `scipy.stats.rice` returns NaN from
+`cdf`/`ppf` for `b = ν/s ≳ 2.5e5`; for `b ≥ 1e4` the offset law is its Gaussian limit
+`N(ν + s²/(2ν), s²(1 + s²/(2ν²)))` (quantile error ≈ 0.83 s/b², CDF error ≈ 0.12/b², measured
+against scipy), with the expectation integrated in the standardised variable so the probability
+mass is exact even when `ν ± 9s` collapse onto ν in floating point. Tests: Gaussian-beam closed form
+`E[η] = ncx2.cdf(a²/v', 2, ν²/v')`, `v' = w²/4 + s²` (1e-9); Monte Carlo with an explicit
+Generator (Airy); monotone non-increasing with σ for the centred baseline (Gaussian beam: any
+receiver size, by Anderson's theorem; Airy: receiver inside the central lobe).
+**Not a theorem for ring patterns:** with a receiver cutting the first Airy ring (a = 1.5ℓ)
+jitter *raises* the expected capture (confirmed by Monte Carlo); this is physics, recorded in a
+test, and `pointing_loss = E[η]/η(0)` may then exceed 1 (also possible in the Fresnel near field).
+
+### Factors combined in `BeamResult` (one owner each)
+
+`capture_fraction = η_wavefront · η_lattice · E[η_diffraction]`, a fraction of the beam power
+reaching the receiver plane (`P_atm`):
+
+- `η_wavefront = exp(−(2πσ_w/λ)²)` (Ruze 1966 / extended Maréchal), single owner
+  `aperture.wavefront_efficiency`, σ_w = `transmitter.rms_wavefront_error_m` (wavefront, not
+  surface, error). The scattered fraction is assumed **not** captured (conservative when the
+  phase-error correlation length is ≪ D, so the halo is ≫ the diffraction pattern).
+- `η_lattice` (microwave lattice only, else 1), see below.
+- The atmosphere is **not** in `capture_fraction`; the link budget (M6) multiplies
+  `η_atmosphere` from `atmosphere.py`.
+- `peak_irradiance_per_W_m2` is the aberration-free pattern maximum (on axis for the far-field
+  models; grid maximum + parabolic refinement for Fresnel, which can peak off axis) — an upper
+  bound for the beam-abort constraint `receiver.max_power_density_W_m2`, which is checked
+  against the beam-normal irradiance when the incident power is supplied.
+
+### Microwave (PDF §9.3)
+
+- Filled tapered aperture: the same Fraunhofer/Fresnel machinery with the configured taper
+  (`aperture_far_field`, `fresnel_hankel`).
+- Sparse uniform square lattice (`array_element_spacing_m` + new
+  `array_element_pattern_exponent` q ≥ 1): array factor `AF = D_n(ψx)D_n(ψy)`,
+  `D_n(ψ) = sin(nψ/2)/sin(ψ/2)`, ψ = 2πd·u/λ (Balanis eq. 6-89); grating lobes at
+  `(u,v) = (m,n)λ/d`. Large-array main-lobe fraction
+  `η_lattice = 1/Σ_visible cos^{q−1}θ_mn` (Parseval per period cell, `dΩ = du dv/cosθ`; 1 for
+  d < λ, 1/N_visible for q = 1). Checked against direct hemisphere integration of
+  `cos^q|AF|²` for a 24 × 24 lattice (3 %, finite-N). Validity enforced: ≥ 100 elements,
+  no grazing lobe, receiver + 9σ + bias within 0.25 of the grating-lobe separation.
+  Broadside lattice assumed (beam steered by pointing the array).
+
+### Atmosphere (PDF §10.2–10.3)
+
+Terminal segment only; depends on elevation, site and carrier, never on range.
+
+- `none`: η = 1.
+- `scenario`: optical `η = τ_z^X`, microwave `A = A_z X` dB, plane-parallel `X = 1/sin el`
+  (valid above `atmosphere.plane_parallel_min_elevation_deg`; Kasten & Young 1989 provided as
+  the comparison function: +3.1 % at 10°, +11 % at 5°). Optical `τ_z = 0` (default cloudy) is a
+  hard outage (`weather_available = False`).
+- `itu_r` (new option, microwave only, `itur` extra): ITU-R P.618-13 slant-path
+  `A = A_gas + A_cloud + A_rain` exceeded `atmosphere.itu_r_exceedance_percent` (new field,
+  0.001–5 %) of an average year at each site, gases P.676-12 Annex 2, clouds P.840-7 (versions
+  pinned on every call and returned). Scintillation excluded (P.618 antenna-averaging model is
+  for earth stations of a few metres, not km-scale rectennas). Rain polarisation tilt τ from
+  `atmosphere.itu_r_polarization_tilt_deg` (default 45° = circular; returned in the result).
+  Validation status: the wrapper is validated against the ITU SG3 examples with P.676-11 /
+  P.1511-1 pinned; the production P.676-12 / P.1511-2 path is regression-pinned only (no
+  validation set in `itur` 0.4.0). Thread safety: a module lock serialises the wrapper, which
+  pins the revisions and restores `itur`'s previous global revisions on exit;
+  `ITU_R_VERSIONS` is a read-only mapping.
+  Frequency 1–55 GHz and `receiver.min_elevation_deg ≥ atmosphere.itu_r_min_elevation_deg`
+  (new field, default 5°, P.676 Annex 2 range) are schema-enforced. Site ellipsoidal height
+  used as height above mean sea level (geoid undulation neglected). A long-term statistic
+  applied deterministically (a design level), not a weather time series.
+- Elevations below the model floor give NaN with `in_validity = False` (never extrapolated).
+
+### Configuration fields added in M5
+
+All `assumed`; config hash re-pinned `31de4816…7651` → `874f79f0…cb4b` (removing exactly the
+four keys reproduces the old digest), and in the M5 review `874f79f0…cb4b` → `ad186cc3…5b62`
+for the tilt field (removing that one key reproduces `874f79f0…cb4b`); `schema_version`
+unchanged.
+
+- `receiver.orientation`: `horizontal` (default) | `tracking`.
+- `transmitter.array_element_pattern_exponent`: q, required with and only with
+  `array_element_spacing_m`, range [1, 20].
+- `atmosphere.itu_r_exceedance_percent`: 1.0 %, range [0.001, 5].
+- `atmosphere.itu_r_min_elevation_deg`: 5°, range [5, 90).
+- `atmosphere.itu_r_polarization_tilt_deg` (review M5): 45° (circular), range [0, 90].
+- `models.atmosphere = itu_r` is rejected at validation when the optional `itur` package is not
+  installed (review M5).
+- `models.atmosphere` gains `itu_r`; `weather_scenario = cloudy` is now rejected for every
+  model except `scenario`.
+
+### Neglected effects (M5)
+
+Polarisation and vector diffraction; obliquity factor; atmospheric turbulence/seeing and beam
+wander (PDF §10.2: only with a specified receiver and wavefront-correction architecture);
+refraction-induced beam bending; thermal blooming; aperture obscuration (secondary mirror,
+struts); partial coherence and finite laser linewidth; the scattered (halo) part of the
+wavefront-error power; receiver depth along the beam; tropospheric scintillation (ITU-R
+option); grating-lobe power that might reach other receivers.

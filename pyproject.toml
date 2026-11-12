@@ -44,6 +44,11 @@ xcheck = [
     "rebound>=4.0",
     "hcipy>=0.6",
 ]
+# ITU-R P.618 / P.676 / P.840 Earth-space attenuation (models.atmosphere = "itu_r", microwave).
+# itur bundles the ITU-R digital maps (~170 MB installed); nothing is downloaded at run time.
+itur = [
+    "itur>=0.4.0,<0.5",
+]
 
 [project.scripts]
 helioswarm = "helioswarm.cli:main"
@@ -117,7 +122,7 @@ init_typed = true
 warn_required_dynamic_aliases = true
 
 [[tool.mypy.overrides]]
-module = ["spiceypy.*", "rebound.*", "hcipy.*", "scipy.*"]
+module = ["spiceypy.*", "rebound.*", "hcipy.*", "scipy.*", "itur.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------------------------------------

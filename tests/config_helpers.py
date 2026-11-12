@@ -67,6 +67,7 @@ def microwave_data(base: dict[str, Any]) -> dict[str, Any]:
             "aperture_illumination": "parabolic_on_pedestal",
             "edge_taper_dB": 10.0,
             "array_element_spacing_m": 0.06,
+            "array_element_pattern_exponent": 1.0,
         }
     )
     data["receiver"]["technology"] = "rectenna"

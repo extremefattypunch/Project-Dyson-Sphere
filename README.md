@@ -111,7 +111,7 @@ The schema follows these rules:
 | M2 Ephemeris geometry | SPICE kernels, UTC→TDB, ephemeris provider, L1 propagator, SRP | implemented |
 | M3 Access + light time | ground sites, Earth rotation, retarded-time targeting, occultation | implemented |
 | M4 Solar + thermal | S(r), PV efficiency law, PV and radiator thermal balance | implemented |
-| M5 Beam physics | Airy/Gaussian/Fresnel optics, microwave aperture, capture, pointing, atmosphere | planned |
+| M5 Beam physics | Airy/Gaussian/Fresnel optics, microwave aperture, capture, pointing, atmosphere | implemented |
 | M6 End-to-end single satellite | link budget, run outputs, metrics, figures, validation report | planned |
 | M7 Constellation | multiple satellites, scheduling, receiver capacity | not authorised |
 | M8 Optimisation/uncertainty | sweeps, constrained optimisation, sensitivity | not authorised |

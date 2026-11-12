@@ -24,10 +24,10 @@ in `docs/milestones/M0.md`, section D.
 | §7.4 | Receiver site makes one sidereal rotation per sidereal day | 1e-6 rad; 1e-4 deg | **pass** (M3). IAU_EARTH (pck00011): the site's J2000 direction returns after one model period 86 164.0989 s (and after the IERS stellar day) to < 1e-6 rad; it turns 0.9856235° beyond a full turn per 86 400 s; `sxform` = closed form from the PCK constants to 3e-11 (`test_ground.py`) |
 | §7.4 | Beam segment intersecting the Earth/Sun is flagged as occulted | flips at R_block(1 ± 1e-6); horizon ± 1e-5 rad | **pass** (M3). Earth: through-Earth beams flagged, flips at the geodetic horizon (lat 0°, 60°), moving Earth handled in its own frame, ~2900 random segments identical to SPICE `surfpt`; Sun: flips at R☉ and at the limb + 0.5° margin, superior conjunction flagged (synthetic and with de440s); Moon: flips at R_moon, moving Moon = brute-force photon path (`test_visibility.py`, `test_access_mvp.py`) |
 | §8.5 | 1 au, normal incidence recovers S_1AU; 1/r² scaling; zero at eclipse; energy closure; A_rad ∝ 1/(εT⁴) | exact; 4e-15; exact; 1e-12; 1e-14 | **pass** (M4). S(1 au) = configured S_1AU bit for bit (also for 1360.8, 1500); S r² const. to 4e-15 over 0.3–1.2 au; zero incidence, back face and umbra give exactly 0 W; ledger residual ≤ 6.5e-16 (8 identities, of which the PV node, collector and inventory sums are independent checks and the rest bookkeeping; plus a fully hand-computed ledger); tiny penumbra illumination (down to 5e-324) converges and closes; A_req ratios for ε, T_lim, faces, F to 1e-14 (`test_solar.py`, `test_thermal.py`, `test_power_thermal_mvp.py`) |
-| §9 / §13.1 | Airy first-null scaling, total power normalisation, encircled energy, capture convergence, pointing monotonicity | M5 | not yet run |
+| §9 / §13.1 | Airy first-null scaling, total power normalisation, encircled energy, capture convergence, pointing monotonicity | 1e-14 (null); 1e-6 (power); 1e-14 (EE); 2e-5 (grid) | **pass** (M5). First null 1.21967 λR/D (I < 1e-25 I0; numerical minimum 1e-6) for 5 (D, λ, R); Airy power integrated to x = 1e6 is 1 within 1e-6; EE(j₁,₁) = 0.83778; 1-D capture = 2-D grid (2e-5) and = non-central χ² closed form (Gaussian beam, 1e-11); E[η] non-increasing with σ in the centred baseline; documented counter-example for a receiver cutting the first Airy ring (`test_optical.py`, `test_capture.py`, `test_aperture.py`) |
 | §13.2 | End-to-end integration tests | M6 | not yet run |
 | §13.1 (ground/visibility) | Known station coordinates | 1.5 mm per component | **pass** (M3 review). NGS datasheet KG0640 (MEADES RANCH RESET, NAD 83(2011)/GRS 80) published geodetic → published X, Y, Z: ≤ 0.46 mm (`test_ground.py::test_published_station_meades_ranch_reset`) |
-| §13.3 | Independent checks (REBOUND, SPICE/JPL, HCIPy, ITU-R) | M2–M6 | REBOUND and SPICE/JPL **pass** (M2, see below); SPICE `spkcpt` XCN/XCN+S end-to-end light time and point-ahead **pass** (M3 review); HCIPy and ITU-R not yet run |
+| §13.3 | Independent checks (REBOUND, SPICE/JPL, HCIPy, ITU-R) | M2–M6 | REBOUND and SPICE/JPL **pass** (M2, see below); SPICE `spkcpt` XCN/XCN+S end-to-end light time and point-ahead **pass** (M3 review); HCIPy **pass** (M5: far-field profiles of uniform, truncated-Gaussian and parabolic apertures to 2e-3 at λ = 1 µm, D = 10 m, including the absolute J(0) = πa²/λ², Airy EE to 3e-3; `test_hcipy_crosscheck.py`); ITU-R **pass for the wrapper and revision wiring, validated with P.676-11 / P.1511-1 / τ = 0** (M5: `itur` 0.4.0 reproduces two ITU-R SG3 validation examples of P.618-13 gas/cloud/rain to 1e-5 dB with those revisions pinned; `test_atmosphere.py`). **Open:** the production revisions P.676-12 and P.1511-2 (and the newer in-force P.676-13, P.618-14) have no validation set in `itur` 0.4.0, so the production gas component is regression-pinned only, not validated (review M5) |
 
 ## M1: analytic orbit (L0): independent checks
 
@@ -180,3 +180,48 @@ instantaneous Sun for illumination. All 18 were caught on the final source.
 None recorded. (M2 review: the Sun-only / reduced-body-set inconsistency of the original
 barycentric L1 formulation was fixed by integrating heliocentrically with consistent indirect
 terms, not left as a documented discrepancy; see docs/milestones/M2.md "Review outcomes".)
+
+## M5: beam physics: independent checks
+
+References are closed forms written in the tests, independent quadrature (`scipy.integrate`),
+Monte Carlo with explicit `numpy.random.Generator`s, HCIPy 0.7.1, or the ITU-R validation
+examples; never the module's own helpers.
+
+| Check | Reference | Tolerance | Measured / result |
+|---|---|---|---|
+| Aperture power = 1 W (5 illuminations) | `scipy.integrate.quad` | 1e-12 | pass |
+| Taper efficiency, spill-over | quad of ∫A dA; untruncated Gaussian power outside a | 1e-12 / 1e-10 | pass |
+| Hankel quadrature vs closed far fields (uniform, parabolic 10/30 dB) | Airy, Lommel `2J2(u)/u²` | 1e-12 of peak | pass |
+| Truncated-Gaussian far field (a/w0 = 1) | quad | 1e-10 rel | pass |
+| Hankel refinement ×4 (far field, N_F = 5, 50) | self | 1e-12 of peak | pass; 2-panel rule fails (discriminating) |
+| Fresnel on-axis irradiance, N_F = 0.3–21.7 incl. on-axis zero (N_F = 8) and 4× maximum (N_F = 4) | `(4/(πa²))sin²(πN_F/8)` (Goodman) | 1e-11 rel | pass |
+| Fresnel → Airy as N_F → 0 | `(πN_F)²/192` scaling | within [0.5, 1.5] × prediction | pass for N_F = 1e-2, 1e-3, 1e-4 |
+| Fresnel power conservation, N_F = 20 | Parseval (= 1) | 1e-11 | pass |
+| Airy first null for 5 (D, λ, R) | 1.21967 λR/D; numerical minimum | 1e-14; 1e-6 | pass |
+| Airy power within x = 1e6 | 1 (tail 6.4e-7) | 1e-6 | pass (= EE(1e6) to 1e-9) |
+| Far-field total power, uniform / truncated Gaussian a/w0 = 1 / parabolic 10 dB (review M5) | EE(x = 1e3) + analytic edge tail `2a²|A(a)|²/x` = 1 | 1e-6 | pass (residual ≤ 1.2e-7; tail 1e-4–6e-4) |
+| Uniform Fresnel total power, N_F = 20 (review M5) | EE(300 m) + `2/(πx)` = 1 | 1e-6 | pass (residual 4e-9) |
+| Tapered far-field peak irradiance (truncated Gaussian, parabolic 10/30 dB; review M5) | `η_taper πD²/(4λ²R²)`, η_taper by quad; pattern maximum on a grid | 1e-10 | pass; also through `evaluate_beam` (microwave, W m⁻²) |
+| EE at first dark ring | 1 − J0(j₁,₁)² = 0.83778 | 1e-14 | pass (numerical quadrature 1e-12) |
+| Gaussian beam w(z), EE(w) = 1 − e⁻² | Siegman | 1e-15 / 1e-11 | pass |
+| Gaussian beam vs Fresnel–Hankel truncated Gaussian (a/w0 = 3) | comparison path | 2e^{−9} EE | pass (N_F = 20, 1, 1e-3); a/w0 = 1 differs > 1e-2 |
+| Offset capture, Gaussian beam | `ncx2.cdf(4a²/w², 2, 4d²/w²)` | 1e-11 | pass |
+| Offset capture, Airy, 2-D grid (n = 25, 100, 400) | Cartesian midpoint | 2e-5 at n = 400, decreasing | pass |
+| Expected capture with bias + jitter, Gaussian beam (5 cases) | `ncx2.cdf(a²/v', 2, ν²/v')` | 1e-9 | pass; percentiles exact to 1e-10 |
+| Bias wiring through `evaluate_beam` (Gaussian beam, b = 50 nrad, σ = 0 and 30 nrad; review M5) | `ncx2.cdf(a²/v, 2, (Rb)²/v)`; with jitter `v' = v + (Rσ)²` | 1e-11; 1e-9 | pass; bias dropped / doubled / swapped with σ each fail |
+| Expected capture, Airy | Monte Carlo (40 000 samples) | 5 s.e. | pass |
+| Capture percentiles, non-monotone η(d) (4 Airy cases; review M5) | brentq level sets with exact Rice CDF differences | 1e-8 abs | pass (≤ 1.2e-9) |
+| Rice law for ν/s ≥ 1e4 (review M5) | scipy Rice at b = 1e4, 1e5; linearised spread at ν/s = 1e6, 1e17 | 1e-8 s / 2e-9; 1e-3 | pass (scipy returns NaN at 1e6) |
+| Rice parametrisation | explicit density; MC quantiles | 1e-12; 5e-3 | pass |
+| E[η] vs σ, centred | monotone (Anderson) | strict | pass (Gaussian beam, 3 sizes; Airy a = 0.07ℓ) |
+| Jitter with receiver on first ring (a = 1.5ℓ) | Monte Carlo | — | E[η] > η(0) (real effect, documented) |
+| Smaller λ / larger D, fixed receiver | EE(2x)/EE(x) | 1e-10 | pass |
+| Impossible beam (1 m, 2.45 GHz, 1 au, 1 km) | x²/4 = 7.4e-15 | 1e-9 rel | pass (< 1e-13 delivered fraction) |
+| Equal-area circle vs exact ellipse | κ(a−b)²/4 | 10 % of prediction | pass; table in `model_assumptions.md` |
+| Lattice AF peak N, nulls λ/(nd), grating lobes mλ/d | explicit sum / closed form | 1e-9 | pass |
+| Lattice main-lobe fraction (d = 1.6λ, q = 1, 2; d = 0.7λ) | hemisphere integral of cos^q\|AF\|², 24 × 24 | 3 % | pass (1/9, 0.167, 1) |
+| HCIPy far-field profile (uniform, truncated Gaussian, parabolic), λ = 1 µm, D = 10 m | HCIPy 0.7.1 Fraunhofer (f = 1, output in rad) | 2e-3 rel | pass; absolute J(0) = πa²/λ² = 7.85e13 sr⁻¹ to 2e-3 |
+| HCIPy Airy encircled energy at 6 radii | HCIPy | 3e-3 abs | pass |
+| ITU-R P.618-13 gas/cloud/rain (London, 14.25 GHz p = 1 %; 29 GHz p = 0.01 %), **with P.676-11, P.1511-1, τ = 0 pinned** | ITU-R SG3 validation examples via `itur` test file (second-hand) | 1e-5 dB | pass (validates the wrapper and revision wiring, not the production P.676-12 gas term) |
+| ITU-R production revisions (P.676-12, P.1511-2, τ = 0/45/90°) at the same site | **regression pin** of this wrapper with `itur` 0.4.0 (not a validation) | 1e-9 dB | pinned; gas 0.22687 dB vs 0.22369 dB with P.676-11 (+1.4 %); rain H > circular > V (P.838 k_H > k_V) |
+| MVP year (SPICE, 3700 visible epochs) | closed-form EE(x_eff); 2s²κ pointing loss | 1e-12; 1 % | pass; capture 0.15–0.83 % (negative result) |

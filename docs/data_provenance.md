@@ -78,6 +78,27 @@ the individual files. A new kernel set needs a new `kernel_set_id` and a schema 
 | IAU 2006/2000A celestial-to-terrestrial matrix | ERFA `c2t06a` (pyerfa, installed with astropy from `uv.lock`) | IAU_EARTH offset at 2000–2040 with UT1 = UTC (M3 review) |
 | Transmission light time and stellar aberration (`XCN`, `XCN+S`) | SPICE `spkcpt` with the project kernel set | End-to-end retarded targeting / point-ahead check (M3 review) |
 
+### ITU-R propagation models via `itur` (M5, optional extra)
+
+| Item | Value |
+|---|---|
+| Package | `itur` (ITU-Rpy) 0.4.0, I. del Portillo, MIT licence, https://github.com/inigodelportillo/ITU-Rpy; pinned in `uv.lock`, installed with `uv sync --extra itur` (or `--all-extras`) |
+| Data | ITU-R digital maps bundled inside the wheel (~170 MB installed in the project environment on holylabs); nothing is downloaded at run time and nothing is written to `$HOME` (checked: no cache paths in the package source; a probe run with a fresh `HOME` created no files) |
+| Recommendations used by `models.atmosphere = "itu_r"` | P.618-13, P.676-12, P.840-7, P.453-13, P.835-6, P.836-6, P.837-7, P.838-3, P.839-4, P.1510-1, P.1511-2 (`atmosphere.ITU_R_VERSIONS`; pinned on every call, returned in `AtmosphereResult.recommendation_versions` for the run manifest) |
+| Currency | These are the newest revisions `itur` 0.4.0 implements, **not** the newest in force (e.g. P.618-14 and P.676-13 have been published). Re-validation against current revisions is an open item |
+| Validation reference | ITU-R Study Group 3 validation examples (CG-3M3J-13-ValEx, cited by `itur` as rev. 5.1, https://www.itu.int/en/ITU-R/study-groups/rsg3/ionotropospheric/CG-3M3J-13-ValEx-Rev5_1.xlsx) **as transcribed** in `itur`'s bundled `test/ITU_validation_test.py` (`ITUR618_13TestCase.test_total_attenuation`); the spreadsheet itself was not downloaded. Reproduced to 1e-5 dB in `tests/unit/test_atmosphere.py` (with the file's P.676-11 / P.1511-1 revisions and τ = 0). The installed test file has validation sets for P.676-9 and P.676-11 only (`grep '^class'`), none for P.676-12: the **production gas component (P.676-12) and P.1511-2 are unvalidated** and only regression-pinned (`test_itu_r_production_revisions_regression_pin`); validation against P.676-12/-13 and P.618-14 is an open item |
+| Polarisation tilt | `atmosphere.itu_r_polarization_tilt_deg` (assumed, default 45° = circular), passed as P.618/P.838 τ and returned in `AtmosphereResult.polarization_tilt_deg` for the manifest (review M5) |
+| Thread safety | `itur` keeps the selected revisions as library-global state; the wrapper holds a module lock, pins the revisions and restores the previous ones on exit. Direct `itur` calls from other threads are not protected |
+| Packaging caveats | `itur` installs a top-level package named `test` into site-packages (the Python standard library's `test` package shadows it; nothing in helioswarm imports it). `itur` emits a spurious P.676 "elevation" warning at exactly 90° (its check uses `mod(el, 90) < 5`); the wrapper records warnings in `AtmosphereResult.notes` instead of suppressing them |
+
+M5 adds no other external data. Its reference values in tests are closed forms (Airy,
+Lommel, Fresnel on-axis, non-central χ²), the zero j₁,₁ = 3.8317059702 (Abramowitz & Stegun
+Table 9.5, equal to `scipy.special.jn_zeros`), Kasten & Young (1989, Appl. Opt. 28, 4735) for
+the air-mass comparison, and HCIPy 0.7.1 (from `uv.lock`). The new M5 configuration fields
+(`receiver.orientation`, `transmitter.array_element_pattern_exponent`,
+`atmosphere.itu_r_exceedance_percent`, `atmosphere.itu_r_min_elevation_deg`, and from the M5
+review `atmosphere.itu_r_polarization_tilt_deg`) are **assumed**.
+
 ## Sourced constants and defaults
 
 | Quantity | Value | Where | Source |
