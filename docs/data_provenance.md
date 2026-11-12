@@ -11,17 +11,66 @@ default (PDF §14.1, §14.4, §13.4). Every parameter is labelled `measured`, `s
 
 ## External data
 
-| Dataset | Version | Source URL | SHA-256 | Retrieved | Used by |
-|---|---|---|---|---|---|
-| SPICE kernels | M2 | (to be recorded in `data/kernels/kernels.json`) | | | M2+ |
+### SPICE kernels (M2)
 
-No external data file is read by the code as of M1. To source the GM☉ constant, M1 *read*
-NAIF's `gm_de440.tpc` once by hand. The file was retrieved on 2026-11-12 from
-`https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/gm_de440.tpc`, with SHA-256
-`924ddf4fb9ead9fe8a1aa55780bcabde40b09d00065d58226e24b68d8092f140`. Its header reads "GMs for
-1–10, 199, 299, 301, 399 reset to their DE440 values", BVS/NAIF 2022-12-14. The line used was
-`BODY10_GM = ( 1.3271244004127942E+11 )` km³ s⁻². The file was not kept; M2 fetches and
-verifies it through `scripts/fetch_kernels.py`.
+The kernel set is defined by `data/kernels/kernels.json` (manifest version 1, kernel set id
+`helioswarm-de440s-v1`). The files are fetched and verified by `helioswarm fetch-kernels`
+(`scripts/fetch_kernels.py`), are git-ignored, and are loaded only through
+`helioswarm.kernels.KernelSet.loaded()`, which verifies them first. Retrieval date for all four
+files: 2026-11-12T06:54:48Z.
+
+| Kernel | Kind | Source URL | Size [B] | SHA-256 | NAIF MD5 | Server Last-Modified |
+|---|---|---|---|---|---|---|
+| `naif0012.tls` | LSK | https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls | 5 257 | `678e32bdb5a744117a467cd9601cd6b373f0e9bc9bbde1371d5eee39600a039b` | none published | Fri, 15 Jul 2016 00:00:37 GMT |
+| `pck00011.tpc` | text PCK | https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc | 131 226 | `3dff7b1dbeceaa01f25467767d3fa25816051c85d162d1edf04acb310ee28bb1` | none published | Tue, 27 Dec 2022 16:28:50 GMT |
+| `gm_de440.tpc` | text PCK | https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/gm_de440.tpc | 12 406 | `924ddf4fb9ead9fe8a1aa55780bcabde40b09d00065d58226e24b68d8092f140` | none published | Wed, 14 Dec 2022 20:00:00 GMT |
+| `de440s.bsp` | SPK | https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440s.bsp | 32 726 016 | `c1c7feeab882263fc493a9d5a5b2ddd71b54826cdf65d8d17a76126b260a49f2` | `3917ee56769db332790c751e2168843d` (matches `spk/planets/aa_checksums.txt`) | Mon, 21 Dec 2020 19:39:26 GMT |
+
+**Checksum policy.** NAIF does not publish SHA-256 checksums.
+
+- **SHA-256 (trust on first use).** The SHA-256 values were computed by helioswarm on first
+  retrieval and are enforced from then on. A mismatching file is refused and never
+  overwritten.
+- **MD5.** NAIF publishes an MD5 only for the planetary SPKs (`aa_checksums.txt`). The de440s
+  MD5 matched at retrieval and is enforced as well.
+- **Consistency with M1.** The `gm_de440.tpc` SHA-256 equals the value recorded in M1, when
+  GM☉ was sourced by hand.
+
+**Contents used.**
+
+- `naif0012.tls`: leap seconds through 2017-01-01 (TAI − UTC = 37 s).
+- `gm_de440.tpc`: the `BODYnnn_GM` values of DE440, BVS/NAIF 2022-12-14 (Park et al. 2021,
+  AJ 161, 105).
+- `de440s.bsp`: covers 1849-12-26 to 2150-01-22 TDB (NAIF `aa_summaries.txt`; checked by a
+  test against `spkcov`).
+- `pck00011.tpc`: loaded now, used from M3 for the IAU_EARTH frame.
+
+**License.** The NAIF generic kernels are public data produced by NASA/JPL NAIF and are freely
+redistributable (NAIF rules, https://naif.jpl.nasa.gov/naif/rules.html). They are nevertheless
+not committed, because they are large and regenerable (PDF §14.1).
+
+**Run manifests.** `LoadedKernels.provenance` exposes, for each kernel, its name, kind, path,
+URL, size, SHA-256, MD5 and retrieval date. `KernelManifest.sha256` (the hash of
+`kernels.json`) identifies the kernel-set definition; it is also the CI cache key. M6 writes
+these records into `manifest.json`.
+
+**Configuration pin (M2 review).** The run configuration names its kernel set in
+`frames.ephemeris_kernel_set` (`helioswarm-de440s-v1`, the `kernel_set_id` of
+`kernels.json`). `propagate.initial_state_from_config` and `propagate_l1_from_config` raise
+`KernelSetMismatchError` if the loaded set has another id, so two runs with the same config
+hash cannot use different ephemerides or GM values; the SHA-256 values in the manifest pin
+the individual files. A new kernel set needs a new `kernel_set_id` and a schema change.
+
+### Reference data used only by tests
+
+| Data | Source / retrieval | Used in |
+|---|---|---|
+| Earth state relative to the Sun at 6 TDB epochs (1 Jan 2000 to 1 Jan 2050) | JPL Horizons API, `source: DE441`, retrieved 2026-11-12. The exact query URL and the verbatim numbers are in `tests/unit/test_ephemeris.py` (`HORIZONS_QUERY`, `HORIZONS_EARTH_WRT_SUN`). | Earth–Sun state check (de440s vs DE441, < 1 m) |
+| ERFA `epv00` (via astropy `solar_system_ephemeris="builtin"`) | astropy 8.0.2 / pyerfa, installed from `uv.lock` | Independent Earth–Sun check (documented maximum errors 11.2 km and 5.0 mm/s) |
+| TAI − UTC history | IERS Bulletin C | UTC → TDB test |
+| GM⊕ = 3.986004418 × 10¹⁴ m³ s⁻² (TT), L_B = 1.550519768 × 10⁻⁸ | IERS Conventions (2010), Table 1.1 | `gm_de440` Earth GM check |
+| EM-barycentre mean elements a = 1.00000261 au, e = 0.01671123 | Standish, *Keplerian Elements for Approximate Positions of the Major Planets*, JPL SSD, Table 1 | Perihelion and aphelion distance check |
+| Anomalistic year 365.259636 d | Explanatory Supplement to the Astronomical Almanac | EMB perihelion-interval check |
 
 ## Sourced constants and defaults
 
@@ -42,6 +91,8 @@ verifies it through `scripts/fetch_kernels.py`.
 | Deep-space sink temperature | 2.72548 K (default, `helioswarm.constants.CMB_TEMPERATURE_K`) | `thermal.space_temperature_K` | Fixsen (2009), ApJ 707, 916: T_CMB = 2.72548 K |
 | Far-field threshold | N_F ≤ 0.5 (default) | `models.fraunhofer_max_fresnel_number` | Far-field distance R ≥ 2D²/λ: IEEE Std 145-2013 (Definitions of Terms for Antennas, "far-field region"); C. A. Balanis, *Antenna Theory: Analysis and Design* (Wiley), ch. 2 "Field Regions" |
 | Frame/body names | `J2000`, `SOLAR SYSTEM BARYCENTER`, `IAU_EARTH` | `frames.*` | NAIF SPICE Frames / NAIF IDs / PCK Required Reading |
+| NAIF body ids | SUN 10, MERCURY/VENUS/EARTH/MARS/JUPITER/SATURN/URANUS/NEPTUNE BARYCENTER 1–8, EARTH 399, MOON 301 | `helioswarm.ephemeris.NAIF_IDS` | NAIF IDs Required Reading |
+| GM of the Sun and the perturbing bodies | DE440 values, read at run time with `bodvrd` | `gm_de440.tpc` | Park et al. 2021 (AJ 161, 105) via NAIF |
 | Reference ellipsoid | WGS84 | `frames.earth_ellipsoid` | NGA.STND.0036 (WGS 84) |
 
 All other defaults and every value in `configs/mvp_single_satellite.yaml` are **assumed**

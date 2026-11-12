@@ -24,6 +24,19 @@ jobs:
           cache-dependency-glob: uv.lock
       - name: Install locked environment
         run: uv sync --all-extras --locked
+      # SPICE kernels (~33 MB, public NAIF data) are cached keyed on the manifest, so a change of
+      # any URL or checksum in data/kernels/kernels.json re-fetches; fetch_kernels verifies size,
+      # SHA-256 and NAIF MD5 of cached and downloaded files alike.
+      - name: Cache SPICE kernels
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/kernels/*.tls
+            data/kernels/*.tpc
+            data/kernels/*.bsp
+          key: spice-kernels-${{ hashFiles('data/kernels/kernels.json') }}
+      - name: Fetch and verify SPICE kernels
+        run: uv run --locked python scripts/fetch_kernels.py
       - name: Ruff lint
         run: uv run --locked ruff check .
       - name: Ruff format
@@ -32,4 +45,3 @@ jobs:
         run: uv run --locked mypy src
       - name: Pytest
         run: uv run --locked pytest -q
-      # SPICE kernels (M2+) will be fetched by scripts/fetch_kernels.py and cached here.

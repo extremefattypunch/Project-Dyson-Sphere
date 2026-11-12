@@ -30,9 +30,11 @@ from dataclasses import dataclass, field
 from typing import Final, Literal, get_args
 
 import numpy as np
+import spiceypy
 from numpy.typing import ArrayLike, NDArray
 
 from helioswarm.constants import OBLIQUITY_J2000_RAD
+from helioswarm.kernels import LoadedKernels
 
 FrameName = Literal["J2000", "ECLIPJ2000"]
 """Inertial frames supported by the frame utilities (SPICE frame names)."""
@@ -247,6 +249,28 @@ def transform_trajectory(traj: CartesianTrajectory, to_frame: FrameName) -> Cart
     )
 
 
+def spice_rotation_matrix(
+    from_frame: FrameName, to_frame: FrameName, epoch_tdb_s: float, kernels: LoadedKernels
+) -> Float64Array:
+    """Rotation matrix ``v_to = M @ v_from`` computed by SPICE ``pxform`` (cross-check path).
+
+    SPICE builds ``ECLIPJ2000`` from ``J2000`` with the IAU 1976 obliquity (NAIF Frames
+    Required Reading); this function exists so that :func:`rotation_matrix` can be validated
+    against the toolkit. The epoch is irrelevant for these inertial frames but is passed to
+    ``pxform`` as required by its signature.
+
+    Args:
+        from_frame: Source frame.
+        to_frame: Target frame.
+        epoch_tdb_s: Epoch [TDB s past J2000].
+        kernels: Active kernel-set handle (SPICE is only queried inside a loaded scope).
+    """
+    _check_frame(from_frame)
+    _check_frame(to_frame)
+    kernels.require_active()
+    return np.asarray(spiceypy.pxform(from_frame, to_frame, float(epoch_tdb_s)), dtype=np.float64)
+
+
 def require_same_frame_and_origin(a: CartesianState, b: CartesianState) -> None:
     """Raise :class:`FrameMismatchError` unless ``a`` and ``b`` share frame and origin.
 
@@ -274,6 +298,7 @@ __all__ = [
     "rotate_vectors",
     "rotation_matrix",
     "rotation_x",
+    "spice_rotation_matrix",
     "transform_state",
     "transform_trajectory",
 ]

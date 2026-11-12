@@ -221,6 +221,45 @@ def test_integrator_step_rejected_with_two_body_model(mvp_data: dict[str, Any]) 
     assert "time.integrator_step_s is set but orbit.model='two_body_kepler'" in messages[0]
 
 
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("integrator_rtol", 1e-12),  # even when equal to the default: it is explicitly set
+        ("integrator_atol_position_m", 1e-2),
+        ("integrator_atol_velocity_m_s", 1e-8),
+        ("ephemeris_cache_step_s", 1800.0),
+    ],
+)
+def test_l1_only_time_fields_rejected_with_two_body_model(
+    mvp_data: dict[str, Any], name: str, value: float
+) -> None:
+    # Review finding (M2): treated like time.integrator_step_s (ignored by L0 -> rejected).
+    set_path(mvp_data, "orbit.model", "two_body_kepler")
+    set_path(mvp_data, "orbit.include_planetary_perturbations", False)
+    set_path(mvp_data, "orbit.include_solar_radiation_pressure", False)
+    del_path(mvp_data, "orbit.cr")
+    del_path(mvp_data, "orbit.area_to_mass_m2_kg")
+    del_path(mvp_data, "time.integrator_step_s")
+    assert parse_config(mvp_data).orbit.model == "two_body_kepler"  # valid without the field
+    set_path(mvp_data, f"time.{name}", value)
+    messages = _issue_messages(mvp_data)
+    assert len(messages) == 1, messages
+    assert f"time.{name} is set but orbit.model='two_body_kepler' is analytic" in messages[0]
+
+
+def test_perturbing_bodies_rejected_when_perturbations_are_off(mvp_data: dict[str, Any]) -> None:
+    # Review finding (M2): mirrors the cr / area_to_mass_m2_kg rule for SRP.
+    set_path(mvp_data, "orbit.include_planetary_perturbations", False)
+    assert parse_config(mvp_data).orbit.include_planetary_perturbations is False
+    set_path(mvp_data, "orbit.perturbing_bodies", ["JUPITER BARYCENTER"])
+    messages = _issue_messages(mvp_data)
+    expected = (
+        "orbit.perturbing_bodies is set but include_planetary_perturbations=false ignores it; "
+        "remove it or set include_planetary_perturbations=true"
+    )
+    assert any(expected in m for m in messages), messages
+
+
 # ---------------------------------------------------------------------------------------------
 # Output-grid tolerance
 # ---------------------------------------------------------------------------------------------
@@ -373,7 +412,15 @@ def test_receiver_heat_rejection_is_optional_and_settable(mvp_data: dict[str, An
 # History: M0 381090d7...7274; M1 review changed the thermal.space_temperature_K default from
 # 2.725 to the cited Fixsen (2009) value 2.72548 K (constants.CMB_TEMPERATURE_K). With
 # 2.725 set explicitly the M0 digest is reproduced, so that default is the only change.
-MVP_CONFIG_HASH = "37999a0901899794057eefa07308b6204f73055408a9b7b67edbb04bd8a35fc2"
+# M2 (37999a09...5fc2 -> f2d46ab0...7561) added defaulted fields time.integrator_rtol,
+# time.integrator_atol_position_m, time.integrator_atol_velocity_m_s,
+# time.ephemeris_cache_step_s and orbit.perturbing_bodies; removing exactly those five keys
+# from the canonical JSON reproduces the M1 digest (checked when re-pinning). schema_version
+# is unchanged because every previously valid file still parses with the same meaning.
+# M2 review (f2d46ab0...7561 -> b12c5a85...9c18) added the defaulted field
+# frames.ephemeris_kernel_set (the kernel set is a physical input of the run); removing that
+# one key from the canonical JSON reproduces the previous digest (checked when re-pinning).
+MVP_CONFIG_HASH = "b12c5a85b2bf84ca4284e17845d8abfc473e9bcfc4aa558716164e6df2939c18"
 
 
 def test_mvp_config_hash_is_pinned() -> None:
@@ -399,3 +446,63 @@ def test_canonical_json_format_is_pinned() -> None:
     ):
         assert fragment in text, fragment
     assert text.startswith('{"atmosphere":{')
+
+
+# ---------------------------------------------------------------------------------------------
+# M2 fields: L1 integrator tolerances, ephemeris cache, perturbing bodies
+# ---------------------------------------------------------------------------------------------
+
+
+def test_m2_integrator_defaults(mvp_data: dict[str, Any]) -> None:
+    cfg = parse_config(mvp_data)
+    assert cfg.time.integrator_rtol == 1e-12
+    assert cfg.time.integrator_atol_position_m == 1e-3
+    assert cfg.time.integrator_atol_velocity_m_s == 1e-9
+    assert cfg.time.ephemeris_cache_step_s == 3600.0
+    assert cfg.orbit.perturbing_bodies == (
+        "MERCURY BARYCENTER",
+        "VENUS BARYCENTER",
+        "EARTH",
+        "MOON",
+        "MARS BARYCENTER",
+        "JUPITER BARYCENTER",
+        "SATURN BARYCENTER",
+        "URANUS BARYCENTER",
+        "NEPTUNE BARYCENTER",
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "value", "fragment"),
+    [
+        # scipy raises rtol below 100 eps (2.2e-14) silently; the schema floor is 1e-13.
+        ("time.integrator_rtol", 1e-14, "greater than or equal to 0.0000000000001"),
+        ("time.integrator_rtol", 1e-5, "less than or equal to 0.000001"),
+        ("time.integrator_atol_position_m", 0.0, "greater than 0"),
+        ("time.integrator_atol_velocity_m_s", -1e-9, "greater than 0"),
+        ("time.ephemeris_cache_step_s", 0.0, "greater than 0"),
+        # Validated range of the Hermite cache (< 1 m for every DE440 body; review M2).
+        ("time.ephemeris_cache_step_s", 7201.0, "less than or equal to 7200"),
+        ("frames.ephemeris_kernel_set", "my-kernels", "Input should be"),
+        ("orbit.perturbing_bodies", ["PLUTO BARYCENTER"], "Input should be"),
+        ("orbit.perturbing_bodies", [], "at least 1 item"),
+    ],
+)
+def test_m2_fields_are_range_checked(
+    mvp_data: dict[str, Any], path: str, value: Any, fragment: str
+) -> None:
+    messages = _issue_messages(set_path(mvp_data, path, value))
+    assert any(path in m and fragment in m for m in messages), messages
+
+
+def test_duplicate_perturbing_bodies_are_rejected(mvp_data: dict[str, Any]) -> None:
+    set_path(mvp_data, "orbit.perturbing_bodies", ["EARTH", "MOON", "EARTH"])
+    messages = _issue_messages(mvp_data)
+    expected = "orbit.perturbing_bodies lists bodies more than once: ['EARTH']"
+    assert any(expected in m for m in messages), messages
+
+
+def test_perturbing_bodies_subset_is_accepted(mvp_data: dict[str, Any]) -> None:
+    set_path(mvp_data, "orbit.perturbing_bodies", ["JUPITER BARYCENTER", "SATURN BARYCENTER"])
+    cfg = parse_config(mvp_data)
+    assert cfg.orbit.perturbing_bodies == ("JUPITER BARYCENTER", "SATURN BARYCENTER")

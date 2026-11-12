@@ -30,6 +30,10 @@ SECONDS_PER_DAY: Final[float] = 86_400.0
 """Seconds per day [s]. A 'day' in configuration files is exactly 86400 s (the Julian-day
 length used by IAU/SPICE), never a solar day."""
 
+M_PER_KM: Final[float] = 1000.0
+"""Metres per kilometre [m km^-1] (exact). SPICE returns km and km/s; GM in km^3 s^-2 converts
+with M_PER_KM**3 = 1e9 (exact)."""
+
 ARCSEC_TO_RAD: Final[float] = math.pi / (180.0 * 3600.0)
 """Arcseconds to radians [rad arcsec^-1] (definition: 1 arcsec = pi / 648000 rad)."""
 
@@ -124,6 +128,7 @@ __all__ = [
     "CMB_TEMPERATURE_K",
     "EARTH_ROTATION_ANGLE_RATE_REV_PER_UT1_DAY",
     "GM_SUN_M3_S2",
+    "M_PER_KM",
     "OBLIQUITY_J2000_ARCSEC",
     "OBLIQUITY_J2000_RAD",
     "SECONDS_PER_DAY",

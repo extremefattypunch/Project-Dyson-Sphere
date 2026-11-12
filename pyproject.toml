@@ -117,7 +117,7 @@ init_typed = true
 warn_required_dynamic_aliases = true
 
 [[tool.mypy.overrides]]
-module = ["spiceypy.*", "rebound.*", "hcipy.*"]
+module = ["spiceypy.*", "rebound.*", "hcipy.*", "scipy.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------------------------------------

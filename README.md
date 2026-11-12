@@ -56,6 +56,7 @@ there can be regenerated.
 ## Quick start
 
 ```bash
+uv run helioswarm fetch-kernels          # download + verify the SPICE kernels (~33 MB, once)
 uv run helioswarm validate-config configs/mvp_single_satellite.yaml
 uv run helioswarm validate-config configs/mvp_single_satellite.yaml --show-provenance
 uv run helioswarm validate-config configs/mvp_single_satellite.yaml --write-resolved /tmp/resolved.yaml
@@ -70,6 +71,10 @@ What these commands do:
 - `--show-provenance` lists every resolved parameter with its unit and its provenance
   (`measured`, `sourced`, `assumed` or `swept`).
 - `--write-resolved` writes the configuration with all defaults made explicit.
+- `fetch-kernels` downloads the SPICE kernels listed in `data/kernels/kernels.json` into
+  `$HELIOSWARM_KERNEL_DIR` (or `data/kernels/`). It verifies the size, SHA-256 and NAIF MD5 of
+  every file, skips files that are already present and valid, and never overwrites a mismatch.
+  The SPICE tests fetch the kernels themselves if they are missing.
 
 Simulation commands such as `run`, `plot`, `sweep` and `validate-models` arrive in later
 milestones. They do not exist yet.
@@ -103,7 +108,7 @@ The schema follows these rules:
 |---|---|---|
 | M0 Scaffold | env + lock, package layout, config schema, `validate-config`, lint/type/test, CI | implemented |
 | M1 Analytic orbit | constants, two-body elements ↔ state, Kepler propagation, invariants | implemented |
-| M2 Ephemeris geometry | SPICE kernels, UTC→TDB, ephemeris provider, L1 propagator, SRP | planned |
+| M2 Ephemeris geometry | SPICE kernels, UTC→TDB, ephemeris provider, L1 propagator, SRP | implemented |
 | M3 Access + light time | ground sites, Earth rotation, retarded-time targeting, occultation | planned |
 | M4 Solar + thermal | S(r), PV efficiency law, PV and radiator thermal balance | planned |
 | M5 Beam physics | Airy/Gaussian/Fresnel optics, microwave aperture, capture, pointing, atmosphere | planned |

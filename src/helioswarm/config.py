@@ -76,6 +76,36 @@ OPTICAL_WAVELENGTH_RANGE_M: Final[tuple[float, float]] = (1.0e-7, 2.0e-5)
 MICROWAVE_WAVELENGTH_RANGE_M: Final[tuple[float, float]] = (1.0e-3, 1.0)
 """Wavelengths accepted for microwave transmission: 1 mm to 1 m (300 GHz to 300 MHz)."""
 
+PerturbingBody = Literal[
+    "MERCURY BARYCENTER",
+    "VENUS BARYCENTER",
+    "EARTH",
+    "MOON",
+    "MARS BARYCENTER",
+    "JUPITER BARYCENTER",
+    "SATURN BARYCENTER",
+    "URANUS BARYCENTER",
+    "NEPTUNE BARYCENTER",
+]
+"""Bodies (SPICE names) that may perturb the satellite in the L1 model besides the Sun."""
+
+DEFAULT_PERTURBING_BODIES: Final[tuple[PerturbingBody, ...]] = get_args(PerturbingBody)
+"""Default L1 perturber set: every planetary-system barycentre in DE440 (de440s), with the
+Earth-Moon system split into EARTH (399) and MOON (301)."""
+
+INTEGRATOR_RTOL_MIN: Final[float] = 1.0e-13
+"""Lowest accepted L1 integrator rtol: above scipy's floor 100*eps (2.2e-14), below which
+``solve_ivp`` silently raises rtol (shared by the schema and ``propagate.IntegratorSettings``)."""
+
+INTEGRATOR_RTOL_MAX: Final[float] = 1.0e-6
+"""Highest accepted L1 integrator rtol (looser tolerances give km-level errors per year)."""
+
+EPHEMERIS_CACHE_STEP_MAX_S: Final[float] = 7200.0
+"""Largest accepted node spacing of the L1 Hermite ephemeris cache [s]. Measured midpoint
+interpolation errors over 2030 (de440s): < 1 m for every body at 7200 s (Mercury barycentre
+largest); at 21600 s Mercury reaches ~77 m and at 86400 s ~2e4 m (Moon ~5e3 m), so larger
+spacings are rejected. Each run also reports the measured cache error in its diagnostics."""
+
 RECEIVER_TECHNOLOGY_FOR_MODE: Final[Mapping[str, str]] = {
     "optical": "laser_photovoltaic",
     "microwave": "rectenna",
@@ -173,6 +203,16 @@ def _canonical_utc(value: str) -> str:
     return f"{year:04d}-{month:02d}-{day:02d}T{hour:02d}:{minute:02d}:{second:02d}{fraction}"
 
 
+def canonical_utc(value: str) -> str:
+    """Public form of the configuration's UTC-epoch validator.
+
+    Returns the canonical ``YYYY-MM-DDTHH:MM:SS[.ffffff]`` spelling of an ISO-8601 UTC epoch
+    (no time-zone offset, no leap-second ``:60``) or raises ``ValueError``. Used by
+    :mod:`helioswarm.timescale` so that configuration epochs and API epochs obey one rule.
+    """
+    return _canonical_utc(value)
+
+
 # ---------------------------------------------------------------------------------------------
 # Sections
 # ---------------------------------------------------------------------------------------------
@@ -246,9 +286,55 @@ class TimeConfig(_Section):
         description="Maximum step size of the adaptive L1 orbit integrator, passed as "
         "scipy.integrate.solve_ivp(max_step=...); the integrator may take smaller steps. "
         "Required when orbit.model is 'prescribed_ephemeris_perturbed_test_particle' and "
-        "rejected otherwise (the analytic two-body model has no integrator). Integration "
-        "tolerances (rtol/atol) are added with the L1 propagator (M2).",
+        "rejected otherwise (the analytic two-body model has no integrator).",
         gt=0.0,
+    )
+    integrator_rtol: float = _field(
+        1.0e-12,
+        unit="1",
+        provenance="assumed",
+        kind="numerical",
+        description="Relative tolerance of the L1 DOP853 integrator (solve_ivp rtol). The "
+        "lower bound 1e-13 stays above scipy's floor 100*eps (2.2e-14), below which scipy "
+        "silently raises rtol. L1 only (rejected when set with orbit.model='two_body_kepler').",
+        ge=INTEGRATOR_RTOL_MIN,
+        le=INTEGRATOR_RTOL_MAX,
+    )
+    integrator_atol_position_m: float = _field(
+        1.0e-3,
+        unit="m",
+        provenance="assumed",
+        kind="numerical",
+        description="Absolute tolerance of the L1 integrator on each position component. At "
+        "1 au it is far below rtol*|r| (0.15 m for rtol 1e-12), so the relative tolerance "
+        "governs; atol only matters for a component passing through zero. L1 only.",
+        gt=0.0,
+        le=1.0e3,
+    )
+    integrator_atol_velocity_m_s: float = _field(
+        1.0e-9,
+        unit="m s^-1",
+        provenance="assumed",
+        kind="numerical",
+        description="Absolute tolerance of the L1 integrator on each velocity component. At "
+        "1 au it is below rtol*|v| (3e-8 m/s for rtol 1e-12), so the relative tolerance "
+        "governs. L1 only.",
+        gt=0.0,
+        le=1.0e-3,
+    )
+    ephemeris_cache_step_s: float = _field(
+        3600.0,
+        unit="s",
+        provenance="assumed",
+        kind="numerical",
+        description="Sample spacing of the cubic-Hermite cache of prescribed body positions "
+        "used by the L1 integrator (positions and velocities sampled from the ephemeris). "
+        "Validated range: up to 7200 s, where the interpolation error stays below 1 m for "
+        "every DE440 body used (tested against direct SPICE calls; the error grows as h^4, "
+        "e.g. ~2e4 m for the Mercury barycentre at 86400 s). Every L1 run reports the "
+        "measured cache error (L1Diagnostics.cache_midpoint_error_m). L1 only.",
+        gt=0.0,
+        le=EPHEMERIS_CACHE_STEP_MAX_S,
     )
 
     @field_validator("start_utc")
@@ -330,6 +416,17 @@ class FramesConfig(_Section):
         kind="model_choice",
         source="NGA.STND.0036 (WGS 84)",
         description="Reference ellipsoid for geodetic receiver coordinates and Earth blockage.",
+    )
+    ephemeris_kernel_set: Literal["helioswarm-de440s-v1"] = _field(
+        "helioswarm-de440s-v1",
+        unit="-",
+        provenance="sourced",
+        kind="model_choice",
+        source="data/kernels/kernels.json kernel_set_id (NAIF generic kernels naif0012.tls, "
+        "pck00011.tpc, gm_de440.tpc, de440s.bsp; SHA-256 pinned)",
+        description="SPICE kernel set (ephemeris, GM values, leap seconds) the run must use. "
+        "SPICE-backed run entry points refuse a loaded kernel set with another kernel_set_id, "
+        "so the configuration pins the ephemeris data of the run.",
     )
 
 
@@ -421,7 +518,24 @@ class OrbitConfig(_Section):
         unit="-",
         provenance="assumed",
         kind="model_choice",
-        description="Include planetary third-body accelerations (L1 model only).",
+        description="Include planetary third-body accelerations (L1 model only). false = the "
+        "Sun is the only gravitating body: heliocentric two-body motion (+ SRP), the Sun's "
+        "ephemeris used only to place the orbit relative to the SSB (the L1 equations are "
+        "integrated heliocentrically with consistent direct and indirect terms).",
+    )
+    perturbing_bodies: tuple[PerturbingBody, ...] = _field(
+        DEFAULT_PERTURBING_BODIES,
+        unit="-",
+        provenance="assumed",
+        kind="model_choice",
+        description="Bodies (SPICE names) whose point-mass gravity acts on the satellite in "
+        "addition to the Sun when include_planetary_perturbations=true. Default: all planetary "
+        "system barycentres of DE440 with the Earth-Moon system split into EARTH and MOON. "
+        "Any subset is physically consistent (heliocentric integration with the direct and "
+        "indirect terms of exactly these bodies). Rejected when set explicitly with "
+        "include_planetary_perturbations=false.",
+        min_length=1,
+        strict=False,
     )
     include_solar_radiation_pressure: bool = _field(
         False,
@@ -477,6 +591,15 @@ class OrbitConfig(_Section):
                     "orbit.model='two_body_kepler' has no non-gravitational forces; it "
                     "contradicts orbit.include_solar_radiation_pressure=true"
                 )
+        bodies_explicit = "perturbing_bodies" in self.model_fields_set
+        if not self.include_planetary_perturbations and bodies_explicit:
+            issues.append(
+                "orbit.perturbing_bodies is set but include_planetary_perturbations=false "
+                "ignores it; remove it or set include_planetary_perturbations=true"
+            )
+        dupes = sorted({b for b in self.perturbing_bodies if self.perturbing_bodies.count(b) > 1})
+        if dupes:
+            issues.append(f"orbit.perturbing_bodies lists bodies more than once: {dupes}")
         if self.include_solar_radiation_pressure:
             if self.cr is None:
                 issues.append("orbit.cr is required when include_solar_radiation_pressure=true")
@@ -1365,11 +1488,24 @@ class RunConfig(_Section):
                 "time.integrator_step_s is required when orbit.model="
                 "'prescribed_ephemeris_perturbed_test_particle'"
             )
-        if self.orbit.model == "two_body_kepler" and self.time.integrator_step_s is not None:
-            issues.append(
-                "time.integrator_step_s is set but orbit.model='two_body_kepler' is analytic "
-                "and ignores it; remove it or use 'prescribed_ephemeris_perturbed_test_particle'"
+        if self.orbit.model == "two_body_kepler":
+            l1_only = (
+                "integrator_step_s",
+                "integrator_rtol",
+                "integrator_atol_position_m",
+                "integrator_atol_velocity_m_s",
+                "ephemeris_cache_step_s",
             )
+            for name in l1_only:
+                explicit = name in self.time.model_fields_set
+                if (name == "integrator_step_s" and self.time.integrator_step_s is not None) or (
+                    name != "integrator_step_s" and explicit
+                ):
+                    issues.append(
+                        f"time.{name} is set but orbit.model='two_body_kepler' is analytic "
+                        "and ignores it; remove it or use "
+                        "'prescribed_ephemeris_perturbed_test_particle'"
+                    )
         if self.provenance_overrides:
             known = set(leaf_paths(self))
             for key in self.provenance_overrides:
@@ -1715,6 +1851,10 @@ def write_resolved_yaml(config: RunConfig, path: str | Path) -> Path:
 
 
 __all__ = [
+    "DEFAULT_PERTURBING_BODIES",
+    "EPHEMERIS_CACHE_STEP_MAX_S",
+    "INTEGRATOR_RTOL_MAX",
+    "INTEGRATOR_RTOL_MIN",
     "MICROWAVE_BEAM_MODELS",
     "MICROWAVE_WAVELENGTH_RANGE_M",
     "OPTICAL_BEAM_MODELS",
@@ -1729,6 +1869,7 @@ __all__ = [
     "FramesConfig",
     "ModelsConfig",
     "OrbitConfig",
+    "PerturbingBody",
     "ProjectConfig",
     "ProvenanceRow",
     "ReceiverConfig",
@@ -1738,6 +1879,7 @@ __all__ = [
     "TimeConfig",
     "TransmitterConfig",
     "canonical_json",
+    "canonical_utc",
     "config_hash",
     "dump_resolved_yaml",
     "field_meta",

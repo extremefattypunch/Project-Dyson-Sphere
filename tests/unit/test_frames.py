@@ -2,7 +2,7 @@
 
 The expected rotation is derived here independently from the definition of the ECLIPJ2000
 frame (rotation of J2000 about the common x-axis / equinox by the IAU 1976 obliquity
-epsilon_0 = 23 deg 26' 21.448"). The SPICE ``pxform`` cross-check is added in M2.
+epsilon_0 = 23 deg 26' 21.448"), and cross-checked against SPICE ``pxform`` (M2).
 """
 
 from __future__ import annotations
@@ -20,9 +20,11 @@ from helioswarm.frames import (
     require_same_frame_and_origin,
     rotate_vectors,
     rotation_matrix,
+    spice_rotation_matrix,
     transform_state,
     transform_trajectory,
 )
+from helioswarm.kernels import KernelPoolError, KernelSet, LoadedKernels
 
 EPS0 = math.radians(23.0 + 26.0 / 60.0 + 21.448 / 3600.0)  # computed here, not imported
 
@@ -154,3 +156,27 @@ def test_require_same_frame_and_origin() -> None:
         require_same_frame_and_origin(a, _state("ECLIPJ2000", "SUN"))
     with pytest.raises(FrameMismatchError, match="SOLAR SYSTEM BARYCENTER"):
         require_same_frame_and_origin(a, _state("J2000", "SOLAR SYSTEM BARYCENTER"))
+
+
+@pytest.mark.spice
+@pytest.mark.parametrize("epoch_tdb_s", [-3.0e9, 0.0, 9.467e8])
+def test_ecliptic_rotation_matches_spice_pxform(
+    epoch_tdb_s: float, spice_kernels: LoadedKernels
+) -> None:
+    # SPICE defines ECLIPJ2000 from J2000 with the same IAU 1976 obliquity; both sides compute
+    # cos/sin of the same float, so they agree to rounding (measured: exactly). Tolerance
+    # 1e-15 per element; a 1 mas change of the obliquity (4.8e-9 rad) would fail by 1e6x.
+    m_spice = spice_rotation_matrix("ECLIPJ2000", "J2000", epoch_tdb_s, spice_kernels)
+    np.testing.assert_allclose(m_spice, ecliptic_j2000_to_j2000_matrix(), rtol=0, atol=1e-15)
+    inv = spice_rotation_matrix("J2000", "ECLIPJ2000", epoch_tdb_s, spice_kernels)
+    np.testing.assert_allclose(inv, rotation_matrix("J2000", "ECLIPJ2000"), rtol=0, atol=1e-15)
+    eye = spice_rotation_matrix("J2000", "J2000", epoch_tdb_s, spice_kernels)
+    np.testing.assert_array_equal(eye, np.eye(3))
+
+
+@pytest.mark.spice
+def test_spice_rotation_requires_loaded_scope(kernel_set: KernelSet) -> None:
+    with kernel_set.loaded(verify=False) as k:
+        pass
+    with pytest.raises(KernelPoolError):
+        spice_rotation_matrix("ECLIPJ2000", "J2000", 0.0, k)
