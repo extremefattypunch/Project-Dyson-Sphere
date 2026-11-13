@@ -23,7 +23,7 @@ You need Python ≥ 3.11 and [uv](https://docs.astral.sh/uv/).
 ```bash
 git clone --branch helioswarm-m0-m6 git@github.com:extremefattypunch/Project-Dyson-Sphere.git
 cd Project-Dyson-Sphere
-uv sync --locked --extra dev --extra xcheck --extra itur --extra jax   # exact env from uv.lock
+uv sync --locked --extra dev --extra xcheck --extra itur --extra jax --extra weather   # exact env from uv.lock
 ```
 
 The code lives on the branch `helioswarm-m0-m6` (the default branch `main` holds only the
@@ -41,8 +41,12 @@ Extras:
 - `xcheck` adds REBOUND and HCIPy, which are used only for independent cross-check tests.
 - `itur` adds the ITU-R P.618/P.676/P.840 wrapper (`models.atmosphere: itu_r`, microwave).
 - `jax` adds CPU JAX for the optional batched capture backend (`--backend jax`; Python ≥ 3.12).
+- `weather` adds `cdsapi`, `xarray` and `h5netcdf` for ERA5 site weather
+  (`models.weather_source: era5`, `helioswarm weather download|climatology`; M8a). Downloading
+  needs a Copernicus CDS account (`~/.cdsapirc`, ERA5 licence accepted); tests never download.
+- `opt` adds pymoo and SALib (M8).
 - `gpu` adds the CUDA 12 JAX build (~4.4 GB of NVIDIA wheels); only the GPU benchmark needs it.
-  CI installs every extra except `gpu`.
+  CI installs every extra except `gpu` and `opt`.
 
 ### Harvard FASRC Cannon cluster (Hekstra lab)
 
@@ -50,7 +54,7 @@ On the cluster, source the environment script **before every uv command**:
 
 ```bash
 source scripts/cluster_env.sh
-uv sync --locked --extra dev --extra xcheck --extra itur --extra jax   # + --extra gpu for the GPU benchmark
+uv sync --locked --extra dev --extra xcheck --extra itur --extra jax --extra weather   # + --extra gpu for the GPU benchmark
 ```
 
 The script keeps everything out of `/n/home05`:
@@ -74,7 +78,7 @@ source scripts/cluster_env.sh
 SCR=/n/netscratch/hekstra_lab/Lab/ian_poon/scratch-env      # any netscratch directory
 export UV_PROJECT_ENVIRONMENT=$SCR/venv UV_CACHE_DIR=$SCR/uv-cache \
        HELIOSWARM_KERNEL_DIR=$SCR/kernels HELIOSWARM_RUNS_DIR=$SCR/runs
-uv sync --locked --extra dev --extra xcheck --extra itur --extra jax
+uv sync --locked --extra dev --extra xcheck --extra itur --extra jax --extra weather
 # ... and `rm -rf $SCR` when done.
 ```
 
@@ -190,8 +194,21 @@ sbatch -p shared --dependency=afterok:$JID slurm/constellation_merge.sbatch \
       configs/constellation_demo_n1000.yaml $HELIOSWARM_RUNS_DIR/constellation_demo_n1000_links
 sbatch slurm/gpu_bench_constellation.sbatch configs/constellation_demo_n1000.yaml \
       $HELIOSWARM_RUNS_DIR/constellation_demo_n1000_links             # gpu_test: N = 1000 capture batch
+# M8a: ERA5 cloud cover for the sites of configs/weather/era5_sites.yaml (~3 min, 45 MB on
+# netscratch), climatology, ERA5 re-runs over the weather of 2014-2023, economics (in session)
+sbatch slurm/era5_download.sbatch configs/weather/era5_sites.yaml
+uv run helioswarm weather climatology configs/weather/era5_sites.yaml --out $HELIOSWARM_RUNS_DIR/era5_climatology
+sbatch --array=0 --export=ALL,SWEEP_ARRAY_COUNT=1 -t 0-00:30 --mem=1G slurm/sweep_array.sbatch \
+       configs/mvp_era5_years_sweep.yaml $HELIOSWARM_RUNS_DIR/mvp_era5_years_sweep
+uv run helioswarm economics $HELIOSWARM_RUNS_DIR/constellation_demo_sweep \
+       --config configs/economics/optimistic.yaml --config configs/economics/nominal.yaml \
+       --config configs/economics/conservative.yaml --out $HELIOSWARM_RUNS_DIR/economics/demo
 seff <jobid>; jobstats <jobid>                                       # right-sizing check after each job
 ```
+
+A worktree with its own venv submits with `HELIOSWARM_REPO=<worktree>` and
+`HELIOSWARM_ENV_OVERLAY=<overlay.sh>` exported: `slurm/common.sh` sources the overlay after
+`scripts/cluster_env.sh` (unset by default; no effect on the main checkout).
 
 All templates use `#!/bin/bash -l`, source `scripts/cluster_env.sh`, run `uv run --locked`,
 use a node-local `TMPDIR=/scratch/${USER}_${SLURM_JOB_ID}` (removed on exit), log to
@@ -241,6 +258,7 @@ runs on the cluster environment (the one skip is the real-GPU test, run by
 | M6 End-to-end single satellite | link budget, system run, metrics, run outputs, CLI run/plot/sweep/validate-models, Slurm templates, optional JAX/GPU capture kernel | done | 972 passed, 1 skipped |
 | M6b Completeness audit | `docs/compliance_matrix.md`; typed summary, §7.3 diagnostics, manifest window/units, `characterize`, idealised-bound labels, microwave sweep, fresh-clone reproduction, review fixes | done | 1059 passed, 1 skipped |
 | M7 Constellation | rings/phases (Earth-relative), stacked L1, link candidates per satellite × site, deterministic capacity-constrained scheduler (greedy + exact), incoherent network sums, network/receiver/satellite outputs, mass proxy, Slurm arrays, GPU benchmark | done | 1155 passed, 1 skipped |
+| M8a ERA5 weather + economics | ERA5 download/cache with provenance, cloud-cover outage per site and arrival hour (threshold/Bernoulli; year mapping), climatology and joint statistics, parameterised LCOE/NPV with scenarios and Monte Carlo from saved runs | done | 1264 passed, 2 skipped |
 | M8 Optimisation/uncertainty | sweeps, constrained optimisation, sensitivity | not started | — |
 | M9 Paper package | frozen configs, figures, methods/validation notes | not started | — |
 
@@ -286,6 +304,15 @@ recommended engineering design").
   dark ring 0.837784869173, REBOUND full force model 1.03 m over one year, ITU-R P.618-13
   validation example 1.5e-7 dB (production P.676-12 gas term regression-pinned only; open item).
 
+- **ERA5 weather (M8a)**: with the hourly ERA5 cloud cover of 2014–2023 at the receiver
+  (outage iff grid-box cloud fraction > 0.5), the optical MVP keeps 37–48 % of its clear-sky
+  energy (site 0 N 0 E, clear 38 % of the hours); the N = 10 constellation demo keeps 68–74 %
+  with its three scenario sites and 82–88 % with three sites chosen from the ERA5 climatology
+  (`docs/milestones/M8a.md`).
+- **Economics (M8a; scenarios, not predictions)**: every simulated case is 3–6 orders of
+  magnitude above 0.05 USD/kWh (e.g. N = 10 demo 93 / 417 / 1 750 USD/kWh optimistic / nominal /
+  conservative); the microwave MVP's LCOE is undefined (2.8 kWh/yr).
+
 ## Reproducing from a fresh clone
 
 The definition of done (PDF §19) was checked in M6b by following only this README in a clean
@@ -297,7 +324,7 @@ short:
 git clone --branch helioswarm-m0-m6 git@github.com:extremefattypunch/Project-Dyson-Sphere.git
 cd Project-Dyson-Sphere
 source scripts/cluster_env.sh            # cluster only; then optionally the throwaway overrides above
-uv sync --locked --extra dev --extra xcheck --extra itur --extra jax
+uv sync --locked --extra dev --extra xcheck --extra itur --extra jax --extra weather
 uv run helioswarm fetch-kernels
 uv run helioswarm validate-config configs/*.yaml
 uv run helioswarm run configs/mvp_single_satellite.yaml --out $HELIOSWARM_RUNS_DIR/mvp_single_satellite
@@ -317,6 +344,7 @@ sweeps reproduce with the `sweep` commands in the Slurm section.
 - `docs/data_provenance.md`: kernels, external data and the provenance of parameter defaults.
 - `docs/validation_report.md`: tests, independent comparisons, tolerances and discrepancies.
 - `docs/milestones/`: per-milestone implementation notes (sections A–F of PDF §18).
+- `docs/milestones/M8a.md`: ERA5 site weather and economics (results, commands, limitations).
 - `docs/compliance_matrix.md`: every PDF requirement in M0–M7 scope with its evidence and status
   (M6b audit), including the deferred M7–M9 items and the fresh-clone reproduction.
 - `experiments/README.md`: the experiment log convention.

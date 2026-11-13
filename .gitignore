@@ -35,3 +35,6 @@ figures/**/_cache/
 .idea/
 .vscode/
 *.swp
+
+# --- ERA5 weather files (on the cluster: $HELIOSWARM_WEATHER_DIR on netscratch) -----------------
+data/weather/*

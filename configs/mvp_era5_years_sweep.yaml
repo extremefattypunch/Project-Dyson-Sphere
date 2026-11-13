@@ -1,0 +1,13 @@
+# helioswarm sweep (M8a): MVP optical single satellite under the ERA5 weather of each historical year 2014-2023
+# (weather.historical_year; the simulated year 2030 takes that year's hourly cloud cover at the
+# same calendar date and UTC hour). The spread over the ten points is the year-to-year weather
+# variability of the delivered energy and availability (aleatory), not a model uncertainty.
+#   helioswarm sweep configs/mvp_era5_years_sweep.yaml --out $HELIOSWARM_RUNS_DIR/mvp_era5_years_sweep
+#   (Slurm: slurm/sweep_array.sbatch; commands in docs/milestones/M8a.md)
+
+sweep_schema_version: 1
+name: mvp_era5_years_sweep
+description: "MVP optical single satellite: ERA5 weather of 2014-2023"
+base_config: mvp_single_satellite_era5.yaml
+parameters:
+  weather.historical_year: [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]

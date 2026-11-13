@@ -1,4 +1,9 @@
-# Compliance matrix: M0–M7 against the requirements PDF
+# Compliance matrix: M0–M7 (+ M8a) against the requirements PDF
+
+**M8a update (ERA5 site weather, parameterised economics).** §10.2 "site-specific cloud data
+later", §12.5 economics, §14.1 external weather-data provenance, §14.2 NetCDF for gridded
+weather and §17 "economic overclaim" / "atmosphere over-simplified" are updated below with
+**satisfied (M8a)** and the evidence (`docs/milestones/M8a.md`).
 
 **M7 update (constellation).** The rows deferred to M7 (§4 layout `constellation_demo.yaml` /
 `scheduler.py`, §4 SciPy.optimize for the scheduler, §6.4 several sites to the scheduler, §10.4
@@ -214,7 +219,7 @@ review); §19 fresh-clone reproduction.
 |---|---|---|
 | §10.1 Single auditable stage chain; one owner per efficiency; no extra aperture efficiency | `src/helioswarm/link_budget.py:310` `evaluate_link_budget`, `src/helioswarm/power_chain.py:122` `onboard_power_chain`; `tests/unit/test_link_budget.py::test_stage_chain_matches_hand_computation`, `tests/unit/test_link_budget.py::test_onboard_stages_have_a_single_owner` | satisfied |
 | §10.2 Optical clear/cloudy scenario factors and an availability mask | `src/helioswarm/atmosphere.py:239` `atmospheric_transmission`; cloudy optical = hard outage; `tests/unit/test_atmosphere.py::test_cloudy_optical_is_a_hard_outage`, `tests/unit/test_atmosphere.py::test_optical_scenario_transmittance_scales_with_airmass` | satisfied |
-| §10.2 Site-specific cloud data later | scenario factors only (the PDF's MVP) | deferred (M8 uncertainty / later data work) |
+| §10.2 Site-specific cloud data later; cloud obstruction as a hard optical outage | `models.weather_source = era5` + `weather` section (`src/helioswarm/config.py` `WeatherConfig`); ERA5 hourly total cloud cover at each site (`src/helioswarm/era5.py`: request builder, downloader with provenance, cache reader; `src/helioswarm/weather.py`: TDB→UTC, year mapping, threshold/Bernoulli outage, climatology and joint statistics); wired into `system.atmosphere_at_access` for single-satellite and constellation runs; tests `tests/unit/test_era5.py`, `tests/unit/test_weather.py`, `tests/integration/test_weather_run.py::test_era5_outage_hits_exactly_the_cloudy_arrival_hours` (independent `et2utc` path), `::test_constellation_stage_a_applies_site_weather`; Slurm re-runs of the MVP and the constellation demo with ERA5 weather of 2014–2023 (`docs/milestones/M8a.md` D). Not a precise transmission from cloud fraction (PDF §10.2 first bullet): `tcc` only decides a hard outage, documented as a named approximation | satisfied (M8a) |
 | §10.2 Turbulence only with a specified receiver/wavefront-correction architecture | not modelled; stated on every beam figure (`UPPER_BOUND_NOTE`) | satisfied (correctly omitted, labelled) |
 | §10.2 Atmosphere separate from capture and receiver conversion | separate stages in `src/helioswarm/link_budget.py:150` `LinkBudgetResult`; `tests/unit/test_link_budget.py::test_capture_and_atmosphere_are_applied_once_without_aperture_factor`, e2e `tests/integration/test_end_to_end.py::test_atmosphere_stage_follows_the_plane_parallel_law` | satisfied |
 | §10.3 ITU-R Earth-space gaseous/rain/cloud attenuation where valid | `src/helioswarm/atmosphere.py:343` `itu_r_slant_path_attenuation_dB`; `tests/unit/test_atmosphere.py::test_itu_r_reproduces_itu_validation_example` | satisfied |
@@ -244,6 +249,13 @@ review); §19 fresh-clone reproduction.
 | §11.2 Independent satellites with own technology; vectorised; one ring evenly phased then randomized; rings/inclinations/eccentricities; feasible link list; capacity/exclusivity/interlock/duty-cycle scheduling; deterministic tested scheduler | `src/helioswarm/config.py` `ConstellationConfig`/`RingConfig`; `src/helioswarm/constellation.py` `constellation_members`, `evaluate_links`; `src/helioswarm/propagate.py` `propagate_l1_stacked`; `src/helioswarm/scheduler.py`; tests `tests/integration/test_constellation.py::test_even_and_random_phases`, `::test_stacked_l1_equals_per_satellite_l1`, `::test_identical_even_satellites_with_unlimited_receiver_sum_the_individual_runs`, `::test_stacks_are_split_and_tolerances_scaled_by_one_over_sqrt_n`, `::test_duty_cycle_limit_is_wired_through_the_run_and_the_summary`, `::test_numpy_batch_beam_backend_equals_the_reference_on_two_rings`, `tests/unit/test_scheduler.py` (determinism, permutation, brute force, duty cycle incl. exact decimal floors); `scripts/validate_stacked_l1.py` (heterogeneous rings, one year); Slurm runs N = 1/10/100/1000, even vs random, greedy vs optimal (`docs/milestones/M7.md` D) | satisfied (M7) |
 | §11.3 Independent vs coherent: incoherent power sum only | `src/helioswarm/constellation.py` stage B; `tests/unit/test_scheduler.py::test_incoherent_sum_adds_powers_not_amplitudes`; `BeamResult.coherent_combining` always False | satisfied (M7) |
 | §11.4 P_grid per receiver and network, active satellite/link counts, collector/radiator/aperture/mass totals, power per mass, scheduler reason | `src/helioswarm/constellation_io.py` (`network.parquet`, `receivers.parquet`, `satellites.parquet`, `ConstellationSummary`: network and per-receiver statistics, availability, outages, counts, totals, mass proxy, power per area and mass, unavailability breakdown incl. `RECEIVER_CAPACITY`/`SCHEDULER_NOT_SELECTED`/`DUTY_CYCLE`, unconstrained baseline and capacity-loss fraction); `tests/integration/test_constellation.py::test_cli_constellation_run_outputs_and_determinism`, `::test_duty_cycle_limit_is_wired_through_the_run_and_the_summary` (breakdown vs independent recount), `tests/unit/test_constellation_stage_b.py::test_satellite_primary_reason_is_the_furthest_link_by_first_reason` | satisfied (M7) |
+
+## §12 Optimisation and uncertainty (M8a part)
+
+| Requirement | Evidence | Status |
+|---|---|---|
+| §12.5 Economics as a separate parameterised module (manufacturing cost/kg, transport, launch/deployment, lifetime, replacement, operations, discount rate); compare scenarios and uncertainty; no single LCOE as a robust prediction | `src/helioswarm/economics.py` (`EconomicsConfig` with `CostParameter` provenance; Tsiolkovsky transport with per-satellite, slot-phase-aware patched-conic or explicit Δv; CAPEX with technology-specific receiver cost (optical value an `assumed` proxy) and optional transmitter capex, replacement, degradation, opex; CRF, LCOE, NPV, EAC; `monte_carlo` with ranges checked against the scenarios); `helioswarm economics RUN_OR_SWEEP_DIR --config ...`; `configs/economics/{optimistic,nominal,conservative,geo_nominal}.yaml` (NASA OTPS 2024 values with PDF pages, others `assumed`); tests `tests/unit/test_economics.py` (CRF vs annuity sum, analytic LCOE, geometric-series degradation, replacement cycles, vis-viva/Kepler checks of the Δv model, zero-energy handling, USD/kWh vs USD/MWh, scenario ordering, seeded MC); results on the M6/M7 outputs in `docs/milestones/M8a.md` | satisfied (M8a) |
+| §12.1–12.4 optimisation, Monte Carlo/Sobol of the physics, scenarios | — | deferred (M8) |
 
 ## §13 Verification and validation gates
 
@@ -304,7 +316,7 @@ review); §19 fresh-clone reproduction.
 | §14.1 Unique run directory and resolved config snapshot | `src/helioswarm/io.py:79` `prepare_run_dir` (refuses to overwrite), `config_resolved.yaml` | satisfied |
 | §14.1 Git hash, Python, dependency versions, OS, CPU/GPU, seed, simulation start/end time | manifest `git`, `python_version`, `packages`, `os`, `cpu_model`, `gpu_devices`, `seed`, **`simulation_window`** | satisfied (M6b for the simulated window) |
 | §14.1 Kernel names, versions, URLs, SHA-256; large kernels not committed | `data/kernels/kernels.json`, `.gitignore`, manifest `kernels`; `docs/data_provenance.md` | satisfied |
-| §14.1 External weather data: product, retrieval, variables, resolution, licence/attribution | no external weather dataset; the ITU-R digital maps inside `itur` are documented in `docs/data_provenance.md` (variables, measured grid spacing, temporal nature, wheel hash, attribution, licence status) | satisfied (M6b: the maps' variables, resolution and licence status were not recorded) |
+| §14.1 External weather data: product, retrieval, variables, resolution, licence/attribution | ITU-R digital maps inside `itur` (M6b) and ERA5 (M8a): per-file `*.nc.provenance.json` (`src/helioswarm/era5.py` `Era5FileProvenance`: collection, DOI, citation, variables, area, period, request + SHA-256, CDS request id, retrieval UTC, cdsapi version, file/archive SHA-256, licence, attribution), per-run `weather.json` listed in `manifest.json`; `docs/data_provenance.md` M8a; `tests/unit/test_era5.py::test_real_fixture_provenance_schema_and_checksum`, `tests/integration/test_weather_run.py::test_cli_run_writes_weather_provenance` | satisfied (M6b, M8a) |
 | §14.1 Every random operation receives an explicit seeded Generator | `rng = default_rng(project.seed)` in `src/helioswarm/io.py:406` `execute_run`; MC tests use explicit Generators | satisfied |
 | §14.2 Parquet for time series (CSV optional), JSON for summaries/manifests, no giant JSON arrays | `timeseries.parquet` (zstd), `summary.json`/`manifest.json` small; sweep table copied as CSV in `figures/m6/` | satisfied |
 | §14.2 NetCDF/Zarr and FITS only where natural | none needed | N/A |
@@ -328,6 +340,7 @@ review); §19 fresh-clone reproduction.
 | M5 | analytic diffraction and capture tests pass | `test_optical.py`, `test_capture.py`, `test_aperture.py` | satisfied |
 | M6 | one config produces P_grid(t), manifest, summary, plots | CLI run test; Slurm runs 60127166/60127172; fresh clone | satisfied |
 | M7 | no double counting; deterministic capacity-constrained results | `tests/unit/test_scheduler.py`, `tests/integration/test_constellation.py`; Slurm constellation runs with network metrics (`docs/milestones/M7.md` D) | satisfied (M7) |
+| M8a (plan) | ERA5 data downloaded with provenance; weather affects optical results through config; economics gives LCOE/NPV ranges from saved runs | `docs/milestones/M8a.md` (download job 60341911; ERA5 re-runs; economics on the M6/M7 outputs) | satisfied (M8a) |
 | M8–M9 | — | not started | deferred (M8–M9) |
 
 ## §17 Risks and agent behaviour rules
@@ -339,9 +352,10 @@ review); §19 fresh-clone reproduction.
 | Pointing treated as perfect: bias and jitter, capture distributions | percentiles p05/p50/p95 per epoch; characterisation curves | satisfied |
 | Coherence assumed: independent powers | `coherent_combining=False` | satisfied |
 | Thermal losses omitted: energy balance, radiator feasibility, mass proxy | ledger, feasibility; radiator mass when `thermal.radiator_specific_mass_kg_m2` is set (`tests/unit/test_thermal.py::test_sized_radiator_runs_at_the_limit_and_reports_mass`) | satisfied |
-| Atmosphere over-simplified: scenario masks first | scenario + ITU-R | satisfied |
+| Atmosphere over-simplified: scenario masks first, site-specific weather later | scenario + ITU-R; ERA5 site weather (M8a) | satisfied (M8a for the site-specific part) |
 | Receiver double counting: explicit scheduler and receiver power/thermal limits | `src/helioswarm/scheduler.py`; double-counting check in the constellation `summary.json` | satisfied (M7) |
-| Optimisation of a flawed model / economic overclaim | — | deferred (M8, later) |
+| Optimisation of a flawed model | — | deferred (M8) |
+| Economic overclaim: economics optional and parameterised, sensitivity ranges | `src/helioswarm/economics.py` (separate module, reads saved summaries only; every input with provenance; scenario configs `configs/economics/*.yaml`; seeded Monte Carlo intervals; zero/near-zero energy → LCOE undefined with flag; disclaimer in `economics.json`); `tests/unit/test_economics.py` | satisfied (M8a) |
 | Overengineering: one-satellite slice first | M6 slice before constellation | satisfied |
 | Inspect existing interfaces; no duplicate implementations | single owners (e.g. Ruze in `aperture.py`, on-board chain in `power_chain.py`); M6b reuses M4/M5 functions in `characterize.py` | satisfied |
 | Implementation note per milestone (files, equations, assumptions, tests, issues) | `docs/milestones/M0.md` … `M6b.md` (A–F) | satisfied |

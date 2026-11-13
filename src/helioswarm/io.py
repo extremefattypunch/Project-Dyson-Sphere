@@ -377,6 +377,12 @@ def write_run(
     files[SUMMARY_FILE] = file_sha256(sum_path)
     log_path = write_run_log(run_dir / LOG_FILE, result)
     files[LOG_FILE] = file_sha256(log_path)
+    if result.weather is not None:
+        from helioswarm.weather import WEATHER_FILE
+
+        files[WEATHER_FILE] = file_sha256(
+            write_json(run_dir / WEATHER_FILE, result.weather.provenance())
+        )
     figures: tuple[Path, ...] = ()
     manifest = build_manifest(
         result,

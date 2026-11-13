@@ -1,0 +1,45 @@
+# helioswarm ECONOMICS scenario (optimistic) -- M8a, PDF §12.5. Parameterised scenario
+# economics, NOT a cost prediction (PDF §17 "Economic overclaim"): compare the optimistic /
+# nominal / conservative range and the Monte Carlo interval, never one LCOE. Every number is
+# either sourced (citation with page), derived from cited numbers (arithmetic stated) or
+# explicitly 'assumed'. Usage (no re-simulation; reads summary.json + config_resolved.yaml):
+#   helioswarm economics RUN_OR_SWEEP_DIR --config configs/economics/optimistic.yaml \
+#       --config configs/economics/nominal.yaml --config configs/economics/conservative.yaml
+# Money: USD of the cited sources (mixed cost years, no inflation adjustment). Isp values are
+# assumed class values (chemical upper stage ~450-460 s, storable ~320 s), not sourced.
+
+economics_schema_version: 1
+scenario: optimistic
+description: "optimistic scenario; heliocentric transport by impulsive patched conics from a 400 km LEO"
+discount_rate: {value: 0.03, provenance: sourced, source: "NASA OTPS, Rodgers et al., 'Space-Based Solar Power', Report ID 20230018600, 11 Jan 2024, https://www.nasa.gov/wp-content/uploads/2024/01/otps-sbsp-report-final-tagged-approved-1-8-24-tagged-v2.pdf (retrieved 2026-11-13, SHA-256 60ecde4628d6f405...), PDF p. 73 (printed p. 56): NREL simple LCOE 'Capital Recovery Factor ... with a default discount rate of 3%'"}
+system_lifetime_years: {value: 30, provenance: sourced, source: "NASA OTPS, Rodgers et al., 'Space-Based Solar Power', Report ID 20230018600, 11 Jan 2024, https://www.nasa.gov/wp-content/uploads/2024/01/otps-sbsp-report-final-tagged-approved-1-8-24-tagged-v2.pdf (retrieved 2026-11-13, SHA-256 60ecde4628d6f405...), PDF p. 28 (printed p. 11), Table 2: system lifetime 30 years (The Aerospace Corporation estimates)"}
+construction_years: {value: 1, provenance: assumed}   # capex at t = 0 (overnight)
+hardware_lifetime_years: {value: 15, provenance: sourced, source: "NASA OTPS, Rodgers et al., 'Space-Based Solar Power', Report ID 20230018600, 11 Jan 2024, https://www.nasa.gov/wp-content/uploads/2024/01/otps-sbsp-report-final-tagged-approved-1-8-24-tagged-v2.pdf (retrieved 2026-11-13, SHA-256 60ecde4628d6f405...), PDF p. 91 (printed p. 74), sensitivity 3: hardware lifetime 15 years ('Today's GEO hardware is most commonly baselined for a 15-year lifetime')"}
+replacement_fraction: {value: 1.0, provenance: assumed}   # full space-segment refurbishment per hardware life
+annual_degradation: {value: 0.0025, provenance: assumed}   # delivered-energy loss per year (PV/transmitter ageing)
+manufacturing_cost_per_kg_usd: {value: 500.0, provenance: assumed}
+microwave_receiver_capex_per_m2_usd: {value: 22.062411889049848, provenance: derived, source: "NASA OTPS, Rodgers et al., 'Space-Based Solar Power', Report ID 20230018600, 11 Jan 2024, https://www.nasa.gov/wp-content/uploads/2024/01/otps-sbsp-report-final-tagged-approved-1-8-24-tagged-v2.pdf (retrieved 2026-11-13, SHA-256 60ecde4628d6f405...), PDF p. 84 (printed p. 67): RD1 rectenna cost $623,800,000 (20% of the $3.119B ground segment) / RD1 rectenna area pi (3 km)^2 (6 km diameter, PDF p. 68) = 22.06 USD/m^2"}
+# No sourced cost of a laser-PV (optical) receiver was found: the microwave value above is used
+# as a stated PROXY (technology transfer, assumed), so optical LCOEs inherit a rectenna cost.
+optical_receiver_capex_per_m2_usd: {value: 22.062411889049848, provenance: assumed, source: "proxy (assumed): the microwave_receiver_capex_per_m2_usd value of this scenario (NASA OTPS 2024 rectenna / ground-segment cost per m^2 of the microwave reference designs) applied unchanged to an optical laser-PV receiver; no sourced optical-receiver cost"}
+transmitter_capex_per_m2_usd: {value: 0.0, provenance: assumed}   # transmitter cost folded into the flat manufacturing USD/kg
+opex_fixed_per_year_usd: {value: 14400000.0, provenance: assumed, source: "proxy (assumed transfer: the operations cost of one GW-class SBSP system applied unchanged to these runs, whatever their size): NASA OTPS, Rodgers et al., 'Space-Based Solar Power', Report ID 20230018600, 11 Jan 2024, https://www.nasa.gov/wp-content/uploads/2024/01/otps-sbsp-report-final-tagged-approved-1-8-24-tagged-v2.pdf (retrieved 2026-11-13, SHA-256 60ecde4628d6f405...), PDF p. 68 (printed p. 51), Table 11: operations cost 14,400,000 USD/year ($1.2M/month, autonomous operations) for one SBSP system"}
+opex_per_satellite_per_year_usd: {value: 0.0, provenance: assumed}
+opex_fraction_of_capex_per_year: {value: 0.0, provenance: assumed}
+electricity_price_usd_per_kWh: {value: 0.05, provenance: sourced, source: "NASA OTPS, Rodgers et al., 'Space-Based Solar Power', Report ID 20230018600, 11 Jan 2024, https://www.nasa.gov/wp-content/uploads/2024/01/otps-sbsp-report-final-tagged-approved-1-8-24-tagged-v2.pdf (retrieved 2026-11-13, SHA-256 60ecde4628d6f405...), PDF p. 8 (printed p. vii): 2050 projections for terrestrial renewable electricity 0.02-0.05 USD/kWh (upper end used)"}
+min_meaningful_energy_kWh_per_year: {value: 1000.0, provenance: assumed}   # below 1 MWh/yr the LCOE is reported as undefined
+transport:
+  launch_cost_per_kg_leo_usd: {value: 85.0, provenance: derived, source: "NASA OTPS, Rodgers et al., 'Space-Based Solar Power', Report ID 20230018600, 11 Jan 2024, https://www.nasa.gov/wp-content/uploads/2024/01/otps-sbsp-report-final-tagged-approved-1-8-24-tagged-v2.pdf (retrieved 2026-11-13, SHA-256 60ecde4628d6f405...), PDF p. 90 (printed p. 73): SpaceX-announced $10,000,000 per Starship launch; at the report's conversion $100M <-> $1000/kg (PDF p. 38) this is $100/kg, x 0.85 block-buy discount (PDF p. 28) = $85/kg"}
+  isp_s: {value: 460.0, provenance: assumed}
+  delta_v_model: patched_conic_heliocentric
+  parking_orbit_altitude_m: {value: 400000.0, provenance: assumed}
+  phasing_years: {value: 2, provenance: assumed}   # deployment time budget: free drift / phasing in 2 Earth orbital periods
+mass:
+  source: auto   # the run's M7 mass proxy when present, else these specific masses
+  specific_masses:
+    # The M7 demo values (configs/constellation_demo.yaml), so single-satellite and
+    # constellation runs use one mass model. Assumed scenario values, NOT sourced.
+    collector_areal_mass_kg_m2: {value: 1.0, provenance: assumed}
+    radiator_areal_mass_kg_m2: {value: 5.0, provenance: assumed}
+    transmitter_areal_mass_kg_m2: {value: 50.0, provenance: assumed}
+    bus_mass_kg: {value: 500.0, provenance: assumed}

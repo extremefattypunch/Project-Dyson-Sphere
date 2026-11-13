@@ -122,3 +122,36 @@ physics time series were unchanged (identical headline numbers).
 | Slurm | link array 60272021 (5 × 200 satellites, shared), merge 60272040 (shared), GPU benchmark 60286071 (gpu_test; 60284257 ran out of host memory at 8 GB and was resubmitted with 24 GB) |
 | Result location | `$HELIOSWARM_RUNS_DIR/constellation_demo_n1000/`, link files `$HELIOSWARM_RUNS_DIR/constellation_demo_n1000_links/` (1.6 GB), benchmark `$HELIOSWARM_RUNS_DIR/gpu_bench/constellation_60286071.json` |
 | Interpretation | 284.5 kW network mean (peak 423 kW) from 1000 satellites (10 km² of collectors): 0.028 W per m² of collector, 0.017 W/kg of the assumed mass proxy (16.6 kt), end-to-end 2.1e-5 — ~70 times less per collector area than N = 1 (2.07 W/m²) because only ~17 satellites can be served at once (20 beam slots) and 98 % of satellite-time is `RECEIVER_CAPACITY`. The pipeline scaled linearly (≈ 20 CPU-s per satellite-year on Cascade Lake nodes; 5.6 CPU-h stage A, 61 s merge at 3.5 GB). The beam stage was 72 % of stage A; on the 10.5 M capture points the JAX kernel on an A100 MIG slice is 16× faster than the numpy batch and 27× faster than the per-point reference at 1e6 points (agreement 4e-16 and 6e-13), but a stage-A task is CPU-bound for the rest, so production stays on the CPU reference (see `docs/milestones/M7.md` D). |
+
+### E10 (2026-11-13): ERA5 cloud-cover download and site climatology (M8a)
+
+| Field | Content |
+|---|---|
+| Question | How often is the sky over each configured and candidate receiver site clear enough for an optical power link (ERA5 hourly total cloud cover, 2014–2023), how much does that vary between years, and how correlated is cloudiness between sites of a network? |
+| Config | `configs/weather/era5_sites.yaml` (12 sites; time-series product, 3 × 3 nodes) |
+| Code commit | `e86f8e7` + uncommitted M8a tree (dirty) |
+| Slurm | download 60341911 (60337126 with the gridded product cancelled: CDS queue too slow); climatology in session (seconds) |
+| Result location | `$HELIOSWARM_WEATHER_DIR/era5/`, `$HELIOSWARM_RUNS_DIR/era5_climatology*/` |
+| Interpretation | Clear fraction at `tcc ≤ 0.5` from 0.38 (MVP site 0 N 0 E) to 0.89 (aswan); year-to-year range up to ±0.1. The clearest candidate per longitude sector (atacama, aswan, Pilbara) defines `configs/constellation_demo_era5_clear_sites.yaml`. All-sites-cloudy hours slightly exceed the independence product (0.0298 vs 0.0260 demo sites). `tcc` is a grid-box fraction, not a line-of-sight measurement (`docs/model_assumptions.md` M8a). |
+
+### E11 (2026-11-13): MVP and constellation demo under ERA5 weather of 2014–2023 (M8a)
+
+| Field | Content |
+|---|---|
+| Question | How much optical energy and availability does real cloud cover remove, how much does it vary between weather years, and how much do site diversity and site choice recover? |
+| Config | `configs/mvp_era5_years_sweep.yaml`, `configs/constellation_demo_era5_years_sweep.yaml`, `configs/constellation_demo_era5_clear_sites_years_sweep.yaml` (10 historical years each), clear-sky references `configs/mvp_single_satellite.yaml` (job 60342911) and `configs/constellation_demo_clear_sites.yaml` (job 60344241) |
+| Code commit | `e86f8e7` + uncommitted M8a tree (dirty) |
+| Slurm | 60342908, 60343733, 60343742 (test partition, one job per sweep) |
+| Result location | `$HELIOSWARM_RUNS_DIR/{mvp_era5_years_sweep,constellation_demo_era5_years_sweep,constellation_demo_era5_clear_sites_years_sweep,constellation_demo_clear_sites,mvp_single_satellite_m8a_check}/` |
+| Interpretation | MVP: 37–48 % of the clear-sky energy, availability 0.16–0.20 instead of 0.42. Demo network (N = 10, three sites): 68–74 % of clear sky, availability 0.91–0.95. Same satellites with the three ERA5-chosen sites: 82–88 % of clear sky (+15.6 % energy vs the demo sites), availability 0.97–0.99. The default `scenario` path reproduces the M6 MVP time series bit for bit. |
+
+### E12 (2026-11-13): parameterised economics of the saved M6/M7/M8a runs (M8a)
+
+| Field | Content |
+|---|---|
+| Question | Under transparent, provenance-labelled cost scenarios (NASA OTPS 2024 values where available, the rest assumed), what LCOE/NPV ranges do the simulated systems imply, and which terms dominate? |
+| Config | `configs/economics/{optimistic,nominal,conservative}.yaml` (nominal with a 2 000-sample seeded Monte Carlo) |
+| Code commit | `e86f8e7` + uncommitted M8a tree (dirty) |
+| Slurm | none (in session, seconds per run directory; reads saved summaries only) |
+| Result location | `$HELIOSWARM_RUNS_DIR/economics_m8a/<run>/economics.{json,md}` |
+| Interpretation | Every case is 3–6 orders of magnitude above 0.05 USD/kWh (demo N = 10 clear sky: 93 / 417 / 1 750 USD/kWh, MC 345–804; N = 1000: 436 / 3 700 / 21 600; MVP optical 1 250 / 2 670 / 6 650; MVP microwave undefined, 2.8 kWh/yr). Receiver area and fixed operations dominate the MVP; transport (mass ratio ~3.1 at ~4.9 km/s) and replacements dominate the constellation. Scenario ranges for an assumed technology, not predictions (PDF §12.5). |

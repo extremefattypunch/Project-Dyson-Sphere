@@ -1674,3 +1674,153 @@ a mass budget (no structure, propellant, ADCS, margins).
   window); the duty-cycle rule is causal and myopic.
 - Reception-time scheduling: the receiver constraints act on emission epochs (named
   approximation above, bounded per run).
+
+## M8a: ERA5 site weather and parameterised economics
+
+### Site weather from ERA5 (`models.weather_source = "era5"`; `helioswarm.era5`, `helioswarm.weather`)
+
+PDF §10.2: "Later, use site-specific cloud and atmospheric data to estimate operational
+availability. Cloud obstruction can be a hard outage for a ground optical receiver." The
+deterministic link physics is unchanged; ERA5 decides, per receiver site and arrival epoch,
+whether the optical link is blocked (bit `WEATHER`, `η_atm = 0`). Default `scenario` keeps every
+earlier result (configuration hashes unchanged: the M8a keys are not hashed while off; the
+2-day MVP time-series content hash is identical with the M7 code and the M8a code,
+`34c97c9f…7e2b`, and all 73 columns of the saved full-year M6 MVP time series are reproduced
+bit for bit by the M8a code, M8a.md D).
+
+- **Data.** ERA5 hourly total cloud cover `tcc` (fraction 0–1 of the model grid box covered by
+  cloud; ECMWF parameter 164), 2014–2023, 3 × 3 nodes of the 0.25° grid around the node nearest
+  each site, from the CDS time-series product (identical values to the gridded product, checked
+  by `scripts/era5_product_crosscheck.py`). Provenance per file (`*.provenance.json`) and per run
+  (`weather.json`, listed in the manifest outputs).
+- **What `tcc` is not.** It is an area fraction of a ~28 km box, not the cloudiness of the
+  receiver's line of sight, and carries no cloud optical depth (thin cirrus vs thick cloud) and
+  no geometry along the slant path. This is the named approximation recorded in every run
+  (`approximations_in_force`). Sites whose scale is smaller than the box (mountain summits above
+  the inversion, coastal edges) are represented by the box: e.g. `hawaii_summit` (19.8 N,
+  155.5 W) shows a clear fraction of 0.53, a box-average, not the summit's sky.
+- **Time.** Weather is indexed by UTC. Arrival epochs (TDB) → UTC explicitly:
+  `UTC_posix = TDB − ΔET(TDB) + 946 728 000 s` with SPICE `deltet` (`ΔET = ET − UTC =
+  TAI−UTC + 32.184 s + (TDB−TT)`; 946 728 000 = POSIX time of 2000-01-01T12:00:00 UTC);
+  tabulated hourly and interpolated (< 1 ms error; the 1 s leap-second step is smeared within
+  the hour that contains it). Epochs are rounded to the nearest hour (ERA5 analyses are
+  instantaneous at hh:00; hh:30:00 rounds up).
+- **Year mapping.** Simulated UTC (month, day, hour) → same calendar position in a historical
+  year. `fixed`: simulated year `Y0 + k` → record year `first + (historical_year − first + k)
+  mod n`. `sampled`: one uniform draw per simulated year (dedicated Generator). 29 February of a
+  simulated leap year → 28 February of a non-leap historical year.
+- **Outage.** `threshold`: blocked iff `tcc > c` (`tcc = c` is clear). Default runs use
+  `c = 0.5` (assumed): if the cloudy part of the box is placed at random relative to the line of
+  sight, `P(clear LOS) = 1 − tcc`, and `tcc > 0.5` is the more likely blocked state; at all 12
+  downloaded sites the long-term clear fraction at `c = 0.5` is within 0.04 of `mean(1 − tcc)`.
+  `bernoulli`: blocked iff `u < tcc`, `u ~ U[0,1)` drawn once per (site, historical hour) — the
+  same random-overlap assumption, but hours independent (no cloud persistence; the threshold
+  model keeps the record's persistence).
+- **Spatial value.** `nearest` (the node value) or `bilinear` (tensor-product linear
+  interpolation between the four enclosing nodes).
+- **Several sites.** Each site has its own node; all use the same mapped historical hour, so
+  the record's real spatial correlation is kept (no independence assumption). Joint statistics
+  (`helioswarm weather climatology`): fraction of hours with all sites cloudy vs the product of
+  the single-site fractions; pairwise Pearson correlation of the outage flags.
+- **Randomness.** `weather_generator(seed) = default_rng(SeedSequence(project.seed,
+  spawn_key=(0x5745,)))`, separate from the run Generator (random phases unchanged); drawn
+  from only by `sampled` and `bernoulli`, in a fixed order (years, then sites in configuration
+  order), so every Slurm array task builds the same weather.
+- **Scope.** Optical only. Microwave links keep the ITU-R P.618/P.676/P.840 statistics
+  (`models.atmosphere = itu_r`); ERA5 cloud liquid water / water vapour columns could feed
+  P.840/P.676 in a later milestone (the builder accepts `total_column_cloud_liquid_water` and
+  `total_column_water_vapour`), but no such coupling is implemented. Requires
+  `models.atmosphere = scenario` and `weather_scenario = clear` (clear-sky factors at the clear
+  hours).
+- **Validity / neglected.** Sub-hourly cloud variability; cloud optical depth (partial
+  transmission through thin cloud); aerosols and dust (part of the clear-sky factor, here 1);
+  turbulence (not modelled, PDF §10.2); the representativeness of a decade (2014–2023) for a
+  future year (no climate trend); ERA5's own cloud biases.
+
+### Parameterised economics (`helioswarm.economics`; PDF §12.5, §17 "Economic overclaim")
+
+A separate module reading saved run summaries (no re-simulation). Not a core physical result:
+results are reported per scenario and as Monte Carlo intervals.
+
+- **Mass.** The run's M7 mass proxy (`totals.mass_proxy_kg`) or, for runs without one,
+  `m = N m_bus + s_col A_col + s_rad A_rad + s_tx A_tx` with the configured (assumed) specific
+  masses (`mass.source = auto`). Per satellite the total is shared equally.
+- **Transport.** `C_tr = c_LEO Σ_i m_i exp(Δv_i / (g0 Isp))` (Tsiolkovsky, `g0 = 9.80665 m s⁻²`):
+  the propellant for the in-space Δv is launched to LEO at the same price per kg; stage and tank
+  dry mass and gravity/steering losses are ignored (optimistic). `Δv_i` either explicit (GEO:
+  > 4 700 m/s LEO→GEO, NASA OTPS 2024 PDF p. 90) or impulsive coplanar patched conics from a
+  circular LEO (`r_p = R_E + h`, `R_E = 6 378 136.6 m`, `GM_E = 3.986004355 × 10¹⁴ m³ s⁻²`,
+  DE440): departure `Δv_dep = sqrt(v∞² + 2 GM_E / r_p) − sqrt(GM_E / r_p)`. Each satellite
+  uses its own orbit (ring overrides of `a`, `e`, `i` applied) and the Earth-relative phase φ of
+  its slot at the start of operation; the slot phase is part of every transfer, with a
+  deployment time budget `T_w = N` Earth orbital periods (`transport.phasing_years`):
+  1. Hohmann transfer 1 au → `a` (`Δv₁ = sqrt(μ/r₁)|sqrt(2r₂/(r₁+r₂)) − 1|`,
+     `Δv₂ = sqrt(μ/r₂)|1 − sqrt(2r₁/(r₁+r₂))|`; zero at `a = 1 au`), transfer time
+     `t_H = π sqrt(a_t³/μ)`, `a_t = (1 au + a)/2`; Earth-relative phase at arrival
+     `θ₀ = π − n_E t_H`, afterwards drifting at `n_a − n_E`.
+  2. Waiting up to `T_w` (before launch or after arrival) reaches every phase of the arc
+     `θ₀ + (n_a − n_E)[0, T_w]`; if φ is on it the transfer is a pure Hohmann (always the case
+     when the synodic period `1/|1 − (a/1 au)^−1.5|` ≤ `N` years).
+  3. Otherwise the residual `ψ = φ − e` from the cheaper arc end `e` is made up by a phasing
+     ellipse of `N` revolutions at radius `a`: `P' = P (1 − ψ/(2πN))`, `a' = a (P'/P)^(2/3)`,
+     `Δv_ph = |sqrt(μ(2/a − 1/a')) − sqrt(μ/a)|`, added to both Hohmann impulses
+     (`v∞ = Δv₁ + Δv_ph`, arrival `Δv₂ + Δv_ph`).
+  At `a = 1 au` this is exactly the co-orbital phasing transfer (`v∞ = Δv_ph`, the same impulse
+  to circularise); Δv is continuous in `a` and φ (test: 1 au ± 10⁻⁹ … 10⁻⁴ au). Step 3 for
+  `a ≠ 1 au` is a named approximation (impulses added in magnitude: an upper bound on a combined
+  phasing transfer), arising only where `|1 − (a/1 au)^−1.5| < 1/N`, i.e. near 1 au, where it
+  tends to the exact co-orbital case. Validity: circular, ecliptic orbits of every satellite
+  (otherwise an explicit Δv is required); Earth on a circular 1 au orbit (its eccentricity
+  changes v∞ by up to ~±0.5 km/s); impulsive burns; no gravity assists; the phasing revolutions
+  extend the deployment time beyond `T_w` without delaying revenue.
+- **CAPEX** `C0 = c_mfg Σm + C_tr + c_tx A_tx + c_rx A_rx` (`A_tx` total transmitter aperture
+  area, `c_tx` default 0 = folded into `c_mfg`; `A_rx = n_sites π r_rx²`), spent in `T_c` equal
+  instalments at `t = 0 … T_c − 1`. `c_rx` depends on the technology (PDF §10.4):
+  `optical_receiver_capex_per_m2_usd` for optical runs, `microwave_receiver_capex_per_m2_usd`
+  for microwave runs. **Technology transfer (assumed):** no sourced optical-receiver cost was
+  found, so the shipped optical values are the NASA-derived microwave rectenna / ground-segment
+  costs per m², used as a stated proxy; likewise the fixed operations cost is that of one
+  GW-class SBSP system applied unchanged to every run. Both drive the MVP and demo LCOEs.
+- **Cash flows** (annual, end of year `t`): operation year `k = 1…n` at `t = T_c − 1 + k`,
+  energy `E_k = E₁ P_k` with `E₁` the run's delivered energy annualised (Julian year / window),
+  `P₁ = 1`, `P_{k+1} = P_k (1 − d)` or, after a replacement at the end of year `k` (every
+  hardware lifetime `L`, while `k < n`), `P_{k+1} = f + (1 − f) P_k (1 − d)` with replacement
+  cost `f (C_mfg + C_tr + C_tx)`; opex `O = O_fix + O_sat N + o C0` per operation year.
+  Named approximation: `E_k ∝ P_k` (delivered energy proportional to space-segment
+  performance). Valid for unsaturated links; where receiver capacity limits delivery (e.g. the
+  N = 1000 demo, M7) degradation reduces delivered energy less, so the LCOE is biased high there.
+- **Metrics.** `D_t = (1 + r)^−t`; `LCOE = Σ cost_t D_t / Σ E_t D_t` [USD/kWh; ×1000 for
+  USD/MWh]; `NPV(p) = Σ (p E_t − cost_t) D_t` (zero at `p = LCOE`); `CRF = r(1+r)^n/((1+r)^n−1)`
+  (evaluated as `r / (−expm1(−n log1p r))`, `1/n` at `r = 0`), equivalent annual cost
+  `EAC = CRF · PV(costs) · (1 + r)^(T_c − 1)` (PV referred to `t = T_c − 1`, the year before the
+  first operation year, then annualised over the `n` operation years; equals `LCOE · E` for
+  constant energy and any `T_c`). Analytic check (test): `T_c = 1`, `d = 0`, no replacement → `LCOE = CRF C0 /
+  E + O / E` (the NREL simple LCOE used by NASA OTPS 2024, PDF p. 73).
+- **Near-zero delivery.** Zero discounted energy → LCOE undefined (`zero_energy`); annual energy
+  below `min_meaningful_energy_kWh_per_year` (1 MWh/yr in the shipped scenarios, assumed) → LCOE
+  reported as undefined (`negligible_energy`), the formal ratio kept as
+  `lcoe_formal_usd_per_kWh` for diagnosis only.
+- **Scenarios and uncertainty.** `configs/economics/{optimistic,nominal,conservative}.yaml`
+  (every number sourced with page, derived with the arithmetic stated, or `assumed`); seeded
+  Monte Carlo in `nominal.yaml` (independent triangular distributions whose bounds are the
+  optimistic and conservative scenario values and whose mode is the nominal value — checked on
+  load; each sampled configuration is re-validated; 2 000 samples, `default_rng(20261113)`),
+  reporting the 5/50/95 % percentiles. Every sampled input lies between its optimistic and
+  conservative values; the 5–95 % interval lying inside the scenario LCOE range is an observed
+  property (asserted by the unit test for the shipped seed), not a theorem (the LCOE is not
+  proven monotone in the discount rate in general). `configs/economics/geo_nominal.yaml`: the nominal costs with an explicit LEO→GEO
+  Δv, for the GEO baseline after the M7b merge.
+- **Neglected.** Financing structure, taxes, inflation (cost years of the sources are mixed),
+  learning curves (NASA OTPS models them explicitly; here manufacturing is a flat USD/kg),
+  development (NRE) cost, decommissioning/debris removal, ground-segment land, grid connection,
+  storage and transmission, insurance, the time to reach the operational slot (phasing years
+  delay revenue: not modelled), and the value of the dispatch profile.
+
+### Configuration fields added in M8a
+
+- `models.weather_source` (`scenario` default) and the optional `weather` section
+  (`era5_dataset`, `era5_first_year`, `era5_last_year`, `interpolation`, `neighbourhood_nodes`,
+  `outage_model`, `cloud_cover_threshold`, `year_mapping`, `historical_year`). All **assumed**.
+  While `weather_source = scenario` and the section is absent, neither enters the configuration
+  hash (`config._hash_input`), so every pre-M8a configuration keeps its hash (MVP
+  `a3fafc4d…23af`, test).
