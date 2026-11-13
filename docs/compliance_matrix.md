@@ -1,4 +1,12 @@
-# Compliance matrix: M0–M7 against the requirements PDF
+# Compliance matrix: M0–M7b against the requirements PDF
+
+**M7b update (GEO baseline, PDF objective O5).** New rows: §1 O5, §2 "GEO is a comparison
+baseline", §15 "minimum publishable result: comparison against a GEO baseline under
+harmonised assumptions", §16 "Comparative baseline" and the §19 NASA SBSP reference,
+**satisfied (M7b)** with the evidence in the section "M7b: GEO baseline and harmonised
+comparison" below (results in `docs/milestones/M7b.md`), except the §16 harmonisation row,
+which is **partial**: lifetime and cost are not modelled for either architecture (→ M8a), and
+delivered power is harmonised as a system boundary, not as an equal quantity (M7b review).
 
 **M7 update (constellation).** The rows deferred to M7 (§4 layout `constellation_demo.yaml` /
 `scheduler.py`, §4 SciPy.optimize for the scheduler, §6.4 several sites to the scheduler, §10.4
@@ -72,6 +80,23 @@ review); §19 fresh-clone reproduction.
 | No coherent aperture across independent transmitters | `BeamResult.coherent_combining` is always `False` (`tests/unit/test_beam.py::test_beam_result_contract`) | satisfied |
 | Optical feasibility not inferred from central intensity: finite capture and pointing losses | `src/helioswarm/capture.py:528` `capture_statistics`; `UPPER_BOUND_NOTE` on figures | satisfied |
 | Sun not modelled as a point source for passive concentration | no passive concentration is modelled (active PV conversion only) | N/A |
+
+## M7b: GEO baseline and harmonised comparison (PDF §1 O5, §2, §15, §16, §19)
+
+| Requirement | Evidence | Status |
+|---|---|---|
+| §1 O5 Harmonised comparison against a GEO baseline; identify conditions under which heliocentric deployment helps or hurts | GEO simulated in-model through the identical chain (`src/helioswarm/geocentric.py`, `orbit.elements_center = EARTH`, geostationary preset; `system.run_single_satellite` unchanged apart from the orbit stage); `configs/comparison/` (shared technology blocks via `extends`), `helioswarm compare` (`src/helioswarm/compare.py`); Slurm sweeps over aperture × receiver radius for both architectures and both technologies (`docs/milestones/M7b.md` A, D) | satisfied (M7b) |
+| §2 A GEO system is a comparison baseline, not the target architecture | GEO enters only `configs/comparison/` and the `compare` command; the heliocentric configurations, hashes and results are unchanged (`tests/unit/test_config_validity.py::test_mvp_config_hash_is_pinned`, `tests/unit/test_config_m7b.py::test_mvp_canonical_json_is_the_m7_text`, `tests/integration/test_comparison_configs.py::test_heliocentric_mvp_configs_carry_none_of_the_m7b_keys`) | satisfied (M7b) |
+| GEO orbit physics: period = IAU_EARTH spin period; sub-satellite point fixed; documented GEO radius from GM_earth and the IAU rate | `tests/integration/test_geo_baseline.py::test_geostationary_period_equals_the_iau_earth_spin_period`, `::test_sub_satellite_point_stays_fixed_over_ten_days` (1e-6° over 10 days; three longitudes) | satisfied (M7b) |
+| GEO eclipse seasons with penumbra (conical shadow) against the analytic geometry | `tests/integration/test_geo_baseline.py::test_geo_eclipse_durations_match_the_analytic_shadow_geometry` (both equinoxes, mid-season, out of season; 15 s); season boundaries and yearly umbra/penumbra fractions over 2030 `::test_geo_eclipse_seasons_over_2030_match_the_analytic_geometry` (slow); run-level `tests/integration/test_geo_comparison_run.py::test_geo_link_through_the_chain_at_equinox` | satisfied (M7b) |
+| Elevation ~90° and range r_GEO − R_E at the sub-satellite site | `tests/integration/test_geo_baseline.py::test_geo_elevation_and_range_at_the_sub_satellite_site` (elevation 90° − ωτ to 5e-8 rad; range = L/(1 − u·v/c) to 1 m); off-nadir site `::test_geo_elevation_and_range_from_an_off_nadir_site` (el = atan2(cos γ − R/r, sin γ), slant range to 1 m); configured (non-preset) geocentric elements `::test_configured_geocentric_elements_follow_kepler_about_the_earth` | satisfied (M7b) |
+| Omitted perturbations named with magnitudes; station-keeping as the modelled assumption | `docs/model_assumptions.md` "M7b" (lunisolar 0.84°/yr, J2 522 m, SRP ±365 km / ±0.99° at the comparison satellite's A/m ≈ 0.6 m²/kg); every GEO manifest/report names "L0 + station-keeping" (`config.approximations_in_force`, `tests/unit/test_config_m7b.py::test_geocentric_orbits_name_the_station_keeping_approximation`); closed-form J2/SRP tests `tests/unit/test_geocentric.py`; numerical comparison path `geocentric.propagate_geocentric_point_masses`, `tests/integration/test_geo_baseline.py::test_lunisolar_inclination_drift_matches_the_averaged_torque` | satisfied (M7b) |
+| Fresnel regime at the GEO range: far-field validity check triggers; Fresnel-Hankel used explicitly | `tests/integration/test_geo_comparison_run.py::test_fresnel_regime_selection_at_the_geo_range` (N_F = 2.79 optical refused by `airy_far_field`; microwave N_F = 0.228, FH = far field to 1e-3, measured 1.1e-4); heliocentric range FH = far field `::test_far_field_and_fresnel_hankel_agree_at_the_heliocentric_range` (≤ 1e-7 relative measured); `configs/comparison/geo_*.yaml` `models.beam: fresnel_hankel` | satisfied (M7b) |
+| §15 Minimum publishable result: transparent comparison against a GEO baseline under harmonised assumptions | comparison table + figure generated from the saved runs (`helioswarm compare`, `docs/milestones/M7b.md` A); harmonised-assumption table with provenance labels | satisfied (M7b) |
+| §16 Harmonise delivered power, PV efficiency, transmitter efficiency, receiver conversion, lifetime, collector technology, thermal treatment, mass/cost boundary before comparing | shared blocks `configs/comparison/_shared.yaml`, `_optical.yaml`, `_microwave.yaml`; leaf-by-leaf check `tests/integration/test_comparison_configs.py::test_resolved_configs_differ_only_in_orbit_and_geometry`; `compare.load_comparison` refuses unharmonised cases (`::test_load_comparison_refuses_an_unharmonised_case`); delivered power harmonised as the same `P_grid` system boundary (one satellite, one site, same collector area), not as equal delivered power (704.9 kW vs 8.76 kW optical); mass per delivered kW is the normalised metric; mass proxy identical formula and values, exclusions stated. **Lifetime/degradation and cost are not modelled** for either (one-year windows; M8a economics) | partial (lifetime, cost → M8a; M7b review) |
+| §16 No claim of heliocentric superiority unless the same system boundary supports it | `docs/milestones/M7b.md` A states the result as computed (GEO delivers orders of magnitude more per satellite under these assumptions) and the conditions | satisfied (M7b) |
+| §16/§19 NASA 2024 SBSP assessment as context only, not transplanted | citation verified from the PDF (`docs/data_provenance.md` M7b); quoted values kept in a separate context paragraph of `docs/milestones/M7b.md`, absent from every configuration and table | satisfied (M7b) |
+| Shared assumptions literally identical (include/extends mechanism) | `config.read_config_mapping`/`config_sources`/`merge_config_mappings`; `tests/unit/test_config_m7b.py::test_extends_reproduces_the_flat_configuration`, `::test_extends_errors` | satisfied (M7b) |
 
 ## §4 Software stack and repository layout
 
@@ -328,6 +353,7 @@ review); §19 fresh-clone reproduction.
 | M5 | analytic diffraction and capture tests pass | `test_optical.py`, `test_capture.py`, `test_aperture.py` | satisfied |
 | M6 | one config produces P_grid(t), manifest, summary, plots | CLI run test; Slurm runs 60127166/60127172; fresh clone | satisfied |
 | M7 | no double counting; deterministic capacity-constrained results | `tests/unit/test_scheduler.py`, `tests/integration/test_constellation.py`; Slurm constellation runs with network metrics (`docs/milestones/M7.md` D) | satisfied (M7) |
+| M7b | GEO baseline through the identical chain; harmonised comparison table + figure from saved runs | `docs/milestones/M7b.md`; section "M7b" above | satisfied (M7b) |
 | M8–M9 | — | not started | deferred (M8–M9) |
 
 ## §17 Risks and agent behaviour rules

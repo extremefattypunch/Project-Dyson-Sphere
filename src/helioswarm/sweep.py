@@ -58,6 +58,7 @@ from helioswarm.config import (
     config_hash,
     leaf_paths,
     parse_config,
+    read_config_mapping,
     read_yaml,
 )
 from helioswarm.system import Backend
@@ -178,7 +179,7 @@ def load_sweep(path: str | Path) -> SweepPlan:
     except Exception as exc:
         raise ConfigError(str(p), [ConfigIssue("<sweep>", str(exc))]) from exc
     base_path = (p.parent / definition.base_config).resolve()
-    base = read_yaml(base_path)
+    base = read_config_mapping(base_path)
     if not isinstance(base, dict):
         raise ConfigError(str(base_path), [ConfigIssue("<root>", "base config is not a mapping")])
     base = copy.deepcopy(base)

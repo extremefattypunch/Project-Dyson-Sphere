@@ -93,7 +93,7 @@ class ManifestSource(Protocol):
         ...
 
 
-MANIFEST_SCHEMA: Final[str] = "helioswarm-run-manifest/2"
+MANIFEST_SCHEMA: Final[str] = "helioswarm-run-manifest/3"
 """Version tag of the manifest.json layout."""
 
 RECORDED_PACKAGES: Final[tuple[str, ...]] = (
@@ -130,6 +130,13 @@ FRAME_NOTE: Final[str] = (
     "Inertial frame J2000 (ICRF-aligned), origin SOLAR SYSTEM BARYCENTER for every state; "
     "orbital elements Sun-centred ECLIPJ2000 at the configuration boundary only; Earth-fixed "
     "frame IAU_EARTH (pck00011) for the receiver site; SI units throughout."
+)
+FRAME_NOTE_GEOCENTRIC: Final[str] = (
+    "Inertial frame J2000 (ICRF-aligned), origin SOLAR SYSTEM BARYCENTER for every state; "
+    "orbital elements Earth-centred (NAIF 399) J2000 equatorial (or the geostationary preset "
+    "in the IAU_EARTH equator of the element epoch) at the configuration boundary only, "
+    "shifted to the SSB with the Earth's ephemeris state; Earth-fixed frame IAU_EARTH "
+    "(pck00011) for the receiver site and the preset; SI units throughout."
 )
 
 
@@ -300,6 +307,10 @@ class RunManifest:
         rng_state_unchanged: The run's Generator was not drawn from (no stochastic step).
         backend: Beam-capture backend.
         git: Source revision.
+        source_sha256: :func:`source_tree_sha256` of the package source on disk when the
+            manifest is written (identifies the code of a run made from a dirty checkout;
+            layout ``/3``, M7b review). Source files must not be edited while runs are in
+            progress: modules imported earlier in the process are not re-read.
         python_version: ``sys.version``.
         packages: Distribution versions.
         os: ``platform.platform()``.
@@ -338,6 +349,7 @@ class RunManifest:
     rng_state_unchanged: bool
     backend: str
     git: GitInfo
+    source_sha256: str
     python_version: str
     packages: dict[str, str | None]
     os: str
@@ -386,6 +398,7 @@ def build_manifest(
         rng_state_unchanged=result.rng_state_unchanged,
         backend=result.backend,
         git=git_info(),
+        source_sha256=source_tree_sha256(),
         python_version=sys.version,
         packages=package_versions(),
         os=platform.platform(),
@@ -398,7 +411,7 @@ def build_manifest(
         itu_r_versions=list(result.itu_r_versions),
         itu_r_polarization_tilt_deg=result.itu_r_polarization_tilt_deg,
         time_scale=TIME_SCALE_NOTE,
-        frame=FRAME_NOTE,
+        frame=FRAME_NOTE_GEOCENTRIC if cfg.orbit.elements_center == "EARTH" else FRAME_NOTE,
         units=UNITS_NOTE,
         approximations=[a.describe() for a in approximations_in_force(cfg)],
         simulation_window=SimulationWindow(
@@ -421,6 +434,7 @@ def build_manifest(
 
 __all__ = [
     "FRAME_NOTE",
+    "FRAME_NOTE_GEOCENTRIC",
     "MANIFEST_SCHEMA",
     "RECORDED_PACKAGES",
     "TIME_SCALE_NOTE",

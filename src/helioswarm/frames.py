@@ -39,9 +39,10 @@ from helioswarm.kernels import LoadedKernels
 FrameName = Literal["J2000", "ECLIPJ2000"]
 """Inertial frames supported by the frame utilities (SPICE frame names)."""
 
-OriginName = Literal["SUN", "SOLAR SYSTEM BARYCENTER"]
-"""State origins supported so far (SPICE body names). Later milestones extend this list
-together with the ephemeris code that can change origins."""
+OriginName = Literal["SUN", "SOLAR SYSTEM BARYCENTER", "EARTH"]
+"""State origins supported (SPICE body names). ``EARTH`` (NAIF 399, the planet's centre) is
+the origin of geocentric orbital elements (M7b GEO baseline); origin changes need an ephemeris
+(:func:`helioswarm.ephemeris.shift_state_origin`)."""
 
 TimeScale = Literal["TDB"]
 """Time scale of every state epoch. Epochs are TDB seconds past J2000 (SPICE ET)."""

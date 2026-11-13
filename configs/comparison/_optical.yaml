@@ -1,0 +1,29 @@
+# Harmonised comparison: OPTICAL technology block (fragment; extends the shared block). The
+# transmitter and laser-PV receiver of the PDF §5 example / MVP, identical for the
+# heliocentric and the GEO case (see _shared.yaml).
+extends: _shared.yaml
+
+transmitter:
+  mode: "optical"
+  wavelength_m: 1.0e-6
+  aperture_diameter_m: 10.0
+  electrical_to_beam_efficiency: 0.50
+  pointing_sigma_rad: 1.0e-9
+  aperture_illumination: "uniform_circular"
+
+receiver:
+  technology: "laser_photovoltaic"
+  radius_m: 1000
+  conversion_efficiency: 0.40
+  # Laser-PV receiver limits (PDF §10.4; separate from the rectenna case): only the PDF
+  # example's non-binding max_input_power_W = 1e12 W (as configs/mvp_single_satellite.yaml).
+  # No max_power_density_W_m2 / max_heat_rejection_W: the project has no sourced laser-PV
+  # flux, eye-safety or heat-rejection limit (an idealised setting, labelled in every report).
+  # It matters for GEO only: peak incident irradiance 7.65e4 W/m^2 (D = 10 m) vs <= 2.8 W/m^2
+  # heliocentric. Its effect is quantified by the bounded sensitivity run
+  # sensitivity/geo_optical_flux_limit_sweep.yaml (an ASSUMED illustrative limit; M7b.md).
+  max_input_power_W: 1.0e12
+
+models:
+  atmosphere: "scenario"
+  weather_scenario: "clear"   # clear sky all year: a weather upper bound for both cases

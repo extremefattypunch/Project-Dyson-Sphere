@@ -1,0 +1,32 @@
+# Harmonised comparison: MICROWAVE technology block (fragment; extends the shared block). The
+# 2.45 GHz phased array and rectenna of configs/mvp_single_satellite_microwave.yaml (all
+# assumed values; see that file), identical for the heliocentric and the GEO case.
+extends: _shared.yaml
+
+transmitter:
+  mode: "microwave"
+  wavelength_m: 0.12236426857142857   # c / 2.45 GHz = 299792458 / 2.45e9 m
+  aperture_diameter_m: 1000.0
+  electrical_to_beam_efficiency: 0.70
+  pointing_sigma_rad: 1.0e-6
+  aperture_illumination: "parabolic_on_pedestal"
+  edge_taper_dB: 10.0
+  array_element_spacing_m: 0.06
+  array_element_pattern_exponent: 1.0
+
+receiver:
+  technology: "rectenna"
+  radius_m: 10000
+  conversion_efficiency: 0.85
+  # Rectenna limits (PDF §10.4; separate from the laser-PV case): non-binding
+  # max_input_power_W = 1e12 W (as configs/mvp_single_satellite_microwave.yaml); no density
+  # or heat limit. The computed peak incident density is <= 0.38 W/m^2 at GEO (D = 2 km) and
+  # <= 1e-7 W/m^2 heliocentric, below the ~10 W/m^2 general-public RF reference level cited in
+  # that file (ICNIRP 2020), so a density limit of that order would not bind in this sweep.
+  max_input_power_W: 1.0e12
+
+atmosphere:
+  itu_r_exceedance_percent: 1.0
+
+models:
+  atmosphere: "itu_r"

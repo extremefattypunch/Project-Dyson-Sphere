@@ -1,0 +1,36 @@
+# Harmonised comparison: HELIOCENTRIC optical case. Technology: _optical.yaml (+ _shared.yaml);
+# this file sets only the orbit (and the L1 integrator step that the orbit model needs) and
+# the far-field beam model of this propagation regime (N_F << 0.5 at >= 0.5 au).
+#
+# Orbit: circular 1 au, ecliptic, 30 deg AHEAD of the Earth at 2030-01-01 (earth_relative
+# phase), L1 with planets and SRP. This is the most favourable slot of the M7 demo ring
+# (0.52 au chord, which the M7 30-deg exclusion keeps as its nearest slot; docs/milestones/
+# M7.md): a single heliocentric satellite placed elsewhere delivers less (the M7
+# placement-neutral mean is ~5x lower). It is a scenario choice, not an optimum.
+extends: _optical.yaml
+
+project:
+  name: "cmp_helio_1au_optical"
+  seed: 20261113
+  description: "M7b harmonised comparison: heliocentric 1 au, 30 deg ahead of the Earth, optical"
+
+time:
+  integrator_step_s: 300
+
+orbit:
+  model: "prescribed_ephemeris_perturbed_test_particle"
+  initial_epoch_utc: "2030-01-01T00:00:00"
+  semimajor_axis_au: 1.0
+  eccentricity: 0.0
+  inclination_deg: 0.0
+  raan_deg: 0.0
+  arg_periapsis_deg: 0.0
+  true_anomaly_deg: 30.0
+  phase_reference: "earth_relative"
+  include_planetary_perturbations: true
+  include_solar_radiation_pressure: true
+  cr: 1.3
+  area_to_mass_m2_kg: 0.02
+
+models:
+  beam: "airy_far_field"  # Fraunhofer, per-epoch evaluation (validity checked at every epoch)

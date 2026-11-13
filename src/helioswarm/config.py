@@ -23,6 +23,7 @@ Schema conventions
 
 from __future__ import annotations
 
+import copy
 import difflib
 import hashlib
 import importlib.util
@@ -49,6 +50,7 @@ from helioswarm.constants import (
     SOLAR_IRRADIANCE_NOMINAL_1AU_W_M2,
     SOLAR_RADIUS_NOMINAL_M,
     SPEED_OF_LIGHT_M_S,
+    WGS84_SEMIMAJOR_AXIS_M,
 )
 
 SCHEMA_VERSION: Final[int] = 1
@@ -143,6 +145,9 @@ receivers are different technology cases)."""
 # Field metadata helpers
 # ---------------------------------------------------------------------------------------------
 
+_OMIT_WHEN_DEFAULT_KEY: Final[str] = "omit_when_default"
+"""``json_schema_extra`` key of fields that :func:`resolved_dict` omits at their default."""
+
 
 def _field(
     default: Any = PydanticUndefined,
@@ -152,11 +157,15 @@ def _field(
     description: str,
     kind: FieldKind = "physical",
     source: str | None = None,
+    omit_when_default: bool = False,
     **constraints: Any,
 ) -> Any:
     """Build a pydantic ``Field`` carrying the helioswarm metadata in ``json_schema_extra``.
 
-    Omitting ``default`` makes the field required.
+    Omitting ``default`` makes the field required. ``omit_when_default=True`` marks a field
+    added after the M7 hash re-pin whose default leaves every earlier configuration's meaning
+    unchanged: :func:`resolved_dict` omits it while it holds its default, so the canonical JSON
+    and :func:`config_hash` of configurations that do not use it are unchanged (M7b).
     """
     extra: dict[str, str] = {
         "provenance": provenance,
@@ -166,6 +175,8 @@ def _field(
     }
     if source is not None:
         extra["source"] = source
+    if omit_when_default:
+        extra[_OMIT_WHEN_DEFAULT_KEY] = "true"
     return Field(
         default,
         description=description,
@@ -458,13 +469,23 @@ class FramesConfig(_Section):
 
 
 class OrbitConfig(_Section):
-    """Initial osculating heliocentric orbit of the (single) satellite and force-model flags.
+    """Initial osculating orbit of the (single) satellite and force-model flags.
 
-    Elements are Sun-centred and referred to the ECLIPJ2000 frame at ``initial_epoch_utc``;
-    the L0 model (``two_body_kepler``, M1) propagates these Sun-centred ECLIPJ2000 elements
-    directly and the resulting trajectory is rotated to J2000 afterwards (``frames.py``); the
-    origin shift Sun -> SSB needs the Sun's ephemeris state (M2). The L1 model (M2) converts
-    the initial state to J2000/SSB before integration.
+    Heliocentric (``elements_center = SUN``, the default): elements are Sun-centred and
+    referred to the ECLIPJ2000 frame at ``initial_epoch_utc``; the L0 model
+    (``two_body_kepler``, M1) propagates these Sun-centred ECLIPJ2000 elements directly and the
+    resulting trajectory is rotated to J2000 afterwards (``frames.py``); the origin shift
+    Sun -> SSB needs the Sun's ephemeris state (M2). The L1 model (M2) converts the initial
+    state to J2000/SSB before integration.
+
+    Geocentric (``elements_center = EARTH``, M7b GEO baseline): elements are Earth-centred
+    (NAIF 399) and referred to the J2000 *equatorial* frame (inclination relative to the mean
+    equator of J2000), ``mu = GM_earth`` from ``gm_de440.tpc``; only the L0 two-body model is
+    available (Earth point mass; lunisolar, J2 and SRP perturbations are omitted and assumed
+    removed by station-keeping, docs/model_assumptions.md "M7b"). The geostationary preset
+    ``geostationary_longitude_deg`` replaces the elements by the circular orbit in the
+    IAU_EARTH equatorial plane of the element epoch that co-rotates with the IAU_EARTH frame
+    above the given longitude (:func:`helioswarm.geocentric.geostationary_orbit`).
     """
 
     model: Literal["two_body_kepler", "prescribed_ephemeris_perturbed_test_particle"] = _field(
@@ -480,24 +501,29 @@ class OrbitConfig(_Section):
         kind="numerical",
         description="Epoch at which the orbital elements are osculating (UTC).",
     )
-    elements_frame: Literal["ECLIPJ2000"] = _field(
+    elements_frame: Literal["ECLIPJ2000", "J2000"] = _field(
         "ECLIPJ2000",
         unit="-",
         provenance="assumed",
         kind="model_choice",
-        description="Reference plane of the orbital elements (SPICE frame name).",
+        description="Reference plane of the orbital elements (SPICE frame name): ECLIPJ2000 "
+        "for Sun-centred elements, J2000 (mean equator of J2000) for Earth-centred elements.",
     )
-    elements_center: Literal["SUN"] = _field(
+    elements_center: Literal["SUN", "EARTH"] = _field(
         "SUN",
         unit="-",
         provenance="assumed",
         kind="model_choice",
-        description="Central body of the orbital elements.",
+        description="Central body of the orbital elements (SPICE name): SUN (heliocentric "
+        "swarm) or EARTH (geocentric orbit, M7b GEO baseline; L0 two-body only).",
     )
-    semimajor_axis_au: float = _field(
+    semimajor_axis_au: float | None = _field(
+        None,
         unit="au",
         provenance="assumed",
-        description="Semimajor axis (1 au = 149597870700 m, IAU 2012 B2).",
+        description="Semimajor axis (1 au = 149597870700 m, IAU 2012 B2). Required, except "
+        "with orbit.geostationary_longitude_deg (then derived from GM_earth and the IAU_EARTH "
+        "rotation rate, and must not be set).",
         gt=0.0,
         le=100.0,
     )
@@ -533,15 +559,34 @@ class OrbitConfig(_Section):
         ge=0.0,
         lt=360.0,
     )
-    true_anomaly_deg: float = _field(
+    true_anomaly_deg: float | None = _field(
+        None,
         unit="deg",
         provenance="assumed",
         description="Phase angle at initial_epoch_utc: the true anomaly when "
         "phase_reference='absolute'; with phase_reference='earth_relative' the offset of the "
         "satellite's heliocentric ecliptic (ECLIPJ2000) longitude from the Earth's at that epoch, "
-        "positive ahead of the Earth (resolved to a true anomaly with the ephemeris at run time).",
+        "positive ahead of the Earth (resolved to a true anomaly with the ephemeris at run time). "
+        "Required, except with orbit.geostationary_longitude_deg (must not be set then).",
         ge=0.0,
         lt=360.0,
+    )
+    geostationary_longitude_deg: float | None = _field(
+        None,
+        unit="deg",
+        provenance="assumed",
+        kind="physical",
+        omit_when_default=True,
+        description="Geostationary preset (M7b; needs elements_center='EARTH', "
+        "elements_frame='J2000', model='two_body_kepler'): east longitude in the IAU_EARTH "
+        "frame of the sub-satellite point at initial_epoch_utc. The orbit is circular, in the "
+        "IAU_EARTH equatorial plane at that epoch, with radius r = (GM_earth / omega^2)^(1/3) "
+        "and inertial velocity omega x r, omega = the IAU_EARTH angular velocity (pck00011) at "
+        "the epoch, so it co-rotates with the IAU_EARTH frame. None = no preset (use the "
+        "elements). The elements semimajor_axis_au and true_anomaly_deg must then be unset "
+        "and eccentricity, inclination_deg, raan_deg, arg_periapsis_deg left at 0.",
+        ge=-180.0,
+        le=180.0,
     )
     phase_reference: PhaseReference = _field(
         "absolute",
@@ -610,14 +655,52 @@ class OrbitConfig(_Section):
     @model_validator(mode="after")
     def _check_orbit(self) -> Self:
         issues: list[str] = []
-        perihelion_m = self.perihelion_m
-        if perihelion_m <= SOLAR_RADIUS_NOMINAL_M:
+        geo = self.geostationary_longitude_deg is not None
+        if geo:
+            issues.extend(self._geostationary_issues())
+        else:
+            for name in ("semimajor_axis_au", "true_anomaly_deg"):
+                if getattr(self, name) is None:
+                    issues.append(
+                        f"orbit.{name} is required (it may be omitted only with the "
+                        "geostationary preset orbit.geostationary_longitude_deg)"
+                    )
+        center_frame = {"SUN": "ECLIPJ2000", "EARTH": "J2000"}[self.elements_center]
+        if self.elements_frame != center_frame:
             issues.append(
-                f"orbit perihelion a(1-e) = {perihelion_m:.6g} m "
-                f"(orbit.semimajor_axis_au={self.semimajor_axis_au}, "
-                f"orbit.eccentricity={self.eccentricity}) is inside the Sun "
-                f"(nominal solar radius {SOLAR_RADIUS_NOMINAL_M:.6g} m, IAU 2015 B3)"
+                f"orbit.elements_center='{self.elements_center}' requires orbit.elements_frame="
+                f"'{center_frame}' (got '{self.elements_frame}'): heliocentric elements are "
+                "ecliptic, geocentric elements are referred to the J2000 equator"
             )
+        if self.elements_center == "EARTH":
+            if self.model != "two_body_kepler":
+                issues.append(
+                    "orbit.elements_center='EARTH' supports only orbit.model='two_body_kepler' "
+                    "(L0 Earth point mass + the station-keeping assumption, M7b); the L1 "
+                    "propagator integrates heliocentric test particles"
+                )
+            if self.phase_reference != "absolute":
+                issues.append(
+                    "orbit.phase_reference='earth_relative' is a heliocentric phase; it is "
+                    "undefined for orbit.elements_center='EARTH'"
+                )
+            if self.semimajor_axis_au is not None:
+                perigee_m = self.semimajor_axis_au * AU_M * (1.0 - self.eccentricity)
+                if perigee_m <= WGS84_SEMIMAJOR_AXIS_M:
+                    issues.append(
+                        f"orbit perigee a(1-e) = {perigee_m:.6g} m (orbit.semimajor_axis_au="
+                        f"{self.semimajor_axis_au}, orbit.eccentricity={self.eccentricity}) is "
+                        f"inside the Earth (WGS 84 equatorial radius {WGS84_SEMIMAJOR_AXIS_M} m)"
+                    )
+        elif self.semimajor_axis_au is not None:
+            perihelion_m = self.perihelion_m
+            if perihelion_m <= SOLAR_RADIUS_NOMINAL_M:
+                issues.append(
+                    f"orbit perihelion a(1-e) = {perihelion_m:.6g} m "
+                    f"(orbit.semimajor_axis_au={self.semimajor_axis_au}, "
+                    f"orbit.eccentricity={self.eccentricity}) is inside the Sun "
+                    f"(nominal solar radius {SOLAR_RADIUS_NOMINAL_M:.6g} m, IAU 2015 B3)"
+                )
         if self.model == "two_body_kepler":
             if self.include_planetary_perturbations:
                 issues.append(
@@ -670,14 +753,67 @@ class OrbitConfig(_Section):
         _raise_if(issues)
         return self
 
+    def _geostationary_issues(self) -> list[str]:
+        """Rules of the geostationary preset (the elements are derived, not configured)."""
+        issues: list[str] = []
+        if self.elements_center != "EARTH":
+            issues.append(
+                "orbit.geostationary_longitude_deg needs orbit.elements_center='EARTH' and "
+                "orbit.elements_frame='J2000'"
+            )
+        for name in ("semimajor_axis_au", "true_anomaly_deg"):
+            if getattr(self, name) is not None:
+                issues.append(
+                    f"orbit.{name} is set but the geostationary preset "
+                    "(orbit.geostationary_longitude_deg) derives it; remove it"
+                )
+        for name in ("eccentricity", "inclination_deg", "raan_deg", "arg_periapsis_deg"):
+            if getattr(self, name) != 0.0:
+                issues.append(
+                    f"orbit.{name}={getattr(self, name)} contradicts the geostationary preset "
+                    "(circular orbit in the IAU_EARTH equator); leave it at 0"
+                )
+        return issues
+
+    @property
+    def is_geocentric(self) -> bool:
+        """Earth-centred elements (``elements_center == 'EARTH'``, M7b)."""
+        return self.elements_center == "EARTH"
+
+    @property
+    def is_geostationary_preset(self) -> bool:
+        """The geostationary preset is used (``geostationary_longitude_deg`` set)."""
+        return self.geostationary_longitude_deg is not None
+
+    @property
+    def geostationary_longitude_rad(self) -> float:
+        """Sub-satellite east longitude of the geostationary preset [rad].
+
+        Raises:
+            ValueError: no geostationary preset.
+        """
+        if self.geostationary_longitude_deg is None:
+            raise ValueError("orbit.geostationary_longitude_deg is not set")
+        return math.radians(self.geostationary_longitude_deg)
+
+    def _required(self, name: str) -> float:
+        value = getattr(self, name)
+        if value is None:
+            raise ValueError(
+                f"orbit.{name} is not configured (geostationary preset: the elements are "
+                "derived from the ephemeris at run time, helioswarm.geocentric."
+                "geostationary_orbit)"
+            )
+        return float(value)
+
     @property
     def semimajor_axis_m(self) -> float:
-        """Semimajor axis [m]."""
-        return self.semimajor_axis_au * AU_M
+        """Semimajor axis [m] (raises ``ValueError`` for the geostationary preset)."""
+        return self._required("semimajor_axis_au") * AU_M
 
     @property
     def perihelion_m(self) -> float:
-        """Perihelion distance a(1 - e) [m]."""
+        """Periapsis distance a(1 - e) [m] (perihelion for Sun-centred elements)."""
         return self.semimajor_axis_m * (1.0 - self.eccentricity)
 
     @property
@@ -697,8 +833,9 @@ class OrbitConfig(_Section):
 
     @property
     def true_anomaly_rad(self) -> float:
-        """True anomaly at the initial epoch [rad]."""
-        return math.radians(self.true_anomaly_deg)
+        """True anomaly at the initial epoch [rad] (raises ``ValueError`` for the
+        geostationary preset)."""
+        return math.radians(self._required("true_anomaly_deg"))
 
 
 class CollectorConfig(_Section):
@@ -1614,6 +1751,106 @@ class ModelsConfig(_Section):
         ge=1.0,
         le=10.0,
     )
+    beam_evaluation: Literal["per_epoch", "chebyshev_table"] = _field(
+        "per_epoch",
+        unit="-",
+        provenance="assumed",
+        kind="numerical",
+        omit_when_default=True,
+        description="How the beam model is evaluated over the epochs with access (M7b): "
+        "'per_epoch' = the reference evaluation at every epoch; 'chebyshev_table' = an "
+        "adaptive Chebyshev-Lobatto table over (range, elevation) interpolated to every epoch "
+        "and validated against the reference at check epochs in every run (a failed check "
+        "stops the run; helioswarm.beam_table). Same beam physics; for near-constant "
+        "geometries (GEO) it replaces up to minutes of Fresnel-Hankel quadrature per epoch.",
+    )
+    beam_table_max_nodes: int = _field(
+        33,
+        unit="1",
+        provenance="assumed",
+        kind="numerical",
+        omit_when_default=True,
+        description="Largest number of Chebyshev-Lobatto nodes per dimension of the beam table "
+        "(2^k + 1; refinement 3 -> 5 -> 9 -> 17 -> 33 ...). chebyshev_table only.",
+        ge=3,
+        le=129,
+    )
+    beam_table_check_epochs: int = _field(
+        8,
+        unit="1",
+        provenance="assumed",
+        kind="numerical",
+        omit_when_default=True,
+        description="Evenly spaced check epochs per check set (two disjoint sets, plus the "
+        "epochs of extreme range and elevation) at which the table is compared with the "
+        "reference. chebyshev_table only.",
+        ge=1,
+        le=1000,
+    )
+    beam_table_capture_tolerance: float = _field(
+        1.0e-9,
+        unit="1",
+        provenance="assumed",
+        kind="numerical",
+        omit_when_default=True,
+        description="Largest accepted |table - reference| of the expected, nominal and "
+        "bias-only capture fractions at the check epochs (absolute). chebyshev_table only.",
+        gt=0.0,
+        le=1.0e-3,
+    )
+    beam_table_percentile_tolerance: float = _field(
+        1.0e-6,
+        unit="1",
+        provenance="assumed",
+        kind="numerical",
+        omit_when_default=True,
+        description="Largest accepted |table - reference| of the capture percentiles p05/p50/"
+        "p95 under pointing jitter (diagnostics; the reference switches between percentile "
+        "methods, which makes them non-smooth at ~1e-7). chebyshev_table only.",
+        gt=0.0,
+        le=1.0e-2,
+    )
+    beam_table_relative_tolerance: float = _field(
+        1.0e-6,
+        unit="1",
+        provenance="assumed",
+        kind="numerical",
+        omit_when_default=True,
+        description="Largest accepted relative difference of the peak irradiance and the other "
+        "interpolated beam quantities at the check epochs. chebyshev_table only.",
+        gt=0.0,
+        le=1.0e-2,
+    )
+
+    @model_validator(mode="after")
+    def _check_beam_table(self) -> Self:
+        issues: list[str] = []
+        n = self.beam_table_max_nodes
+        if n > 1 and math.log2(n - 1) != int(math.log2(n - 1)):
+            issues.append(
+                f"models.beam_table_max_nodes={n} must be 2^k + 1 (3, 5, 9, 17, 33, 65, 129): "
+                "the Chebyshev-Lobatto sets are refined by doubling"
+            )
+        if self.beam_evaluation == "per_epoch":
+            for name in BEAM_TABLE_FIELDS:
+                default = ModelsConfig.model_fields[name].default
+                if getattr(self, name) != default:
+                    issues.append(
+                        f"models.{name} is set but models.beam_evaluation='per_epoch' ignores "
+                        "it; remove it or use 'chebyshev_table'"
+                    )
+        _raise_if(issues)
+        return self
+
+
+BEAM_TABLE_FIELDS: Final[tuple[str, ...]] = (
+    "beam_table_max_nodes",
+    "beam_table_check_epochs",
+    "beam_table_capture_tolerance",
+    "beam_table_percentile_tolerance",
+    "beam_table_relative_tolerance",
+)
+"""``models`` fields that only the ``chebyshev_table`` beam evaluation reads."""
 
 
 class ConstantsConfig(_Section):
@@ -2193,7 +2430,11 @@ def ring_phase_offset_deg(config: RunConfig, ring_index: int) -> float:
     if config.constellation is None:
         raise ValueError("configuration has no constellation section")
     ring = config.constellation.rings[ring_index]
-    return config.orbit.true_anomaly_deg if ring.phase_offset_deg is None else ring.phase_offset_deg
+    if ring.phase_offset_deg is not None:
+        return ring.phase_offset_deg
+    if config.orbit.true_anomaly_deg is None:
+        raise ValueError("orbit.true_anomaly_deg is not set (geostationary preset)")
+    return config.orbit.true_anomaly_deg
 
 
 def satellite_config(config: RunConfig, ring_index: int, phase_angle_deg: float) -> RunConfig:
@@ -2218,6 +2459,11 @@ def _constellation_issues(config: RunConfig) -> list[str]:
     assert config.constellation is not None
     c = config.constellation
     issues: list[str] = []
+    if config.orbit.elements_center != "SUN":
+        return [
+            "constellation: geocentric orbits (orbit.elements_center='EARTH') are a "
+            "single-satellite GEO baseline (M7b); constellations are heliocentric"
+        ]
     for i, ring in enumerate(c.rings):
         data = _satellite_mapping(config, i, ring_phase_offset_deg(config, i))
         try:
@@ -2228,6 +2474,11 @@ def _constellation_issues(config: RunConfig) -> list[str]:
                     f"constellation.rings[{i}] ('{ring.name}') gives an invalid satellite "
                     f"configuration: {issue.format()}"
                 )
+    if config.models.beam_evaluation != "per_epoch":
+        issues.append(
+            "constellation: models.beam_evaluation='chebyshev_table' is implemented for the "
+            "single-satellite run only; use 'per_epoch' (or the batched backends)"
+        )
     if c.mass_proxy is not None and config.thermal.radiator_specific_mass_kg_m2 is None:
         issues.append(
             "constellation.mass_proxy needs thermal.radiator_specific_mass_kg_m2 (the radiator "
@@ -2541,9 +2792,29 @@ def approximations_in_force(config: RunConfig) -> tuple[NamedApproximation, ...]
       limits the beams of one *emission* epoch at each receiver, although their light times
       differ (emission-epoch aggregation; bounded on every run by the reception-time
       reconstruction, M7 review).
+    * ``orbit.elements_center = EARTH`` (M7b GEO baseline): L0 Earth point mass with the
+      lunisolar, J2 and SRP perturbations omitted ("L0 + station-keeping"; magnitudes in
+      docs/model_assumptions.md, M7b).
     """
     out: list[NamedApproximation] = []
     o = config.orbit
+    if o.elements_center == "EARTH":
+        out.append(
+            NamedApproximation(
+                path="orbit.elements_center",
+                value="EARTH",
+                approximation="L0 two-body Kepler about the Earth's centre (Earth point mass); "
+                "lunisolar third-body (~0.84 deg/yr inclination growth in 2030), J2 (+522 m "
+                "synchronous radius), tesseral harmonics and SRP (eccentricity circle "
+                "~(3/2) a_srp/(n r n_sun): 2.9e-4 at A/m = 0.02 m^2/kg, 8.7e-3 = +-367 km at "
+                "the comparison collector's ~0.6 m^2/kg) are omitted: station-keeping is "
+                "assumed and its propellant is not in the mass proxy "
+                "(docs/model_assumptions.md, M7b)",
+                comparison_path="helioswarm.geocentric.propagate_geocentric_point_masses "
+                "(Earth + Sun + Moon integration) and the closed-form J2/SRP estimates in "
+                "helioswarm.geocentric; docs/model_assumptions.md M7b",
+            )
+        )
     if (
         config.collector.incidence_mode == "fixed_normal"
         and o.model == "prescribed_ephemeris_perturbed_test_particle"
@@ -2743,6 +3014,99 @@ def read_yaml(path: str | Path) -> Any:
         raise ConfigError(str(p), [ConfigIssue("<yaml>", f"YAML syntax error: {exc}")]) from exc
 
 
+EXTENDS_KEY: Final[str] = "extends"
+"""Top-level key of a run-configuration file naming the file it extends (M7b)."""
+
+MAX_EXTENDS_DEPTH: Final[int] = 16
+"""Longest accepted ``extends`` chain."""
+
+
+def merge_config_mappings(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
+    """Deep merge of two configuration mappings: ``override`` wins.
+
+    Mappings are merged key by key, recursively; every other value (scalars, ``null``, lists
+    such as ``receiver.sites``) in ``override`` replaces the base value as a whole. Neither
+    input is modified.
+    """
+    out: dict[str, Any] = {k: copy.deepcopy(v) for k, v in base.items()}
+    for key, value in override.items():
+        if isinstance(value, Mapping) and isinstance(out.get(key), Mapping):
+            out[key] = merge_config_mappings(out[key], value)
+        else:
+            out[key] = copy.deepcopy(value)
+    return out
+
+
+def _resolve_extends(path: Path, chain: tuple[Path, ...]) -> tuple[Any, tuple[Path, ...]]:
+    p = path.resolve()
+    if p in chain:
+        raise ConfigError(
+            str(chain[0]),
+            [
+                ConfigIssue(
+                    EXTENDS_KEY,
+                    "circular 'extends' chain: " + " -> ".join(str(c) for c in (*chain, p)),
+                )
+            ],
+        )
+    if len(chain) >= MAX_EXTENDS_DEPTH:
+        raise ConfigError(
+            str(chain[0]),
+            [ConfigIssue(EXTENDS_KEY, f"'extends' chain longer than {MAX_EXTENDS_DEPTH} files")],
+        )
+    data = read_yaml(p)
+    chain = (*chain, p)
+    if not isinstance(data, Mapping) or EXTENDS_KEY not in data:
+        return data, chain
+    target = data[EXTENDS_KEY]
+    if not isinstance(target, str) or not target:
+        raise ConfigError(
+            str(p),
+            [
+                ConfigIssue(
+                    EXTENDS_KEY,
+                    "must be the path of one configuration file (relative to this file)",
+                    value=target,
+                    has_value=True,
+                )
+            ],
+        )
+    base, chain = _resolve_extends(p.parent / target, chain)
+    if not isinstance(base, Mapping):
+        raise ConfigError(
+            str(p),
+            [ConfigIssue(EXTENDS_KEY, f"extended file {target!r} is not a mapping of sections")],
+        )
+    child = {k: v for k, v in data.items() if k != EXTENDS_KEY}
+    return merge_config_mappings(base, child), chain
+
+
+def read_config_mapping(path: str | Path) -> Any:
+    """Read a run-configuration YAML file and resolve its ``extends`` chain (M7b).
+
+    A file may name one other file with a top-level ``extends: <path>`` (relative to the
+    file's directory). The extended file is read the same way (chains are allowed; cycles and
+    chains longer than :data:`MAX_EXTENDS_DEPTH` are rejected) and the extending file is
+    deep-merged over it (:func:`merge_config_mappings`: mappings merge, every other value
+    replaces). The result is an ordinary mapping without ``extends``; it is validated as a
+    whole, so a file that is only a fragment (e.g. a shared technology block) is never a valid
+    run configuration on its own. Used for the harmonised comparison configurations, whose
+    shared assumptions are literally the same file.
+
+    Raises:
+        ConfigError: unreadable file, YAML error, a bad ``extends`` value or a cycle.
+    """
+    data, _ = _resolve_extends(Path(path), ())
+    return data
+
+
+def config_sources(path: str | Path) -> tuple[Path, ...]:
+    """The files a run configuration is assembled from: ``path`` first, then each file it
+    extends (resolved absolute paths; one file when there is no ``extends``)."""
+    _, chain = _resolve_extends(Path(path), ())
+    return chain
+
+
 def parse_config(data: Any, source: str = "<mapping>") -> RunConfig:
     """Validate a mapping (e.g. parsed YAML) into a :class:`RunConfig`.
 
@@ -2765,16 +3129,52 @@ def parse_config(data: Any, source: str = "<mapping>") -> RunConfig:
 
 
 def load_config(path: str | Path) -> RunConfig:
-    """Read and validate a YAML run configuration file.
+    """Read and validate a YAML run configuration file (``extends`` resolved,
+    :func:`read_config_mapping`).
 
     Raises :class:`ConfigError` with aggregated, human-readable issues on any failure.
     """
-    return parse_config(read_yaml(path), source=str(path))
+    return parse_config(read_config_mapping(path), source=str(path))
+
+
+def omits_when_default(model_cls: type[BaseModel], name: str) -> bool:
+    """Whether field ``name`` of ``model_cls`` is omitted from :func:`resolved_dict` at its
+    default (``_field(..., omit_when_default=True)``)."""
+    extra = model_cls.model_fields[name].json_schema_extra
+    return isinstance(extra, dict) and extra.get(_OMIT_WHEN_DEFAULT_KEY) == "true"
+
+
+def _strip_omitted_defaults(model: _Section, data: dict[str, Any]) -> None:
+    """Remove, in place, the ``omit_when_default`` fields of ``model`` that hold their default
+    (recursing into sub-sections and tuples of sections)."""
+    for name, info in type(model).model_fields.items():
+        if name not in data:
+            continue
+        value = getattr(model, name)
+        if omits_when_default(type(model), name):
+            default = info.get_default(call_default_factory=True)
+            if value == default:
+                del data[name]
+                continue
+        if isinstance(value, _Section) and isinstance(data[name], dict):
+            _strip_omitted_defaults(value, data[name])
+        elif isinstance(value, tuple) and isinstance(data[name], list):
+            for item, item_data in zip(value, data[name], strict=True):
+                if isinstance(item, _Section) and isinstance(item_data, dict):
+                    _strip_omitted_defaults(item, item_data)
 
 
 def resolved_dict(config: RunConfig) -> dict[str, Any]:
-    """JSON-compatible dict of the fully resolved configuration, including all defaults."""
-    return config.model_dump(mode="json")
+    """JSON-compatible dict of the fully resolved configuration, including all defaults.
+
+    Exception (M7b): fields declared ``omit_when_default`` are left out while they hold their
+    default (:func:`omits_when_default`), so adding them did not change the canonical JSON or
+    the hash of any configuration that does not use them. Loading the dict again restores the
+    same defaults, so the round trip is unchanged.
+    """
+    data = config.model_dump(mode="json")
+    _strip_omitted_defaults(config, data)
+    return data
 
 
 def canonical_json(config: RunConfig) -> str:
@@ -2819,9 +3219,11 @@ def write_resolved_yaml(config: RunConfig, path: str | Path) -> Path:
 
 
 __all__ = [
+    "BEAM_TABLE_FIELDS",
     "DEFAULT_PERTURBING_BODIES",
     "EARTH_RELATIVE_MIN_ABS_COS_INCLINATION",
     "EPHEMERIS_CACHE_STEP_MAX_S",
+    "EXTENDS_KEY",
     "INTEGRATOR_RTOL_MAX",
     "INTEGRATOR_RTOL_MIN",
     "MICROWAVE_BEAM_MODELS",
@@ -2863,14 +3265,18 @@ __all__ = [
     "canonical_json",
     "canonical_utc",
     "config_hash",
+    "config_sources",
     "dump_resolved_yaml",
     "duty_cycle_epochs",
     "field_meta",
     "idealised_settings",
     "leaf_paths",
     "load_config",
+    "merge_config_mappings",
+    "omits_when_default",
     "parse_config",
     "provenance_table",
+    "read_config_mapping",
     "read_yaml",
     "resolved_dict",
     "ring_phase_offset_deg",

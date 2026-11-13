@@ -90,6 +90,7 @@ from helioswarm.frames import (
     transform_state,
     transform_trajectory,
 )
+from helioswarm.ground import EarthOrientation
 from helioswarm.kernels import LoadedKernels
 from helioswarm.orbit import (
     elements_from_config,
@@ -1067,7 +1068,20 @@ def satellite_initial_state(
     The collector normal (PDF p.4 ``SatelliteState`` "attitude/normal vector") is
     ``n = -r_helio/|r_helio|`` (towards the Sun's centre, geometric direction at the same epoch)
     for ``sun_tracking`` and the configured J2000 unit vector for ``fixed_normal``.
+
+    Raises:
+        ValueError: ``orbit.elements_center`` is not ``SUN``. Earth-centred orbits (M7b) have
+            no satellite initial state here: ``mu = GM_sun`` and the Sun-relative collector
+            normal above would be wrong for them; their trajectory is
+            :func:`helioswarm.geocentric.geocentric_l0_trajectory` (via
+            :func:`l0_reference_trajectory`).
     """
+    if orbit.elements_center != "SUN":
+        raise ValueError(
+            f"satellite_initial_state builds heliocentric states only (orbit.elements_center = "
+            f"'{orbit.elements_center}'); Earth-centred orbits use "
+            "helioswarm.geocentric.geocentric_l0_trajectory (L0 + station-keeping, M7b)"
+        )
     elements = elements_from_config(
         orbit,
         epoch_tdb_s=epoch_tdb_s,
@@ -1232,6 +1246,7 @@ def l0_reference_trajectory(
     *,
     initial_epoch_tdb_s: float,
     ephemeris: EphemerisProvider,
+    earth_orientation: EarthOrientation | None = None,
 ) -> CartesianTrajectory:
     """L0 (two-body Kepler) reference trajectory of the configured orbit, in J2000 / SSB.
 
@@ -1242,15 +1257,32 @@ def l0_reference_trajectory(
     (``r_SSB = r_helio + r_sun(t)``). Its initial state equals :func:`satellite_initial_state`,
     so ``|r_L1(t) - r_L0(t)|`` is the drift caused by the planets and SRP.
 
+    Earth-centred orbits (``orbit.elements_center = 'EARTH'``, M7b) are delegated to
+    :func:`helioswarm.geocentric.geocentric_l0_trajectory` (Earth point mass, ``mu =
+    GM_earth``, J2000 equatorial elements or the geostationary preset; shifted to the SSB with
+    the Earth's state).
+
     Args:
         orbit: Orbit section of the configuration.
         epochs_tdb_s: Output epochs [TDB s past J2000].
         initial_epoch_tdb_s: Osculation epoch of the elements [TDB s past J2000].
-        ephemeris: Provider of the Sun's state and GM.
+        ephemeris: Provider of the Sun's (Earth's) state and GM.
+        earth_orientation: Earth-fixed -> J2000 model; required by the geostationary preset
+            only.
 
     Returns:
         J2000 / SSB trajectory [m, m s^-1].
     """
+    if orbit.elements_center == "EARTH":
+        from helioswarm.geocentric import geocentric_l0_trajectory
+
+        return geocentric_l0_trajectory(
+            orbit,
+            epochs_tdb_s,
+            initial_epoch_tdb_s=initial_epoch_tdb_s,
+            ephemeris=ephemeris,
+            earth_orientation=earth_orientation,
+        )
     elements = elements_from_config(
         orbit,
         epoch_tdb_s=initial_epoch_tdb_s,

@@ -1,0 +1,21 @@
+# M7b harmonised comparison sweep: geo_optical over transmit aperture x receiver radius.
+# Every point is a full validated run of geo_optical.yaml with the two values substituted
+# (provenance 'swept'); the base point (10 m, 1000 m) is the configuration itself. The
+# heliocentric and the GEO optical sweeps use the same grid.
+# Values (scenario inputs, not design recommendations): apertures 10 m (PDF §5 example), 30 m,
+# 100 m (as configs/optical_1au_sweep.yaml); receiver radius 100 m, 1 km (PDF §5 example), 10 km
+# (PDF §2 receiver radii 1/5/10 km, extended down to 100 m because at the GEO range the
+# optical beam is only metres wide).
+# Expected failures, recorded as failed points (never dropped): at the GEO range a 10 km
+# receiver violates the Fresnel paraxial condition of the Fresnel-Hankel model (neglected
+# quartic phase pi (a + rho)^4 / (4 lambda z^3) = 0.17 rad > 0.1 rad at rho = 10 km, Goodman
+# eq. 4-18) for every aperture; the capture there tends to 1 and is bounded below by the 1 km
+# point of the same aperture (the encircled energy grows with the radius).
+# Run: slurm/sweep_array.sbatch (one point per array task); docs/milestones/M7b.md.
+sweep_schema_version: 1
+name: cmp_geo_optical
+description: "M7b comparison: geo_optical x aperture x receiver radius"
+base_config: geo_optical.yaml
+parameters:
+  transmitter.aperture_diameter_m: [10.0, 30.0, 100.0]
+  receiver.radius_m: [100.0, 1000.0, 10000.0]

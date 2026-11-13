@@ -1,0 +1,70 @@
+# Harmonised comparison (M7b; PDF objective O5, §16 "Comparative baseline"): assumptions SHARED
+# by every comparison configuration. This file is a fragment, not a run configuration: the
+# run files extend it (`extends:`, resolved by helioswarm.config.read_config_mapping; the
+# extending file is deep-merged over this one). Every value below is therefore literally the
+# same in the heliocentric and the GEO runs; tests/integration/test_comparison_configs.py
+# checks that the resolved configurations differ only in orbit/geometry keys.
+#
+# Values: those of the PDF §5 example / MVP (configs/mvp_single_satellite.yaml) and the M7
+# demo (radiator areal mass), all ASSUMED scenario inputs unless the schema marks a default
+# 'sourced' (`helioswarm validate-config <file> --show-provenance`). They are not a design
+# recommendation for either architecture.
+#
+# Time grid: one year from 2030-01-01 at 974 s = 2 x 487 s (32400 steps; 974 s does not divide
+# the day, so diurnal phases and the ~70 min GEO eclipses are sampled at drifting phases).
+
+schema_version: 1
+
+time:
+  start_utc: "2030-01-01T00:00:00"
+  duration_days: 365.25
+  output_step_s: 974
+
+frames:
+  inertial: "J2000"
+  origin: "SOLAR SYSTEM BARYCENTER"
+  earth_fixed: "IAU_EARTH"
+
+collector:
+  area_m2: 10000
+  pv_efficiency_reference: 0.30
+  reference_temperature_K: 300
+  temperature_coefficient_per_K: -0.0004
+  absorptivity: 0.90
+  incidence_mode: "sun_tracking"
+
+receiver:
+  # One receiver site for both architectures: the PDF §5 example site on the equator at
+  # 0 deg E; the GEO satellite is placed at the same longitude (zenith link).
+  sites:
+    - name: "example_site"
+      latitude_deg: 0.0
+      longitude_deg: 0.0
+      altitude_m: 0.0
+  min_elevation_deg: 10
+  grid_efficiency: 0.97
+  # Receiver limits (PDF §10.4: input power, heat rejection, power density / beam abort) are
+  # technology-specific and set in _optical.yaml / _microwave.yaml, not here.
+
+thermal:
+  emissivity: 0.90
+  radiator_temperature_limit_K: 450
+  radiating_sides: 2
+  radiator_view_factor: 1.0
+  radiator_specific_mass_kg_m2: 5.0   # assumed (as configs/constellation_demo.yaml); mass proxy
+
+models:
+  # The beam (diffraction) model is NOT in the shared block: it is chosen by the propagation
+  # regime of each geometry (one scalar-diffraction physics, two evaluation regimes) and set in
+  # the case files: far-field (Fraunhofer) models at the heliocentric ranges, where
+  # N_F = D^2/(lambda R) << 0.5, and the Fresnel-Hankel model at the GEO range, where the 10 m
+  # optical aperture is in the near field (N_F = 2.8 > 0.5: airy_far_field refuses to run).
+  # Where both are valid they agree (tests/integration/test_geo_comparison_run.py:
+  # ::test_far_field_and_fresnel_hankel_agree_at_the_heliocentric_range, <= 1e-7 relative in
+  # capture at 7.2e10-8.2e10 m for both technologies; ::test_fresnel_regime_selection_at_the_geo_range,
+  # 1.1e-4 for the microwave link at the GEO range); the
+  # Fresnel-Hankel model cannot be shared because its paraxial validity check fails for the
+  # 500 m microwave aperture at 0.5 au (beam extent ~ 7.5e7 m) and its quadrature becomes
+  # impractical for km-scale optical receivers there.
+  light_time: true
+  sun_occultation: true

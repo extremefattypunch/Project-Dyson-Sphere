@@ -274,7 +274,69 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="per-axis pointing sigmas [rad] (default 0-1 x lambda/D plus the configured one)",
     )
+    cmp_ = sub.add_parser(
+        "compare",
+        help="harmonised comparison table and figure from saved sweep runs (M7b)",
+        description="Read a comparison file (cases = sweeps whose base configurations share "
+        "their technology blocks), check that each technology group differs only in "
+        "orbit/geometry keys, read every saved point under RUNS_DIR/<sweep name>/points/ and "
+        "write comparison tables (CSV + Markdown), the harmonised-assumption table, a figure "
+        "and a manifest. Nothing is simulated. Exit status: 0 ok (every point present and "
+        "complete or recorded as failed), 1 error or missing/incomplete points.",
+    )
+    cmp_.add_argument("comparison", metavar="COMPARISON", help="comparison YAML file")
+    cmp_.add_argument(
+        "--runs-dir",
+        metavar="DIR",
+        required=True,
+        help="directory holding one sweep output directory per case (named after the sweep)",
+    )
+    cmp_.add_argument("--out", metavar="DIR", required=True, help="output directory")
     return parser
+
+
+def _cmd_compare(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
+    from helioswarm.compare import HarmonisationError, load_comparison, write_comparison
+
+    try:
+        plan = load_comparison(args.comparison)
+    except ConfigError as exc:
+        err.write(f"ERROR: {exc.format()}\n")
+        return EXIT_INVALID
+    except HarmonisationError as exc:
+        err.write(f"ERROR: {exc}\n")
+        return EXIT_INVALID
+    try:
+        res = write_comparison(plan, Path(args.runs_dir), Path(args.out))
+    except (OSError, ValueError, ConfigError) as exc:
+        err.write(f"ERROR: {type(exc).__name__}: {exc}\n")
+        return EXIT_INVALID
+    counts: dict[str, int] = {}
+    for r in res.rows:
+        counts[r.status] = counts.get(r.status, 0) + 1
+    out.write(
+        f"OK: comparison '{plan.definition.name}' written to {res.out_dir} "
+        f"({len(res.files)} files); points: "
+        + ", ".join(f"{k} {v}" for k, v in sorted(counts.items()))
+        + "\n"
+    )
+    for r in res.rows:
+        if r.is_base:
+            p = r.delivered_mean_power_W
+            out.write(
+                f"  {r.case} (base {r.point}): {r.status}"
+                + (
+                    ""
+                    if p is None
+                    else f", P_grid mean {p:.6g} W, availability {r.availability:.6g}"
+                )
+                + "\n"
+            )
+    incomplete = counts.get("missing", 0) + counts.get("incomplete", 0)
+    if incomplete:
+        err.write(f"WARNING: {incomplete} point(s) missing or incomplete (not run yet?)\n")
+        return EXIT_INVALID
+    return EXIT_OK
 
 
 def _cmd_run(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
@@ -740,6 +802,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_validate_models(args, sys.stdout, sys.stderr)
     if command == "characterize":
         return _cmd_characterize(args, sys.stdout, sys.stderr)
+    if command == "compare":
+        return _cmd_compare(args, sys.stdout, sys.stderr)
     parser.error(f"unknown command {command!r}")  # argparse already rejects unknown commands
 
 

@@ -134,7 +134,8 @@ class OrbitalElements:
         mu_m3_s2: Gravitational parameter of the central body [m^3 s^-2].
         epoch_tdb_s: Osculation epoch [s], TDB seconds past J2000 (SPICE ET).
         frame: Inertial reference frame of the angles (SPICE name); default ``ECLIPJ2000``.
-        center: Central body (SPICE name); default ``SUN``.
+        center: Central body (SPICE name): ``SUN`` (default) or ``EARTH`` (geocentric
+            elements, M7b); ``mu_m3_s2`` must be that body's GM.
 
     Angles other than ``i_rad`` may be any finite value (they are used modulo 2 pi);
     :func:`state_to_elements` returns them in [0, 2 pi).
@@ -174,8 +175,8 @@ class OrbitalElements:
             raise ValueError(f"mu_m3_s2 must be > 0, got {self.mu_m3_s2}")
         if self.frame not in SUPPORTED_FRAMES:
             raise ValueError(f"unsupported frame {self.frame!r}")
-        if self.center != "SUN":
-            raise ValueError(f"only center='SUN' is supported, got {self.center!r}")
+        if self.center not in ("SUN", "EARTH"):
+            raise ValueError(f"center must be 'SUN' or 'EARTH', got {self.center!r}")
 
     @property
     def semi_latus_rectum_m(self) -> float:
@@ -595,20 +596,21 @@ def state_to_elements(
     ``argp = atan2(e.Q, e.P)``, ``nu = u - argp``. Singular cases follow the module conventions.
 
     Args:
-        state: State whose origin is the central body (only ``SUN`` is supported).
+        state: State whose origin is the central body (``SUN`` or ``EARTH``).
         mu_m3_s2: Gravitational parameter of the central body [m^3 s^-2].
         circular_tol: Eccentricity below which the orbit is treated as circular.
         equatorial_tol: sin(i) below which the orbit is treated as equatorial.
 
     Raises:
-        ValueError: if the origin is not the Sun, the motion is rectilinear (h = 0), or the
-            orbit is not elliptic (epsilon >= 0).
+        ValueError: if the origin is not a central body (the SSB), the motion is rectilinear
+            (h = 0), or the orbit is not elliptic (epsilon >= 0).
     """
     _check_mu(mu_m3_s2)
-    if state.origin != "SUN":
+    if state.origin not in ("SUN", "EARTH"):
         raise ValueError(
             f"two-body elements need a state relative to the central body; got origin "
-            f"{state.origin!r} (expected 'SUN'). Change the origin with an ephemeris first."
+            f"{state.origin!r} (expected 'SUN' or 'EARTH'). Change the origin with an "
+            "ephemeris first."
         )
     r_vec = np.asarray(state.position_m, dtype=np.float64)
     v_vec = np.asarray(state.velocity_m_s, dtype=np.float64)
@@ -662,7 +664,7 @@ def state_to_elements(
         mu_m3_s2=mu_m3_s2,
         epoch_tdb_s=state.epoch_tdb_s,
         frame=state.frame,
-        center="SUN",
+        center=state.origin,
     )
 
 
@@ -770,7 +772,10 @@ def elements_from_config(
             needs the leap-second kernel and is done by SPICE (``str2et``, M2); this module
             never converts time scales itself.
         mu_m3_s2: Central-body GM [m^3 s^-2]; defaults to GM_sun (DE440), the correct value
-            for Sun-centred elements of a massless satellite.
+            for Sun-centred elements of a massless satellite. Earth-centred elements
+            (``orbit.elements_center = 'EARTH'``) must pass GM_earth (the caller,
+            :func:`helioswarm.propagate.l0_reference_trajectory`, takes it from the ephemeris
+            provider, i.e. ``gm_de440.tpc``).
         true_anomaly_rad: The resolved true anomaly [rad]. Required when
             ``orbit.phase_reference = 'earth_relative'`` (the configured angle is then an
             Earth-relative ecliptic longitude offset that only the ephemeris can turn into a

@@ -1,0 +1,18 @@
+# M7b harmonised comparison sweep: helio_1au_optical over transmit aperture x receiver radius.
+# Every point is a full validated run of helio_1au_optical.yaml with the two values substituted
+# (provenance 'swept'); the base point (10 m, 1000 m) is the configuration itself. The
+# heliocentric and the GEO optical sweeps use the same grid.
+# Values (scenario inputs, not design recommendations): apertures 10 m (PDF §5 example), 30 m,
+# 100 m (as configs/optical_1au_sweep.yaml); receiver radius 100 m, 1 km (PDF §5 example), 10 km
+# (PDF §2 receiver radii 1/5/10 km, extended down to 100 m because at the GEO range the
+# optical beam is only metres wide).
+# The heliocentric case uses the far-field (Airy) model at every point: N_F <= 0.14 at the
+# shortest range of the year (0.48 au) for the 100 m aperture.
+# Run: slurm/sweep_array.sbatch (one point per array task); docs/milestones/M7b.md.
+sweep_schema_version: 1
+name: cmp_helio_1au_optical
+description: "M7b comparison: helio_1au_optical x aperture x receiver radius"
+base_config: helio_1au_optical.yaml
+parameters:
+  transmitter.aperture_diameter_m: [10.0, 30.0, 100.0]
+  receiver.radius_m: [100.0, 1000.0, 10000.0]

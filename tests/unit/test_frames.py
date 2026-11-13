@@ -131,7 +131,8 @@ def test_state_validation_and_immutability() -> None:
     with pytest.raises(ValueError, match="finite"):
         CartesianState(0.0, np.array([np.nan, 0, 0]), np.zeros(3), "J2000", "SUN")
     with pytest.raises(ValueError, match="unsupported origin"):
-        _state(origin="EARTH")
+        _state(origin="MOON")  # EARTH is a supported origin since M7b (geocentric elements)
+    assert _state(origin="EARTH").origin == "EARTH"
     with pytest.raises(ValueError, match="unsupported frame"):
         _state(frame="IAU_EARTH")
     with pytest.raises(ValueError, match="epoch"):

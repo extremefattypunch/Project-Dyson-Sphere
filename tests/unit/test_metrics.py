@@ -96,16 +96,36 @@ def test_summary_capacity_factor_undefined_without_rated_power() -> None:
 
 def test_aliasing_diagnostic_from_hour_angles() -> None:
     n = 48
-    # Hourly samples of a 24 h cycle: only 24 distinct phases -> gap 2 pi / 24, warning.
+    # Hourly samples of a 24 h cycle: only 24 distinct phases -> gap 2 pi / 24, warning when
+    # the access has window edges (a diurnal pattern: visible half of each day).
     ha = np.mod(2 * math.pi * np.arange(n) / 24.0, 2 * math.pi)
-    s = summarize_timeseries(_table(n, 3600.0, hour_angle_rad=ha), INPUTS)
+    vis = (np.arange(n) % 24) < 12
+    s = summarize_timeseries(_table(n, 3600.0, hour_angle_rad=ha, visible=vis), INPUTS)
     al = s.diurnal_aliasing
     assert al.hour_angle_max_gap_rad == pytest.approx(2 * math.pi / 24, rel=1e-12)
     assert al.effective_distinct_diurnal_phases == pytest.approx(24.0, rel=1e-12)
     assert al.warning is True
     dense = np.linspace(0.0, 2 * math.pi, 2000, endpoint=False)
-    s2 = summarize_timeseries(_table(2000, 300.0, hour_angle_rad=dense), INPUTS)
+    vis2 = dense < math.pi
+    s2 = summarize_timeseries(_table(2000, 300.0, hour_angle_rad=dense, visible=vis2), INPUTS)
     assert s2.diurnal_aliasing.warning is False
+
+
+def test_no_aliasing_warning_without_access_edges() -> None:
+    """M7b: a geostationary satellite has a constant hour angle (gap ~ 2 pi) but continuous
+    access, so no diurnal fraction is quantised: no warning (the gap is still reported)."""
+    n = 48
+    ha = np.full(n, 0.0)
+    for vis in (np.ones(n, dtype=bool), np.zeros(n, dtype=bool)):
+        al = summarize_timeseries(
+            _table(n, 3600.0, hour_angle_rad=ha, visible=vis), INPUTS
+        ).diurnal_aliasing
+        assert al.hour_angle_max_gap_rad == pytest.approx(2 * math.pi)
+        assert al.warning is False
+    vis = np.ones(n, dtype=bool)
+    vis[10] = False  # one access edge: the warning applies again
+    al = summarize_timeseries(_table(n, 3600.0, hour_angle_rad=ha, visible=vis), INPUTS)
+    assert al.diurnal_aliasing.warning is True
 
 
 def test_reason_codes_and_precedence() -> None:

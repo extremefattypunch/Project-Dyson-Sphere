@@ -44,7 +44,9 @@ Diurnal aliasing diagnostic (M3 finding)
     ``hour_angle_rad`` column), the effective number of distinct diurnal phases ``2 pi / g``,
     the per-edge resolution ``g / (2 pi)`` of diurnal fractions (an order-of-magnitude guide; M3
     measured a 0.020 bias at ``g/2pi = 0.024``) and a warning flag when ``g / 2pi`` exceeds
-    ``ALIASING_WARNING_FRACTION``.
+    ``ALIASING_WARNING_FRACTION`` and the access changes at least once in the window (with no
+    access-window edge - e.g. a geostationary satellite, whose hour angle is constant, M7b -
+    there is no diurnal fraction to quantise, so a large gap is no warning).
 """
 
 from __future__ import annotations
@@ -713,7 +715,10 @@ def summarize_timeseries(table: pa.Table, inputs: SummaryInputs) -> RunSummary:
             hour_angle_max_gap_rad=gap,
             effective_distinct_diurnal_phases=2.0 * math.pi / gap if gap > 0 else None,
             per_edge_resolution_day_fraction=gap / (2.0 * math.pi),
-            warning=bool(gap / (2.0 * math.pi) > ALIASING_WARNING_FRACTION),
+            warning=bool(
+                gap / (2.0 * math.pi) > ALIASING_WARNING_FRACTION
+                and bool(np.any(visible[1:] != visible[:-1]))
+            ),
             warning_threshold_day_fraction=ALIASING_WARNING_FRACTION,
             access_fraction=float(np.sum(w[visible]) / window) if window else 0.0,
         ),

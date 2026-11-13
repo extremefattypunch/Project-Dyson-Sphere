@@ -1,5 +1,5 @@
 """Planetary ephemerides: an injectable provider protocol, SPICE and analytic implementations,
-origin changes Sun <-> SSB, and a cubic-Hermite cache for the L1 integrator.
+origin changes Sun/Earth <-> SSB, and a cubic-Hermite cache for the L1 integrator.
 
 Every state returned here is in the inertial frame ``J2000`` with origin
 ``SOLAR SYSTEM BARYCENTER`` (SSB), in SI units (m, m/s), at an epoch in TDB seconds past J2000
@@ -447,18 +447,30 @@ class AnalyticEphemeris:
 
 
 # ---------------------------------------------------------------------------------------------
-# Origin changes (Sun <-> SSB)
+# Origin changes (SUN / EARTH <-> SSB)
 # ---------------------------------------------------------------------------------------------
+
+_ORIGIN_BODIES: Final[Mapping[str, BodyName]] = MappingProxyType({"SUN": "SUN", "EARTH": "EARTH"})
+"""Body whose ephemeris state locates each non-SSB origin (NAIF 10 and 399)."""
+
+
+def _origin_body(origin: str) -> BodyName:
+    try:
+        return _ORIGIN_BODIES[origin]
+    except KeyError:
+        raise ValueError(f"unsupported origin {origin!r}") from None
 
 
 def shift_state_origin(
     state: CartesianState, to_origin: OriginName, ephemeris: EphemerisProvider
 ) -> CartesianState:
-    """Re-express a J2000 state relative to another origin (``SUN`` <-> SSB).
+    """Re-express a J2000 state relative to another origin (``SUN``/``EARTH`` <-> SSB).
 
-    ``r_SSB = r_SUN + r_sun/SSB(t)``, ``v_SSB = v_SUN + v_sun/SSB(t)``, with the Sun's state from
-    ``ephemeris`` at the state's own epoch (pure translation between inertial origins; Galilean
-    velocity addition, valid for the Newtonian model used here).
+    ``r_SSB = r_B + r_B/SSB(t)``, ``v_SSB = v_B + v_B/SSB(t)`` for an origin body ``B`` (the Sun,
+    or the Earth's centre NAIF 399 for geocentric states), with B's state from ``ephemeris`` at
+    the state's own epoch (pure translation between origins; Galilean velocity addition, valid
+    for the Newtonian model used here). A change between two non-SSB origins goes through the
+    SSB. ``SUN`` <-> SSB is unchanged from M2 (bit for bit).
 
     Raises:
         FrameMismatchError: the state is not in the ephemeris frame (rotate it first).
@@ -469,12 +481,15 @@ def shift_state_origin(
         )
     if state.origin == to_origin:
         return state
-    sun = ephemeris.state("SUN", state.epoch_tdb_s)
+    if state.origin != SSB and to_origin != SSB:
+        return shift_state_origin(shift_state_origin(state, SSB, ephemeris), to_origin, ephemeris)
+    body = _origin_body(to_origin if state.origin == SSB else state.origin)
+    b = ephemeris.state(body, state.epoch_tdb_s)
     sign = 1.0 if to_origin == SSB else -1.0
     return CartesianState(
         epoch_tdb_s=state.epoch_tdb_s,
-        position_m=state.position_m + sign * sun.position_m,
-        velocity_m_s=state.velocity_m_s + sign * sun.velocity_m_s,
+        position_m=state.position_m + sign * b.position_m,
+        velocity_m_s=state.velocity_m_s + sign * b.velocity_m_s,
         frame=state.frame,
         origin=to_origin,
     )
@@ -483,19 +498,24 @@ def shift_state_origin(
 def shift_trajectory_origin(
     traj: CartesianTrajectory, to_origin: OriginName, ephemeris: EphemerisProvider
 ) -> CartesianTrajectory:
-    """Trajectory version of :func:`shift_state_origin` (Sun state at every epoch)."""
+    """Trajectory version of :func:`shift_state_origin` (origin body's state at every epoch)."""
     if traj.frame != ephemeris.frame:
         raise FrameMismatchError(
             f"trajectory is in {traj.frame}, ephemeris in {ephemeris.frame}; rotate it first"
         )
     if traj.origin == to_origin:
         return traj
-    sun = ephemeris.states("SUN", traj.epochs_tdb_s)
+    if traj.origin != SSB and to_origin != SSB:
+        return shift_trajectory_origin(
+            shift_trajectory_origin(traj, SSB, ephemeris), to_origin, ephemeris
+        )
+    body = _origin_body(to_origin if traj.origin == SSB else traj.origin)
+    b = ephemeris.states(body, traj.epochs_tdb_s)
     sign = 1.0 if to_origin == SSB else -1.0
     return CartesianTrajectory(
         epochs_tdb_s=traj.epochs_tdb_s,
-        position_m=traj.position_m + sign * sun.position_m,
-        velocity_m_s=traj.velocity_m_s + sign * sun.velocity_m_s,
+        position_m=traj.position_m + sign * b.position_m,
+        velocity_m_s=traj.velocity_m_s + sign * b.velocity_m_s,
         frame=traj.frame,
         origin=to_origin,
     )

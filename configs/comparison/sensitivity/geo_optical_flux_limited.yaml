@@ -1,0 +1,22 @@
+# M7b review: BOUNDED sensitivity point for the GEO optical case (PDF §10.4 receiver limits).
+# Identical to ../geo_optical.yaml except for a laser-PV receiver power-density limit
+# (beam abort: receiver.max_power_density_W_m2, enforced per epoch on the peak incident
+# irradiance; P_grid = 0 at an aborted epoch, flag POWER_DENSITY_ABORT) and a 100 m receiver
+# radius (cheap Fresnel-Hankel evaluations; at the GEO range the 1 km and 100 m receivers capture
+# >= 0.993 of the beam alike, ../../../docs/milestones/M7b.md).
+#
+# max_power_density_W_m2 = 1.0e4 W/m^2 is an ASSUMED, ILLUSTRATIVE value (about 7 solar
+# constants), NOT a sourced laser-PV or eye/skin-safety limit; it is chosen between the GEO
+# peaks of the D = 30 m (4.27e3 W/m^2) and D = 10 m (7.65e4 W/m^2) apertures so that the run
+# shows how such a limit acts. Not part of the harmonised comparison (compare refuses a case
+# whose receiver block differs); results are reported separately in M7b.md.
+extends: ../geo_optical.yaml
+
+project:
+  name: "cmp_geo_optical_flux_limited"
+  seed: 20261113
+  description: "M7b sensitivity: GEO optical with an assumed 1e4 W/m^2 receiver flux limit"
+
+receiver:
+  radius_m: 100
+  max_power_density_W_m2: 1.0e4

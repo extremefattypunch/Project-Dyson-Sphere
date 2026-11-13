@@ -68,6 +68,11 @@ from helioswarm.atmosphere import (
     atmospheric_transmission,
 )
 from helioswarm.beam import BeamResult, BeamSettings, beam_settings_from_config, evaluate_beam
+from helioswarm.beam_table import (
+    BeamTableDiagnostics,
+    beam_table_settings_from_config,
+    evaluate_beam_table,
+)
 from helioswarm.config import RunConfig, SiteConfig, approximations_in_force, config_hash
 from helioswarm.ephemeris import EphemerisProvider
 from helioswarm.frames import CartesianTrajectory
@@ -333,6 +338,8 @@ class SystemRunResult:
         log: Warnings and diagnostics for ``logs/run.log``.
         window_end_utc: UTC of the last output epoch (SPICE ``et2utc``, milliseconds; for the
             manifest's simulation window only, never used in arithmetic).
+        beam_table: Diagnostics of the Chebyshev beam table (``models.beam_evaluation =
+            'chebyshev_table'``, M7b), else ``None``.
     """
 
     config: RunConfig
@@ -363,6 +370,7 @@ class SystemRunResult:
     timings: tuple[StageTiming, ...] = field(repr=False)
     log: tuple[RunLogEntry, ...] = field(repr=False)
     window_end_utc: str | None = None
+    beam_table: BeamTableDiagnostics | None = None
 
     def __post_init__(self) -> None:
         n = len(self.grid)
@@ -610,14 +618,22 @@ def _orbit(
     ephemeris: EphemerisProvider,
     kernels: LoadedKernels,
     log: list[RunLogEntry],
+    earth_orientation: EarthOrientation,
 ) -> tuple[TimeGrid, CartesianTrajectory, L1Diagnostics | None, Float64Array | None]:
     grid = time_grid_from_config(config.time, kernels)
     t0 = utc_to_tdb_s(config.orbit.initial_epoch_utc, kernels)
     l0 = l0_reference_trajectory(
-        config.orbit, grid.epochs_tdb_s, initial_epoch_tdb_s=t0, ephemeris=ephemeris
+        config.orbit,
+        grid.epochs_tdb_s,
+        initial_epoch_tdb_s=t0,
+        ephemeris=ephemeris,
+        earth_orientation=earth_orientation,
     )
     if config.orbit.model != L1_MODEL:
-        log.append(RunLogEntry("INFO", "orbit", "L0 two-body Kepler orbit (closed form)"))
+        if config.orbit.is_geocentric:
+            log.append(RunLogEntry("INFO", "orbit", _geocentric_orbit_note(config, l0, ephemeris)))
+        else:
+            log.append(RunLogEntry("INFO", "orbit", "L0 two-body Kepler orbit (closed form)"))
         return grid, l0, None, None
     run = propagate_l1_from_config(config, ephemeris, kernels)
     diag = run.propagation.diagnostics
@@ -643,6 +659,25 @@ def _orbit(
     )
     traj = run.propagation.trajectory
     return run.grid, traj, diag, orbit_drift_m(traj, l0)
+
+
+def _geocentric_orbit_note(
+    config: RunConfig, trajectory: CartesianTrajectory, ephemeris: EphemerisProvider
+) -> str:
+    """Run-log line of a geocentric L0 orbit (M7b): model, GM, radius range, assumption."""
+    earth = ephemeris.positions("EARTH", trajectory.epochs_tdb_s)
+    r = np.linalg.norm(np.asarray(trajectory.position_m) - earth, axis=1)
+    preset = (
+        f"geostationary preset at {config.orbit.geostationary_longitude_deg} deg E (IAU_EARTH)"
+        if config.orbit.is_geostationary_preset
+        else "configured J2000 equatorial elements"
+    )
+    return (
+        f"L0 two-body Kepler orbit about the Earth's centre (closed form; {preset}; "
+        f"GM_earth = {ephemeris.gm_m3_s2('EARTH'):.10e} m^3/s^2); geocentric radius "
+        f"{float(np.min(r)):.6f}..{float(np.max(r)):.6f} m; lunisolar, J2 and SRP "
+        "perturbations omitted (station-keeping assumed, docs/model_assumptions.md M7b)"
+    )
 
 
 def run_single_satellite(
@@ -695,7 +730,7 @@ def run_single_satellite(
     radii = OcculterRadii.from_kernels(kernels)
 
     grid, traj, l1_diag, drift = _timed(
-        "orbit", timings, lambda: _orbit(config, ephemeris, kernels, log)
+        "orbit", timings, lambda: _orbit(config, ephemeris, kernels, log, orientation)
     )
     n = len(grid)
     illum = _timed(
@@ -727,19 +762,39 @@ def run_single_satellite(
         lambda: atmosphere_at_access(access, atm_settings, site_cfg),
     )
     beam: BeamResult | None = None
+    table_diag: BeamTableDiagnostics | None = None
     if atm is not None:
         el_v = access.elevation_rad[vis_idx]
-        beam = _timed(
-            "beam",
-            timings,
-            lambda: _evaluate_beam_backend(
-                access.range_m[vis_idx],
-                el_v,
-                beam_settings,
-                backend,
-                access.t_emit_tdb_s[vis_idx],
-            ),
-        )
+        if config.models.beam_evaluation == "chebyshev_table":
+
+            def reference(r: Float64Array, e: Float64Array, t: Float64Array) -> BeamResult:
+                return _evaluate_beam_backend(r, e, beam_settings, backend, t)
+
+            beam, table_diag = _timed(
+                "beam",
+                timings,
+                lambda: evaluate_beam_table(
+                    access.range_m[vis_idx],
+                    el_v,
+                    beam_settings,
+                    table=beam_table_settings_from_config(config),
+                    evaluate=reference,
+                    epochs_tdb_s=access.t_emit_tdb_s[vis_idx],
+                ),
+            )
+            log.append(RunLogEntry("INFO", "beam", table_diag.describe()))
+        else:
+            beam = _timed(
+                "beam",
+                timings,
+                lambda: _evaluate_beam_backend(
+                    access.range_m[vis_idx],
+                    el_v,
+                    beam_settings,
+                    backend,
+                    access.t_emit_tdb_s[vis_idx],
+                ),
+            )
 
     # The site's own capacity overrides (M7) apply to the single-satellite run too: one
     # definition of the receiver for this run and for a one-satellite constellation. Beam slots
@@ -817,7 +872,19 @@ def run_single_satellite(
         )
     )
     gap = summary.hour_angle_max_gap_rad
-    if gap / (2.0 * math.pi) > ALIASING_WARNING_FRACTION:
+    vis = np.asarray(access.visible, dtype=bool)
+    has_edges = bool(np.any(vis[1:] != vis[:-1]))
+    if gap / (2.0 * math.pi) > ALIASING_WARNING_FRACTION and not has_edges:
+        log.append(
+            RunLogEntry(
+                "INFO",
+                "access",
+                f"largest unsampled hour-angle gap {math.degrees(gap):.3f} deg, but the access "
+                "never changes in the window (no access-window edge, e.g. a geostationary "
+                "satellite): no diurnal fraction is quantised by the output step",
+            )
+        )
+    elif gap / (2.0 * math.pi) > ALIASING_WARNING_FRACTION:
         log.append(
             RunLogEntry(
                 "WARNING",
@@ -895,6 +962,7 @@ def run_single_satellite(
         timings=tuple(timings),
         log=tuple(log),
         window_end_utc=tdb_s_to_utc(float(grid.epochs_tdb_s[-1]), kernels, decimals=3),
+        beam_table=table_diag,
     )
 
 

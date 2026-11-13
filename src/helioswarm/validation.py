@@ -36,7 +36,7 @@ from helioswarm.capture import (
     capture_fraction_cartesian,
     capture_statistics,
 )
-from helioswarm.config import RunConfig, parse_config, read_yaml
+from helioswarm.config import RunConfig, parse_config, read_config_mapping
 from helioswarm.constants import (
     AU_M,
     CMB_TEMPERATURE_K,
@@ -1401,7 +1401,7 @@ def write_report(path: Path, block: str) -> Path:
 
 def load_base_config(path: str | Path) -> RunConfig:
     """The MVP configuration the end-to-end checks start from."""
-    return parse_config(read_yaml(path), source=str(path))
+    return parse_config(read_config_mapping(path), source=str(path))
 
 
 __all__ = [

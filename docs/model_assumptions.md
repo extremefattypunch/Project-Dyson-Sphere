@@ -1046,7 +1046,8 @@ ledger term in closed form for a constant-efficiency plate (η = 0.3).
   bound at d = 0.1 au from the Earth (closer than any MVP geometry): reflected
   `A_B S (R⊕/d)²` with Bond albedo 0.3 plus emitted `240 W m⁻² (R⊕/d)²` (full disk facing the
   collector; global-mean values, Trenberth, Fasullo & Kiehl 2009, BAMS 90, 311) is
-  1.2e-4 W m⁻², i.e. < 1e-7 of S.
+  1.2e-4 W m⁻², i.e. < 1e-7 of S. This bound holds for heliocentric geometries only; at GEO
+  (M7b) the same terms are ~1 % of S (M7b "Neglected effects").
 - Conduction and mutual radiation between the PV node and the radiator node; the PV
   electrical output leaves the PV node without further dissipation there.
 - Transient (thermal-capacity) response: every epoch, including eclipse, is in steady state;
@@ -1674,3 +1675,240 @@ a mass budget (no structure, propellant, ADCS, margins).
   window); the duty-cycle rule is causal and myopic.
 - Reception-time scheduling: the receiver constraints act on emission epochs (named
   approximation above, bounded per run).
+
+## M7b: GEO baseline and harmonised comparison (PDF O5, §2, §15, §16)
+
+A geostationary solar-power satellite is simulated through the **same chain** as the
+heliocentric swarm (illumination with conical shadow, M4 solar/thermal, retarded-time access,
+atmosphere, beam capture, link budget, metrics); only the orbit (and the beam model that its
+Fresnel number requires) differs. It is a comparison baseline, not a target architecture
+(PDF §2).
+
+### Geocentric orbits (`orbit.elements_center = EARTH`, `helioswarm.geocentric`)
+
+- Elements are Earth-centred (NAIF 399, the planet's centre, not the Earth-Moon barycentre) and
+  referred to the **J2000 equator** (`orbit.elements_frame = J2000`, required for EARTH;
+  heliocentric elements stay ECLIPJ2000). `mu = GM_earth = 3.9860043551e14 m³/s²`
+  (`BODY399_GM` of `gm_de440.tpc`, read through the ephemeris provider).
+- Model: **L0 two-body Kepler about the Earth's centre**, closed form
+  (`orbit.propagate_kepler`, the M1 solver), then `r_SSB = r_geo + r_earth(t)`,
+  `v_SSB = v_geo + v_earth(t)` with the Earth's DE440 state (`ephemeris.shift_trajectory_origin`,
+  generalised from Sun↔SSB to Earth↔SSB; Sun↔SSB is unchanged bit for bit). The satellite moves
+  on a fixed ellipse about the accelerated Earth centre; the differential (tidal) pull of the
+  Sun and Moon, the Earth's oblateness and SRP are omitted (below). The L1 propagator stays
+  heliocentric: `orbit.model = prescribed_ephemeris_perturbed_test_particle` with EARTH is
+  rejected by the schema, as are Earth-relative phases and constellations of geocentric orbits.
+- Perigee check: `a(1 − e) > a_WGS84` (instead of the solar-radius check).
+
+### Geostationary preset (`orbit.geostationary_longitude_deg`)
+
+For the sub-satellite east longitude λ (IAU_EARTH) at the element epoch t₀, with the
+IAU_EARTH → J2000 rotation R(t₀) and its rate (SPICE `sxform`): angular velocity
+`[ω]× = (dR/dt) Rᵀ`, pole `p = R e_z`, spin rate `ω = ω_vec · p`
+(= `dW/dt + dα₀/dt · sin δ₀` for the IAU model: 360.9856235 − 1.755e-5 = **360.98560595°/day**,
+`2π/ω = 86 164.1004 s`), radius `r = (GM_earth/ω²)^(1/3)` = **42 164 172.6 m**, position
+`r R(t₀)(cos λ, sin λ, 0)` and velocity `ω p × r`: a circular orbit in the IAU_EARTH equator of
+t₀ that co-rotates with the frame. Using `dW/dt` alone (no pole term) would drift by
+1.8e-4° in 10 days; the IERS Earth-rotation-angle rate differs by 6.6e-8 relative (both
+caught by the tests).
+
+Measured over the year 2030 (`tests/integration/test_geo_baseline.py`, scratch check): the
+sub-satellite longitude stays within 1.3e-7° of λ; the latitude oscillates with an amplitude
+that grows to **±0.0055°** by the end of the year because the orbit plane is inertially fixed
+while the IAU_EARTH pole precesses (0.641°/century in right ascension, 0.557°/century in
+declination). This is a few km at GEO and changes the zenith elevation by < 0.007°; it is an
+artefact of the IAU frame model, not of station keeping.
+
+### Omitted perturbations and the station-keeping assumption
+
+The modelled assumption is **L0 + station-keeping**: an operational GEO satellite is held near
+its nominal longitude and in the equator by manoeuvres that remove the perturbations below; the
+satellite therefore follows the L0 orbit. The station-keeping propellant and its mass are **not**
+modelled (not in the mass proxy). Sizes over a one-year run (computed, not quoted):
+
+| Perturbation | Effect without station-keeping | How obtained |
+|---|---|---|
+| Lunisolar third-body (Sun + Moon) | growth of the inclination to the initial equator: **0.84°/yr** in 2030 (secular estimate: Sun 0.27°/yr, Moon 0.57°/yr, vector sum 0.839°/yr); numerical Earth + Sun + Moon integration: 0.849° after one year | secular rate `dĥ/dt = −(3GM_k/(2n|s_k|⁵))(ĥ·s_k)(ĥ×s_k)` averaged over the year with DE440 positions (Murray & Dermott 1999, ch. 6–7); DOP853 integration `geocentric.propagate_geocentric_point_masses`; test `test_lunisolar_inclination_drift_matches_the_averaged_torque` (5 %) |
+| Earth oblateness J2 | synchronous radius larger by **≈ 522 m** (J2 = 1.0826e-3; `ω²r = (GM/r²)(1 + 1.5 J2 (R/r)²)`) | `geocentric.j2_synchronous_radius_offset_m`; J2 from EGM2008 (Pavlis et al. 2012, J. Geophys. Res. 117, B04406) |
+| Tesseral harmonics (J22) | slow longitude drift towards the stable longitudes; not quantified here | — |
+| Solar radiation pressure, C_r = 1.3. **The comparison satellite** (10 000 m² collector / 16.6–16.7 t mass proxy: A/m ≈ 0.60 m²/kg, a = 3.5e-6 m/s²); for reference A/m = 0.02 m²/kg (the SRP setting of the heliocentric configs; a = 1.18e-7 m/s²) | natural eccentricity circle of radius **8.7e-3** at A/m 0.60: radial excursion **±365 km**, longitude libration **±0.99°** over the year (A/m 0.02: 2.9e-4, ±12.2 km, ±0.033°) | orbit-averaged Gauss equations `|de/dt| = (3/2) a/(n r)`, `e_r = (3/2) a/(n r n_sun)` (`geocentric.srp_eccentricity_circle_radius`; closed-form unit test `tests/unit/test_geocentric.py` for both A/m) |
+
+None of these changes the link geometry materially (a 365 km range change is 1 % of the range
+and, with the GEO optical beam captured at ≥ 0.993, changes the capture by < 1e-3; a 1° libration
+or inclination moves the sub-satellite point by ~740 km, lowering the elevation at the site
+from 90° to ~89°), but they are why station keeping (and its propellant) exists; for a
+high-A/m solar-power satellite SRP is the largest east-west term. The comparison path is the
+numerical integration above (Earth + Sun + Moon; no J2, no SRP). Every GEO run names the
+assumption in its manifest and report (`config.approximations_in_force`, path
+`orbit.elements_center`, M7b review).
+
+**Heliocentric SRP setting vs mass proxy.** The heliocentric comparison cases keep the
+M6/M7 SRP setting `orbit.area_to_mass_m2_kg = 0.02` (the PDF §5 example's L1 dynamics), whereas
+the mass proxy implies A/m ≈ 0.60 m²/kg for the 10 000 m² collector. The two are not
+reconciled because the proxy is a post-processing comparison quantity, not a mass budget.
+Measured effect (in-session run of `helio_1au_optical` with A/m = 0.6, one year; review
+outputs `$HELIOSWARM_RUNS_DIR/m7b_review/helio_am06`): the stronger outward SRP reduces the
+effective solar GM by ~6e-4 (a_srp/g_sun = 3.5e-6/5.9e-3), which changes the orbit's mean
+motion and hence its phase relative to the Earth over the year: the mean range falls by
+0.65 % and P_grid rises by **1.1 %** (8.854 vs 8.758 kW);
+availability unchanged to 2e-4. It does not affect the 80× GEO/heliocentric ratio.
+
+### Earth-shadow eclipses
+
+Eclipses come from the existing conical-shadow model (`visibility.satellite_illumination`,
+M3): Sun and Earth as disks of apparent radii `asin(R/d)` seen from the satellite at their
+light-time-retarded positions, the occulted fraction from the circle-overlap area (penumbra
+included), the Earth as a sphere of the WGS 84 equatorial radius, no limb darkening. At GEO the
+Earth's apparent radius is 8.7° and the Sun's 0.27°: eclipse seasons of ~±22 days around the
+equinoxes, up to ~72 min per day including the penumbra (~67 min of umbra), centred near local
+midnight of the sub-satellite point. Checked against the closed-form geometry of a circular
+orbit (`cos θ = (r + D cos β cos φ)/√(D² + r² + 2Dr cos β cos φ)`, umbra for
+`θ ≤ ρ_E − ρ_S`, any shadow for `θ < ρ_E + ρ_S`, durations `2φ*/(ω − ω_sun)`) at both equinoxes,
+15 days after the March equinox and outside the season (15 s on 3000–4300 s;
+`test_geo_eclipse_durations_match_the_analytic_shadow_geometry`), and over the whole year
+2030 at a 60 s step (`test_geo_eclipse_seasons_over_2030_match_the_analytic_geometry`, slow):
+the seasons are 2030-02-26 – 04-12 and 08-31 – 10-16 (93 shadow days in the closed form and
+in the model), Earth umbra 0.8809 % (closed form 0.8812 %), Earth penumbra 0.1164 % (closed
+form 0.1169 %). The small-angle (planar)
+overlap formula errs by ~ρ²/3 ≈ 0.8 % in the limb curvature of the 8.7° Earth disk, i.e.
+~1e-4 of the occulted fraction during the ~2 min penumbra transits.
+
+**Lunar shadowing.** The same model also lets the Moon occult the Sun (`ILLUMINATION_OCCULTERS`
+= Earth and Moon, as in every run). For the GEO satellite in 2030 this adds partial (penumbral)
+shadow only: at a 60 s step the penumbra fraction is 0.1445 % with the Moon vs 0.1164 % without
+(about 148 min of the year with the Moon as the main occulter); the umbra fraction is unchanged
+(0.8809 %). The heliocentric satellite is never shadowed.
+
+**Sampling of the reported fractions.** The comparison runs sample the year at 974 s, which
+does not resolve the ~2 min penumbra transits individually: the 974 s fractions (umbra
+0.8889 %, penumbra incl. lunar 0.1296 %) differ from the 60 s values (0.8809 %, 0.1445 %) by
++0.9 % and −10 % relative. That is the expected counting noise: an interval of length T on a
+grid of step Δ is counted with variance ≤ 1/4 sample² (penumbra transits shorter than Δ:
+p(1 − p), p = T/Δ), i.e. over 93 umbra passages ±4.8 samples (±1.7 % of 0.889 %) and over ~190
+penumbra intervals ±4.6 samples (±12 % of 0.13 %). Time-integrated energies are affected in
+the same proportion (penumbra carries ~1e-3 of the year's energy). Policy as in M6: umbra →
+`ECLIPSE` (no power), penumbra → `PARTIAL_ECLIPSE` (reduced P_PV). The thermal state is the
+steady state at each epoch (no thermal transient through a 70-min eclipse; M4 model).
+
+### Access geometry of a GEO link
+
+For the sub-satellite site (0° N, 0° E) the retarded-time geometry gives an apparent elevation
+of 90° − ωτ = 90° − 8.7e-6 rad (tilted west): during the light time τ = 0.119 s the Earth turns
+by ωτ, the geometric direction to the emission point is tilted by ωτ r/L and the aberration of
+the site's rotation velocity returns ωτ R_E/L (planetary aberration of the relative velocity).
+The barycentric range is `c τ = L/(1 − u·v_site/c)` with `L = r_GEO − a_WGS84 = 35 786.0 km`,
+varying by ±3.6 km over the day with the Earth's orbital velocity. Both are tested to 5e-8 rad
+and 1 m. A GEO satellite's hour angle is constant: the access never changes, so the
+diurnal-aliasing warning (M3/M6) is now raised only when the access has at least one window
+edge in the run (`metrics`, `system`); the gap itself is still reported.
+
+### Beam regime at the GEO range
+
+`N_F = D²/(λR)` at R = 3.5786e7 m: **2.79** for the 10 m optical aperture (near field;
+`airy_far_field` refuses to run, tested) and 0.228 for the 1 km, 2.45 GHz array (formally far
+field; Fresnel-Hankel and `aperture_far_field` agree to 1.2e-4 in capture there, tested). The GEO
+cases use **`fresnel_hankel`**; the heliocentric cases keep the far-field models (N_F ≤ 0.14
+at ≥ 0.48 au): one scalar-diffraction physics, the evaluation regime chosen by the geometry. The
+Fresnel-Hankel model cannot be shared by both: its paraxial validity check (neglected quartic
+phase `π(a + ρ)⁴/(4λz³) ≤ 0.1 rad`, Goodman eq. 4-18) fails for the 500 m microwave aperture at
+0.5 au (its pattern search extends to ~7.5e7 m) and, at the GEO range, for a 10 km receiver
+(0.17 rad at ρ = 10 km): those GEO-optical sweep points are recorded as failed (their capture
+→ 1, bounded below by the 1 km point).
+
+### Chebyshev beam table (`models.beam_evaluation = chebyshev_table`, `helioswarm.beam_table`)
+
+A numerical evaluation strategy, not a physics approximation that is accepted unchecked: the
+beam quantities depend on an epoch only through (range, elevation); they are evaluated by the
+reference model at tensor Chebyshev-Lobatto nodes over the run's range and elevation span
+(refined 3 → 5 → 9 → 17 → 33 per dimension while the last Chebyshev coefficient exceeds the
+tolerance), interpolated barycentrically (Berrut & Trefethen 2004), and **validated in every
+run** against the reference at two disjoint sets of check epochs (extremes + 8 evenly spaced +
+8 half-way): capture fractions to 1e-9 absolute, jitter percentiles to 1e-6 absolute (the
+reference switches percentile methods, non-smooth at ~1e-7), peak irradiance and diagnostics to
+1e-6 relative. A failed check stops the run (`BeamTableError`). Closed-form quantities (N_F,
+projected receiver radius) are exact. Why: at the GEO range a Fresnel-Hankel evaluation costs
+0.14 s (10 m, 100 m receiver) to 268 s (100 m, 1 km receiver) per epoch on one core; a year has
+32 400 epochs. GEO tables need 9–15 nodes (geometry nearly constant); measured agreement with
+the reference at independent epochs ~1e-14. Over a heliocentric year (elevation 10–90° every
+day) the table needs up to 33 nodes per dimension and, for two optical points evaluated with
+Fresnel-Hankel (30 m / 10 km and 100 m / 1 km), missed its tolerance at 33 × 33 nodes: those
+runs stopped as designed, and the heliocentric comparison cases use the per-epoch far-field
+reference instead. Constellations reject the option (single-satellite runs only).
+
+### Harmonised comparison (`configs/comparison/`, `helioswarm compare`)
+
+- **Shared assumptions are one file**: `_shared.yaml` (time grid, collector, receiver site and
+  limits, thermal, light time, occultation) and `_optical.yaml` / `_microwave.yaml`
+  (transmitter, receiver technology, atmosphere), joined with the new `extends:` mechanism
+  (`config.read_config_mapping`: deep merge, the extending file wins, lists replaced, cycles
+  rejected; fragments are not valid run configurations). The case files set only the orbit
+  (+ the L1 integrator step) and the beam model of the regime. `compare` refuses cases whose
+  resolved configurations differ elsewhere (`compare.harmonisation_violations`), and the tests
+  check it leaf by leaf.
+- **PDF §16 harmonisation list**: delivered power is harmonised as a **system boundary**,
+  not as an equal quantity: `P_grid` at the receiver's grid output, one satellite, one
+  receiver site, same window/grid, same collector area (the cases then deliver very different
+  power; mass per delivered kW is the normalised metric). PV efficiency and temperature law;
+  transmitter efficiency; receiver conversion; collector technology and area; thermal
+  treatment (same radiator model and limit); what is in the mass proxy (same formula and
+  specific masses; no propellant, structure, ground segment, launch, for either). **Not
+  covered (partial):** system lifetime/degradation (both are one-year windows of an operating
+  satellite; equal by construction) and cost: both enter only with the M8a economics.
+- **Not harmonised by design** (the subject of the comparison): the orbit, hence range, eclipse
+  pattern, access pattern, Sun distance (≈ 1 au for both), and the beam model of the regime.
+- **Same receiver site** (the PDF §5 example site, 0° N 0° E) and the GEO satellite above it:
+  the most favourable GEO geometry (zenith). The heliocentric satellite is 30° ahead of the
+  Earth (the most favourable slot of the M7 demo ring, 0.48–0.55 au). Both are scenario
+  choices, stated in the configs; neither is an optimum.
+- Metrics (`compare` module docstring): mean `P_grid`, availability, capacity factor,
+  end-to-end efficiency `E_grid/E_sun`, umbra and penumbra fractions, energy-weighted capture
+  `E_captured/E_atm`, range, peak incident irradiance (upper bound) and mean intercepted flux,
+  mass proxy and mass per delivered kW. External studies (NASA 2024 SBSP report) are context
+  only and never enter these tables (`docs/data_provenance.md`, M7b).
+
+### Configuration fields added in M7b
+
+- `orbit.elements_center` accepts `EARTH`, `orbit.elements_frame` accepts `J2000`;
+  `orbit.semimajor_axis_au` and `orbit.true_anomaly_deg` are now optional in the schema but
+  required unless `orbit.geostationary_longitude_deg` (new, **assumed**) is set.
+- `models.beam_evaluation` (`per_epoch` default) and `models.beam_table_max_nodes`,
+  `_check_epochs`, `_capture_tolerance`, `_percentile_tolerance`, `_relative_tolerance`
+  (numerical).
+- The new fields are **omitted from the canonical JSON while at their default**
+  (`_field(omit_when_default=True)`, `config.resolved_dict`), so the MVP configuration hash is
+  unchanged (`a3fafc4d…23af`, pinned test) and every M0–M7 run directory keeps its hash.
+- Top-level `extends:` in run-configuration files (resolved before validation; not a schema
+  field).
+
+### Neglected effects (M7b)
+
+- Station-keeping manoeuvres and their propellant/mass; the perturbations they remove (table
+  above).
+- GEO-specific environment: none beyond the shared models (no radiation degradation, no
+  thermal transient through eclipses, no ground-site weather statistics: clear sky all year,
+  a weather upper bound for both architectures).
+- **Earth albedo and Earth IR on the GEO collector and radiator** (M7b review). The M4 bound
+  (< 1e-7 of S) holds only at heliocentric distances. At GEO `(R⊕/d)² = (6378/42164)² =
+  0.0229`: reflected sunlight ≤ `A_B S (R⊕/d)²` = 0.3 × 1361 × 0.0229 = 9.3 W m⁻² (full lit
+  disk, on the anti-Sun face near local noon of the sub-satellite point) and emitted IR
+  ≤ 240 × 0.0229 = 5.5 W m⁻² (on whichever face sees the Earth; on the Sun-facing face near
+  local midnight, i.e. around the eclipses), together ≤ ~15 W m⁻² ≈ 1.1 % of S (global-mean
+  values as in M4). Not modelled. Upper-bound effect if all of it were absorbed by the PV node:
+  +1.6 % of its ~0.8 kW m⁻² heat load, ΔT ≈ (T/4) ΔQ/Q ≈ 1.2 K, P_PV −0.05 % through the
+  −0.0004 K⁻¹ coefficient (≤ −0.1 % P_grid); the radiator area for the 450 K limit grows by
+  ≲ 2 % (mass proxy + < 0.03 t). Immaterial to the comparison (80× / 1e6×), but a named
+  approximation for the GEO geometry.
+- The receiver-side Sun geometry: with the site under a GEO satellite the Sun passes close to
+  the beam direction around local noon near the equinoxes; no Sun-avoidance limit is set in
+  the shared block (`receiver.sun_avoidance_deg = 0`, an idealised setting labelled in every
+  report), as in the heliocentric MVP.
+- Non-paraxial (Rayleigh-Sommerfeld) propagation for the GEO-optical 10 km receiver points
+  (failed by the validity check, bounded as stated).
+- **Receiver limits** (PDF §10.4): no power-density (beam-abort), heat-rejection or binding
+  input-power limit for either technology (idealised, labelled in every report). The limits
+  are now set per technology (`_optical.yaml` laser-PV, `_microwave.yaml` rectenna; same
+  values as before, resolved configurations and hashes unchanged). The effect of an optical
+  flux limit is quantified by a bounded sensitivity sweep with an **assumed, illustrative**
+  1e4 W m⁻² limit (`configs/comparison/sensitivity/`; results in `docs/milestones/M7b.md`).
+- **Run provenance** (M7b review): manifests now record `source_sha256` (the package source
+  tree hash at manifest time; layout `helioswarm-run-manifest/3`).

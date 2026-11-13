@@ -416,7 +416,11 @@ def test_cli_run_outputs_plot_and_reproducibility(
     assert man["rng_state_unchanged"]
     assert "TDB" in man["time_scale"]
     assert "J2000" in man["frame"]
-    assert man["manifest_schema"] == "helioswarm-run-manifest/2"
+    assert man["manifest_schema"] == "helioswarm-run-manifest/3"
+    # The source tree that wrote the run (M7b review): the package's own hash, 64 hex digits.
+    from helioswarm.manifest import source_tree_sha256
+
+    assert man["source_sha256"] == source_tree_sha256()
     assert "SI" in man["units"]
     assert man["approximations"] == []  # the MVP selects no named approximation (PDF §17)
     assert "m, s, kg, W" in man["units"]

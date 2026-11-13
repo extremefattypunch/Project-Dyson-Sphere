@@ -204,16 +204,20 @@ def test_perihelion_inside_sun_is_rejected(mvp_data: dict[str, Any]) -> None:
 
 
 @pytest.mark.parametrize(
-    "path",
+    ("path", "fragment"),
     [
-        "collector.area_m2",
-        "transmitter.wavelength_m",
-        "receiver.radius_m",
-        "orbit.true_anomaly_deg",
+        ("collector.area_m2", "missing required field"),
+        ("transmitter.wavelength_m", "missing required field"),
+        ("receiver.radius_m", "missing required field"),
+        # M7b: optional in the schema (the geostationary preset derives it), required otherwise
+        ("orbit.true_anomaly_deg", "orbit.true_anomaly_deg is required"),
+        ("orbit.semimajor_axis_au", "orbit.semimajor_axis_au is required"),
     ],
 )
-def test_missing_required_field_is_rejected(mvp_data: dict[str, Any], path: str) -> None:
-    _assert_issue(del_path(mvp_data, path), path, "missing required field")
+def test_missing_required_field_is_rejected(
+    mvp_data: dict[str, Any], path: str, fragment: str
+) -> None:
+    _assert_issue(del_path(mvp_data, path), path, fragment)
 
 
 def test_missing_required_section_is_rejected(mvp_data: dict[str, Any]) -> None:

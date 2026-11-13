@@ -153,6 +153,17 @@ sweeps). Without `--out`, `run` writes to `$HELIOSWARM_RUNS_DIR/<project.name>`.
   Large constellations run as Slurm arrays of satellite chunks (`--chunk-index/--chunk-count
   --candidates-dir`) plus one merge-and-schedule run (`--candidates-dir`); `sweep` accepts
   constellation keys such as `constellation.rings[0].n_satellites`.
+- **GEO baseline and harmonised comparison (M7b).** `orbit.elements_center: EARTH` with J2000
+  equatorial elements, or the geostationary preset `orbit.geostationary_longitude_deg`, runs a
+  geocentric satellite (L0 Earth point mass + the station-keeping assumption) through the same
+  chain (Earth-shadow eclipses, access, beam, link budget). `configs/comparison/` holds the
+  harmonised heliocentric and GEO cases: the shared technology is one file per technology
+  joined with `extends:`, so only the orbit (and the beam model its Fresnel number requires)
+  differs. `helioswarm compare configs/comparison/comparison.yaml --runs-dir DIR --out OUT`
+  reads the saved sweep runs and writes the comparison tables (CSV + Markdown), the
+  harmonised-assumption table with provenance labels, a figure and a manifest.
+  `models.beam_evaluation: chebyshev_table` evaluates the beam on a validated (range,
+  elevation) table (used for the near-constant GEO geometry).
 
 Every `report.md` lists the run's *idealised* settings (lossless stages, inactive constraints,
 Sun-tracking collector, clear sky for the whole window) so that a result that is an upper bound
@@ -190,6 +201,9 @@ sbatch -p shared --dependency=afterok:$JID slurm/constellation_merge.sbatch \
       configs/constellation_demo_n1000.yaml $HELIOSWARM_RUNS_DIR/constellation_demo_n1000_links
 sbatch slurm/gpu_bench_constellation.sbatch configs/constellation_demo_n1000.yaml \
       $HELIOSWARM_RUNS_DIR/constellation_demo_n1000_links             # gpu_test: N = 1000 capture batch
+bash slurm/comparison_submit.sh                                      # M7b: the four comparison sweeps + flux-limit sensitivity
+uv run helioswarm compare configs/comparison/comparison.yaml \
+      --runs-dir $HELIOSWARM_RUNS_DIR/comparison --out $HELIOSWARM_RUNS_DIR/comparison/report
 seff <jobid>; jobstats <jobid>                                       # right-sizing check after each job
 ```
 
@@ -241,6 +255,7 @@ runs on the cluster environment (the one skip is the real-GPU test, run by
 | M6 End-to-end single satellite | link budget, system run, metrics, run outputs, CLI run/plot/sweep/validate-models, Slurm templates, optional JAX/GPU capture kernel | done | 972 passed, 1 skipped |
 | M6b Completeness audit | `docs/compliance_matrix.md`; typed summary, §7.3 diagnostics, manifest window/units, `characterize`, idealised-bound labels, microwave sweep, fresh-clone reproduction, review fixes | done | 1059 passed, 1 skipped |
 | M7 Constellation | rings/phases (Earth-relative), stacked L1, link candidates per satellite × site, deterministic capacity-constrained scheduler (greedy + exact), incoherent network sums, network/receiver/satellite outputs, mass proxy, Slurm arrays, GPU benchmark | done | 1155 passed, 1 skipped |
+| M7b GEO baseline | geocentric orbits + geostationary preset, Earth-shadow eclipses, Fresnel-Hankel at the GEO range on a validated Chebyshev beam table, `extends` configs, harmonised comparison (`helioswarm compare`), Slurm sweeps | done | 1257 passed, 2 skipped |
 | M8 Optimisation/uncertainty | sweeps, constrained optimisation, sensitivity | not started | — |
 | M9 Paper package | frozen configs, figures, methods/validation notes | not started | — |
 
@@ -286,6 +301,14 @@ recommended engineering design").
   dark ring 0.837784869173, REBOUND full force model 1.03 m over one year, ITU-R P.618-13
   validation example 1.5e-7 dB (production P.676-12 gas term regression-pinned only; open item).
 
+- **GEO baseline (M7b, `configs/comparison/`, Slurm arrays 60309248/60309192/60310851/60310868
+  and 60313986/60313993):** with identical technology, one satellite and one receiver site,
+  a GEO satellite above the site delivers 704.9 kW (optical) / 2.028 MW (microwave) against
+  8.76 kW / 1.59 W from a heliocentric satellite 30° ahead of the Earth (availability 0.991 vs
+  0.442; GEO loses 0.89 % of the year to eclipses). Only large optical apertures with 10 km
+  receivers bring the heliocentric case within the single-site availability factor (~2.2) of
+  GEO. Tables and findings: `docs/milestones/M7b.md`.
+
 ## Reproducing from a fresh clone
 
 The definition of done (PDF §19) was checked in M6b by following only this README in a clean
@@ -317,7 +340,7 @@ sweeps reproduce with the `sweep` commands in the Slurm section.
 - `docs/data_provenance.md`: kernels, external data and the provenance of parameter defaults.
 - `docs/validation_report.md`: tests, independent comparisons, tolerances and discrepancies.
 - `docs/milestones/`: per-milestone implementation notes (sections A–F of PDF §18).
-- `docs/compliance_matrix.md`: every PDF requirement in M0–M7 scope with its evidence and status
+- `docs/compliance_matrix.md`: every PDF requirement in M0–M7b scope with its evidence and status
   (M6b audit), including the deferred M7–M9 items and the fresh-clone reproduction.
 - `experiments/README.md`: the experiment log convention.
 

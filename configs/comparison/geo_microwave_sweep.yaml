@@ -1,0 +1,14 @@
+# M7b harmonised comparison sweep: geo_microwave over transmit aperture x receiver radius.
+# Every point is a full validated run of geo_microwave.yaml with the two values substituted
+# (provenance 'swept'); the base point (1000 m, 10 km) is the configuration itself. The
+# heliocentric and the GEO microwave sweeps use the same grid.
+# Values (scenario inputs, not design recommendations): phased-array apertures 500 m, 1 km
+# (configs/mvp_single_satellite_microwave.yaml), 2 km; rectenna radius 1, 5, 10 km (PDF §2).
+# Run: slurm/sweep_array.sbatch (one point per array task); docs/milestones/M7b.md.
+sweep_schema_version: 1
+name: cmp_geo_microwave
+description: "M7b comparison: geo_microwave x aperture x receiver radius"
+base_config: geo_microwave.yaml
+parameters:
+  transmitter.aperture_diameter_m: [500.0, 1000.0, 2000.0]
+  receiver.radius_m: [1000.0, 5000.0, 10000.0]

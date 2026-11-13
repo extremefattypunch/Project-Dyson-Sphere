@@ -1,0 +1,31 @@
+# M7b harmonised comparison: heliocentric (1 au, 30 deg ahead of the Earth) vs GEO (above the
+# receiver), each with the optical and the microwave technology of the PDF §5 example / MVP.
+#
+#   helioswarm compare configs/comparison/comparison.yaml \
+#       --runs-dir $HELIOSWARM_RUNS_DIR/comparison --out $HELIOSWARM_RUNS_DIR/comparison/report
+#
+# The four sweeps must have been run into --runs-dir (slurm/sweep_array.sbatch; one directory
+# per sweep name). `compare` refuses cases that differ outside orbit/geometry keys within one
+# technology (helioswarm.compare.ORBIT_GEOMETRY_PREFIXES).
+#
+# Mass proxy (post-processing, identical for every case): the ASSUMED specific masses of the
+# M7 demo (configs/constellation_demo.yaml; not sourced, a proxy and not a mass budget); the
+# radiator term uses thermal.radiator_specific_mass_kg_m2 of the shared block. Not included for
+# either architecture: launch/transfer, GEO station-keeping propellant, structure, ground
+# receiver.
+comparison_schema_version: 1
+name: geo_vs_helio
+description: "M7b: GEO vs heliocentric 1 au under identical optical / microwave technology"
+mass_proxy:
+  collector_areal_mass_kg_m2: 1.0
+  transmitter_areal_mass_kg_m2: 50.0
+  bus_mass_kg: 500.0
+cases:
+  - label: helio_1au_optical
+    sweep: helio_1au_optical_sweep.yaml
+  - label: geo_optical
+    sweep: geo_optical_sweep.yaml
+  - label: helio_1au_microwave
+    sweep: helio_1au_microwave_sweep.yaml
+  - label: geo_microwave
+    sweep: geo_microwave_sweep.yaml

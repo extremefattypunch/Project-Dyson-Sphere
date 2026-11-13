@@ -1,0 +1,9 @@
+# M7b review: the bounded GEO optical sensitivity (geo_optical_flux_limited.yaml: assumed
+# 1e4 W/m^2 receiver power-density limit, 100 m receiver) over the transmit apertures of the
+# comparison grid. Run: slurm/comparison_submit.sh (one point per task); docs/milestones/M7b.md.
+sweep_schema_version: 1
+name: cmp_geo_optical_flux_limited
+description: "M7b sensitivity: GEO optical, assumed 1e4 W/m^2 flux limit, x aperture"
+base_config: geo_optical_flux_limited.yaml
+parameters:
+  transmitter.aperture_diameter_m: [10.0, 30.0, 100.0]
