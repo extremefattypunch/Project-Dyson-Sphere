@@ -1,0 +1,304 @@
+\ProvidesPackage{lindrew}[2022/11/17] % with much help from Jason Chen; thank you!
+%ian custom packages-----
+\usepackage[T1]{fontenc}
+% ---------------------------------------------------------------
+% minted is DISABLED on purpose. Use verbatim / \texttt instead.
+% Loading minted pulls in fvextra -> lineno, and lineno replaces LaTeX's
+% output routine so that any block which cannot be placed makes the
+% compiler emit blank pages FOREVER instead of warning. That is what made
+% documents "never finish compiling". minted also needs -shell-escape.
+% ---------------------------------------------------------------
+% \usepackage{minted}
+% \usemintedstyle{friendly}   % colorful syntax highlighting
+\usepackage{authblk}
+\usepackage{wrapfig}
+\usepackage{quiver}
+\usepackage{circuitikz}
+\usepackage{float}
+\usepackage{tocloft} %dotted TOC style
+\usepackage{xparse} %for optional arguments with default values in custom commands
+%note that by default func{}{a}... is already optional don't have to fill in all curly brackets!
+%end of ian custom packages----
+\renewcommand\cftsecfont{\normalfont}
+\renewcommand\cftsecpagefont{\normalfont}
+\renewcommand{\cftsecleader}{\cftdotfill{\cftsecdotsep}}
+\renewcommand\cftsecdotsep{\cftdot}
+\renewcommand\cftsubsecdotsep{\cftdot}
+\newif\iflinserif \linseriffalse % by default, uses cmbright sans serif font. 
+\newif\iflinclass \linclasstrue % by default, numbers all theorems/definitions from 1 to N w/o regard for section
+\newif\iflinindent \linindenttrue % by default, does do paragraph indent
+\newif\iflinheader \linheadertrue % by default, no header
+
+\DeclareOption{serif}{\linseriftrue}  % if you don't like the font
+\DeclareOption{formal}{\linclassfalse} % if you want a document where theorems in section 1 are "theorem 1.x", etc.
+\DeclareOption{noindent}{\linindentfalse}
+\DeclareOption{header}{\linheadertrue}
+
+\ProcessOptions*
+
+\iflinserif\else
+    \usepackage{cmbright}
+\fi
+
+% cmbright sets sans serif as default; force small caps to use a family
+% that provides T1 small-caps shapes.
+\DeclareTextFontCommand{\textsc}{\rmfamily\scshape}
+
+% Ensure verbatim / \texttt use a monospaced family that has the needed shapes,
+% even when cmbright is active.
+\usepackage{lmodern}
+\renewcommand{\ttdefault}{lmtt}
+% \setminted{fontseries=m}
+% \setmintedinline{fontseries=m}
+
+\iflinindent
+\else
+    \setlength{\parindent}{0pt}
+\fi
+
+\iflinheader
+    \usepackage[includehead,includefoot, heightrounded,  left=0.8in, top=1.6cm, bottom=2.4cm, right=0.8in]{geometry}
+    \usepackage{fancyhdr}
+    \setlength{\headheight}{12.5pt}
+    \pagestyle{fancy}
+    \rhead{\textbf{Ian Poon}} % change name as necessary
+\else
+    %\usepackage[left=0.8in, top=2.6cm, bottom=1.4cm, right=0.8in]{geometry}
+    \usepackage[left=0.8in, top=1.6cm, bottom=2.4cm, right=0.8in]{geometry}
+\fi
+
+\usepackage{amsmath, amssymb, amsthm} % standard
+\usepackage{bbm} % blackboard bold math
+\usepackage[colorlinks]{hyperref} % inserting links - copied from Jason
+\PassOptionsToPackage{colorlinks}{hyperref}
+\hypersetup{urlcolor = magenta, linkcolor = cyan, citecolor = teal}
+\urlstyle{same}
+\usepackage{mhsetup, mathtools}
+
+\usepackage[capitalize]{cleveref} % for cross-referencing theorems, etc.
+\usepackage{graphicx} % for putting pictures
+\usepackage{verbatim} % for commenting out sections of text
+\usepackage[nodisplayskipstretch, onehalfspacing]{setspace} % 1.5 spacing
+\usepackage{tikz, tikz-cd, pgfplots} % for drawing pictures
+\pgfplotsset{compat=newest} % so the errors go away
+\usepackage{biblatex}
+\usepackage{multicol}
+\usepackage{array,multirow}
+\usepackage{tabularx}
+\newcolumntype{L}{>{\raggedright\arraybackslash}X}
+\usepackage[normalem]{ulem}
+
+\newcommand{\vocab}[1]{\textbf{\color{blue!90}\boldmath #1}}
+\newcommand{\paren}[1]{\left(#1\right)}
+\newcommand{\pnorm}[1]{\left|\left|#1\right|\right|}
+\newcommand{\floor}[1]{\left\lfloor#1\right\rfloor}
+%ian custom commands
+\newcommand{\vocabII}[1]{\textbf{\color{green!90}\boldmath #1}}
+\newcommand{\vocabIII}[1]{\textbf{\color{red!90}\boldmath #1}}
+\newcommand{\solution}{\textit{Solution.  }}
+\newcommand{\Brace}[1]{\left \{#1\right \}}
+\newcommand{\abs}[1]{\left|#1\right|}
+\newcommand{\inv}[1]{{#1}^{-1}}
+\newcommand{\resetcounter}{\setcounter{equation}{0}}
+\NewDocumentCommand{\limto}{O{n} O{\infty}}{\lim_{#1 \rightarrow #2}}
+\NewDocumentCommand{\cupto}{O{n} O{\infty}}{\bigcup_{#1=1}^{#2}}
+\NewDocumentCommand{\capto}{O{n} O{\infty}}{\bigcap_{#1=1}^{#2}}
+\NewDocumentCommand{\sumto}{O{n} O{\infty}}{\sum_{#1=1}^{#2}}
+% Fixes itemize
+\usepackage{enumitem}
+\setlist{itemsep = 0.2em, topsep = 0.4em}
+\renewcommand\labelitemi{\raisebox{0.15em}{\tiny$\bullet$}}
+
+% Changes size of section headers
+\usepackage{titlesec}
+\titleformat*{\section}{\LARGE \bfseries}
+\titleformat{\subsection}{\Large}{\thesubsection \bfseries}{0.4cm}{} 
+
+% Blackboard bold
+% \AA is LaTeX's standard TEXT command for the Angstrom sign (A with a ring).
+% Overwriting it outright with \mathbb A broke every text-mode use: a
+% crystallography cell such as "1.40 \AA" then fails with
+% "LaTeX Error: \mathbb allowed only in math mode".
+% Keep Angstrom in text mode AND blackboard-bold A in math mode, so both
+% spellings work. The \ifdefined guard keeps a double load from recursing.
+\ifdefined\annoTextAngstrom\else\let\annoTextAngstrom\AA\fi
+\renewcommand{\AA}{\ifmmode\mathbb{A}\else\annoTextAngstrom\fi}
+\newcommand{\CC}{\mathbb C}
+\newcommand{\DD}{\mathbb D}
+\newcommand{\EE}{\mathbb E}
+\newcommand{\FF}{\mathbb F}
+\newcommand{\HH}{\mathbb H}
+\newcommand{\KK}{\mathbb K}
+\newcommand{\LL}{\mathbb L}
+\newcommand{\NN}{\mathbb N}
+\newcommand{\PP}{\mathbb P}
+\newcommand{\QQ}{\mathbb Q}
+\newcommand{\RR}{\mathbb R}
+\newcommand{\UU}{\mathbb U}
+\newcommand{\ZZ}{\mathbb Z}
+
+\newcommand{\mc}[1]{\mathcal{#1}}
+\newcommand{\mf}[1]{\mathfrak{#1}}
+\newcommand{\parsh}[3]{\frac{\partial #1}{\partial #2}_{#3}}
+
+
+% various math expressions that shouldn't be italicized 
+\DeclareMathOperator{\cis}{cis}
+\DeclareMathOperator{\ex}{ex}
+\DeclareMathOperator{\var}{var}
+\DeclareMathOperator{\Var}{Var}
+\DeclareMathOperator{\Cov}{Cov}
+\DeclareMathOperator*{\lcm}{lcm}
+\DeclareMathOperator{\ord}{ord}
+\DeclareMathOperator{\Ker}{Ker}
+\DeclareMathOperator{\Bin}{Bin}
+\DeclareMathOperator{\res}{res}
+\DeclareMathOperator{\rad}{rad}
+\DeclareMathOperator{\Spec}{Spec}
+\DeclareMathOperator{\Sing}{Sing}
+\DeclareMathOperator{\tr}{tr}
+\DeclareMathOperator{\ob}{ob}
+\DeclareMathOperator{\Hom}{Hom}
+\DeclareMathOperator{\Top}{Top}
+\DeclareMathOperator{\chAb}{chAb}
+\DeclareMathOperator{\Tor}{Tor}
+\DeclareMathOperator{\Ext}{Ext}
+\DeclareMathOperator{\grad}{grad}
+\DeclareMathOperator{\curl}{curl}
+\DeclareMathOperator{\Alt}{Alt}
+%ian custom math expressions
+\DeclareMathOperator\supp{supp}
+\DeclareMathOperator\sgn{sgn}
+\DeclareMathOperator\Int{Int}
+\DeclareMathOperator\Bd{Bd}
+\DeclareMathOperator{\Span}{span}
+\DeclareMathOperator{\Div}{div}
+
+% physics
+\newcommand{\ket}[1]{\left|#1\right\rangle}
+
+% can't use DeclareMathOperator because already defined
+% \renewcommand{\Re}{\operatorname{Re}} 
+\renewcommand{\Im}{\operatorname{Im}}
+\renewcommand{\ker}{\operatorname{ker}}
+\renewcommand{\mod}[1]{\ \text{mod}\ #1}
+%ian custom
+\newcommand{\ceil}[1]{\lceil #1\rceil}
+\newcommand{\multibinom}[2]{
+  \left(\!\middle(\genfrac{}{}{0pt}{}{#1}{#2}\middle)\!\right)
+}
+
+
+% other convenient abbreviations
+\newcommand{\eps}{\varepsilon}
+\DeclareMathOperator{\indep}{\perp\!\!\!\perp}
+
+% theorem boxes
+\usepackage{thmtools}
+\usepackage[framemethod = TikZ]{mdframed}
+\usepackage{silence} % for suppressing warnings 
+\WarningFilter{mdframed}{You got a bad break}
+
+\mdfsetup{
+	linewidth = 0.3mm,
+	innertopmargin = 2mm,
+	innerbottommargin = 3.5mm,
+	innerleftmargin = 3mm,
+	innerrightmargin = 3mm
+} % adjusts boundaries of boxes
+
+\newcommand{\thmboxstyle}[4]{
+	\mdfdefinestyle{#2}{
+		linecolor = #3,
+		backgroundcolor = #4,
+		nobreak = true
+	}
+	\declaretheoremstyle[
+		headfont = \sffamily\bfseries\color{#3},
+		mdframed = {style = #2},
+		headpunct = {\\[0.4pt]},
+		postheadspace = {0pt},
+	]{#1}
+}
+
+% five different colors of boxes
+
+\thmboxstyle{defbox}{mdredbox}{red}{orange!5}
+\thmboxstyle{thmbox}{mdbluebox}{blue!90!red}{cyan!4}
+\thmboxstyle{exbox}{mdgreenbox}{green!70!black}{teal!4}
+\thmboxstyle{notebox}{mdorangebox}{orange!50!brown}{yellow!5!olive!5}
+\thmboxstyle{lembox}{mdpurplebox}{purple!50!blue}{purple!5!blue!3}
+%iancumstom
+\thmboxstyle{quotebox}{mdgreybox}{gray!50!black}{gray!5!black!3}
+
+\iflinclass
+    \declaretheorem[style = thmbox, name = Theorem]{theorem}
+\else
+    \declaretheorem[style = thmbox, name = Theorem, numberwithin = section]{theorem}
+\fi
+
+\declaretheorem[style = lembox, name = Lemma, sibling = theorem]{lemma}
+\declaretheorem[style = thmbox, name = Proposition, sibling = theorem]{proposition}
+\declaretheorem[style = thmbox, name = Corollary, sibling = theorem]{corollary}
+\declaretheorem[style = thmbox, name = Conjecture, sibling = theorem]{conjecture}
+
+\declaretheorem[style = thmbox, name = Theorem, numbered = no]{theorem*}
+\declaretheorem[style = thmbox, name = Lemma, numbered = no]{lemma*}
+\declaretheorem[style = thmbox, name = Proposition, numbered = no]{proposition*}
+\declaretheorem[style = thmbox, name = Corollary, numbered = no]{corollary*}
+\declaretheorem[style = thmbox, name = Conjecture, numbered = no]{conjecture*}
+
+\declaretheorem[style = defbox, name = Definition, sibling = theorem]{definition}
+\declaretheorem[style = defbox, name = Definition, numbered = no]{definition*}
+
+\declaretheorem[style = exbox, name = Example, sibling = theorem]{example}
+\declaretheorem[style = exbox, name = Example, numbered = no]{example*}
+
+\declaretheorem[style = notebox, name = Fact, sibling = theorem]{fact}
+\declaretheorem[style = notebox, name = Fact, numbered = no]{fact*}
+\declaretheorem[style = notebox, name = Problem, sibling = theorem]{problem}
+\declaretheorem[style = notebox, name = Problem, numbered = no]{problem*}
+
+\declaretheorem[style = plain, name = Question, sibling = theorem]{question}
+\declaretheorem[style = plain, name = Question, numbered = no]{question*}
+\declaretheorem[style = plain, name = Exercise, sibling = theorem]{exercise}
+\declaretheorem[style = plain, name = Exercise, numbered = no]{exercise*}
+
+\declaretheorem[style = plain, name = Claim, sibling = theorem]{claim}
+\declaretheorem[style = plain, name = Claim, numbered = no]{claim*}
+
+\declaretheorem[style=plain, name=Remark, sibling=theorem]{remark}
+\declaretheorem[style=plain, name=Remark, numbered=no]{remark*}
+%ian custom theorem
+
+% Quote block with optional attribution:
+% \begin{quote}[Author] ... \end{quote}
+\makeatletter
+\newcommand{\lin@quoteauthor}{}
+\renewenvironment{quote}[1][]{%
+	\def\lin@quoteauthor{#1}%
+	\par\medskip
+	\begin{center}
+	\begin{minipage}{0.95\linewidth}
+		\hrule height 0.4pt\relax
+		\vspace{0.35em}
+		\hrule height 0.4pt\relax
+		\vspace{0.65em}
+		\noindent{\color{blue!70!black}\fontsize{30}{30}\selectfont\textbf{``}}\hspace{0.2em}\ignorespaces
+}{%
+		\unskip\par
+		\ifx\lin@quoteauthor\@empty\else
+			\vspace{0.5em}\hfill{\textsc{\lin@quoteauthor}}\par
+		\fi
+		\vspace{0.6em}
+		\hrule height 0.4pt\relax
+		\vspace{0.35em}
+		\hrule height 0.4pt\relax
+	\end{minipage}
+	\end{center}
+	\medskip
+}
+\makeatletter
+\patchcmd{\@maketitle}{\LARGE}{\LARGE}{}{}
+\makeatother
+

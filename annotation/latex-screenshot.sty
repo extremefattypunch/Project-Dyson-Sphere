@@ -1,0 +1,112 @@
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{latex-screenshot}[2025/06/03 Compatibility shims for screenshot-to-latex fragments]
+%
+% This package provides all packages and commands that pandoc-generated
+% LaTeX fragments may reference, so you can paste them directly into any
+% document that loads this package without extra boilerplate.
+%
+% Usage:  \usepackage{latex-screenshot}
+%
+% Designed to complement annotation.sty but works independently.
+
+% ===================================================================
+% Packages required by pandoc's LaTeX table output
+% ===================================================================
+
+\RequirePackage{longtable}          % longtable environment
+\RequirePackage{booktabs}           % \toprule, \midrule, \bottomrule
+\RequirePackage{array}              % \arraybackslash, \raggedright in columns
+\RequirePackage{calc}               % \real{...} in column-width expressions
+\RequirePackage{etoolbox}           % \patchcmd for longtable fix
+
+% Fix longtable after \paragraph or \subparagraph (from pandoc template)
+\makeatletter
+\patchcmd\longtable{\par}{\if@noskipsec\mbox{}\fi\par}{}{}
+\makeatother
+
+% Allow footnotes inside longtable.
+% NOTE: footnotehyper deliberately ABORTS under the beamer class, so testing
+% only whether the .sty FILE exists is not enough -- the file is there, the
+% package refuses to load, and \makesavenoteenv is then undefined. That broke
+% every beamer-based template (presentation, poster) with
+% "Undefined control sequence \makesavenoteenv". Skip it under beamer, and
+% only patch longtable if we actually got a package that provides the command.
+% (@ is NOT a letter here: this file does \makeatother above, so the class
+% test must be wrapped. \RequirePackage also may not run inside a group,
+% which rules out putting it in an \@ifclassloaded branch -- hence the flag.)
+\makeatletter
+\newif\iflsbeamer \lsbeamerfalse
+\@ifclassloaded{beamer}{\lsbeamertrue}{}
+\makeatother
+\iflsbeamer\else
+  \IfFileExists{footnotehyper.sty}{%
+    \RequirePackage{footnotehyper}%
+  }{%
+    \RequirePackage{footnote}%
+  }%
+\fi
+\ifdefined\makesavenoteenv\makesavenoteenv{longtable}\fi
+
+% Prevent overfull lines in pasted fragments
+\setlength{\emergencystretch}{3em}
+
+% ===================================================================
+% Pandoc helper commands (safe \providecommand — no-op if already defined)
+% ===================================================================
+
+% \tightlist: tightens list spacing in itemize/enumerate
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+
+% \passthrough: identity wrapper for inline code
+\providecommand{\passthrough}[1]{#1}
+
+% \pandocbounded: identity wrapper for bounded content
+\providecommand{\pandocbounded}[1]{#1}
+
+% \hypertarget: hyperref provides this; fallback if hyperref not loaded
+\providecommand{\hypertarget}[2]{#2}
+
+% ===================================================================
+% Runaway-output guard -- fail fast instead of hanging forever
+% ===================================================================
+% If a block cannot be placed -- classically \begin{figure}[H] whose contents
+% are taller than \textheight -- LaTeX's output routine can eject blank pages
+% forever. The run never terminates while the .log and .pdf grow without
+% bound, which is exactly what "my PDF is not compiling at all" looks like.
+%
+% This converts that hang into an immediate, explanatory error. It is
+% idempotent, so it is harmless if more than one style file defines it.
+%
+% If a document genuinely runs longer than the ceiling, raise it:
+%     \renewcommand{\annomaxpages}{1000}
+\makeatletter
+\ifdefined\anno@shipped\else
+  \providecommand{\annomaxpages}{300}
+  \newcount\anno@shipped
+  \ifdefined\AddToHook
+    \AddToHook{shipout/before}{%
+      \global\advance\anno@shipped by 1\relax
+      \ifnum\anno@shipped>\annomaxpages\relax
+        \PackageError{latex-screenshot}{%
+          Runaway output: more than \annomaxpages\space pages were shipped%
+        }{%
+          Something cannot be placed, so LaTeX is emitting blank pages
+          forever.\MessageBreak
+          Most common cause: [H] on a figure or table whose contents are
+          taller than \string\textheight -- for example two images at
+          0.5\string\textwidth separated by a blank space, which wrap onto
+          two lines and stack.\MessageBreak
+          Look at the last float typeset before this point: make it smaller,
+          or drop the [H] so it is allowed to float.%
+        }%
+        % \@@end is illegal inside the output routine and will itself hang;
+        % force an emergency stop by requesting terminal input in batchmode.
+        \errorcontextlines=-1\batchmode\read -1 to \anno@discard
+      \fi
+    }%
+  \fi
+\fi
+\makeatother
+
+\endinput
