@@ -1,0 +1,28 @@
+# helioswarm sweep: microwave MVP design over heliocentric radius and transmit aperture.
+#
+# Run: helioswarm sweep configs/microwave_1au_sweep.yaml --out $HELIOSWARM_RUNS_DIR/microwave_1au_sweep
+# (Slurm: slurm/sweep_array.sbatch). Every point is a full validated run of the base
+# configuration with the values below substituted (provenance relabelled 'swept'). This is the
+# PDF §4 layout's microwave sweep, the counterpart of optical_1au_sweep.yaml (added in M6b).
+#
+# Values (scenario inputs, not design recommendations):
+#   - orbit.semimajor_axis_au: the PDF §2 candidate radii 0.3, 0.5, 0.7, 1.0, 1.2 au (circular
+#     orbits; the base true anomaly 30 deg is kept, so the Earth-satellite geometry differs per
+#     radius, as in the optical sweep);
+#   - transmitter.aperture_diameter_m: 1 km (the base phased array), 3 km and 10 km (assumed;
+#     deliberately generous: the PDF names no microwave aperture). The half-wavelength lattice
+#     (0.06 m) and the 10 dB taper are kept, so every aperture is a filled, grating-lobe-free
+#     array. Far-field validity N_F = D^2/(lambda R) <= 0.5 needs R >= 1.6e9 m (0.011 au) at
+#     10 km, far inside the closest approach of these windows.
+# The receiver is the base 10 km rectenna (the largest PDF §2 radius), the atmosphere ITU-R
+# (p = 1 %). The time window, step and every other parameter are those of the base
+# configuration. Expected outcome: capture ~ (pi D a / (lambda R))^2 / 4 x taper << 1 at every
+# point (diffraction-limited footprint much larger than the receiver); a negative result is
+# reported, not tuned away.
+sweep_schema_version: 1
+name: microwave_1au_sweep
+description: "Microwave MVP: heliocentric radius x transmit aperture (10 km rectenna)"
+base_config: mvp_single_satellite_microwave.yaml
+parameters:
+  orbit.semimajor_axis_au: [0.3, 0.5, 0.7, 1.0, 1.2]
+  transmitter.aperture_diameter_m: [1000.0, 3000.0, 10000.0]

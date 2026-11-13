@@ -1,0 +1,214 @@
+{
+  "availability": 0.0,
+  "availability_definition": "time fraction with no blocking unavailability reason (all geometry, occultation, Sun-avoidance, eclipse, thermal, weather, pointing and power-density conditions met)",
+  "beam_capture": {
+    "definition": "expected fraction of the beam power at the receiver plane intercepted by the receiver (diffraction, pointing, wavefront and lattice factors)",
+    "eta_capture_when_available": {
+      "max": null,
+      "mean": null,
+      "median": null,
+      "min": null,
+      "p05": null,
+      "p95": null
+    },
+    "eta_capture_when_visible": {
+      "max": 0.0,
+      "mean": 0.0,
+      "median": 0.0,
+      "min": 0.0,
+      "p05": 0.0,
+      "p95": 0.0
+    }
+  },
+  "capacity_factor": null,
+  "capacity_factor_denominator": {
+    "definition": "rated_power_W = P_grid delivered at reference conditions: satellite at the window-mean heliocentric distance, collector at normal incidence and fully illuminated, receiver at the window-mean satellite range with the beam at zenith (elevation 90 deg, full receiver projection, air mass 1), configured pointing errors, receiver limits applied; atmosphere at zenith: clear-sky scenario values for models.atmosphere=scenario (1 for none), the configured ITU-R gas+cloud+rain attenuation exceeded itu_r_exceedance_percent of the time for itu_r (not clear sky); the thermal and power-density policies apply (an infeasible or aborted reference gives rated_power_W = 0, reference_thermal_feasible / reference_power_density_abort say which); capacity_factor = mean(P_grid) / rated_power_W (null if rated_power_W = 0)",
+    "rated_power_W": 0.0,
+    "reference_eta_atmosphere": 1.0,
+    "reference_eta_capture": 0.010534449856508124,
+    "reference_power_density_abort": false,
+    "reference_range_m": 152600909555.17456,
+    "reference_sun_distance_m": 44880285499.06723,
+    "reference_thermal_feasible": false
+  },
+  "config_hash": "297c9cb3877863d3b608394a20657e16bee38492be3ca0eeda519d4808aacbe8",
+  "delivered_energy_J": 0.0,
+  "delivered_energy_definition": "sum_k w_k P_grid,k (trapezoid weights; emission epochs)",
+  "diurnal_aliasing": {
+    "access_fraction": 0.4433036732831394,
+    "effective_distinct_diurnal_phases": 866.4662578793117,
+    "hour_angle_max_gap_rad": 0.007251506045437672,
+    "per_edge_resolution_day_fraction": 0.0011541130319921678,
+    "warning": false,
+    "warning_threshold_day_fraction": 0.005
+  },
+  "end_to_end_efficiency": {
+    "energy_ratio": 0.0,
+    "energy_ratio_definition": "E_grid / E_incident_on_collector over the window",
+    "incident_solar_energy_J": 4772013821337980.0,
+    "mean_when_available": null
+  },
+  "geometry": {
+    "range_m": {
+      "max": 196943469112.7972,
+      "mean": 152600909555.17456,
+      "median": 155061915322.06845,
+      "min": 102272369949.0869,
+      "p05": 105797294115.9428,
+      "p95": 194526047177.61533
+    },
+    "sun_distance_m": {
+      "max": 44881249296.93614,
+      "mean": 44880285499.06723,
+      "median": 44880282653.08033,
+      "min": 44879326151.31494,
+      "p05": 44879419039.67851,
+      "p95": 44881170323.620605
+    }
+  },
+  "max_input_power_W": 1000000000000.0,
+  "outages": {
+    "censored_count": 1,
+    "count": 1,
+    "histogram_counts": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1
+    ],
+    "histogram_edges_s": [
+      0.0,
+      3600.0,
+      10800.0,
+      21600.0,
+      43200.0,
+      86400.0,
+      259200.0,
+      864000.0,
+      null
+    ],
+    "longest_s": 31557600.0,
+    "longest_start_tdb_s": 946728069.183919,
+    "mean_s": 31557600.0,
+    "median_s": 31557600.0,
+    "p95_s": 31557600.0,
+    "resolution_s": 3600.0,
+    "total_s": 31557600.0
+  },
+  "p_grid_W": {
+    "mean_when_available": null,
+    "median": 0.0,
+    "p05": 0.0,
+    "p95": 0.0,
+    "peak": 0.0,
+    "percentile_method": "unweighted sample percentiles, numpy linear interpolation",
+    "time_mean": 0.0
+  },
+  "power_per_collector_area_W_m2": 0.0,
+  "project_name": "optical_1au_sweep_p0000",
+  "receiver_power_density_W_m2": {
+    "abort_time_fraction": 0.0,
+    "definition": "peak irradiance of the aberration-free pattern on the beam-normal plane at the receiver (upper bound)",
+    "incident_peak_when_transmitting": {
+      "max": null,
+      "mean": null,
+      "median": null,
+      "min": null,
+      "p05": null,
+      "p95": null
+    },
+    "limit": null,
+    "requested_peak_max": 0.0
+  },
+  "receiver_saturation_time_fraction": 0.0,
+  "stage_energy_J": {
+    "accepted_J": 0.0,
+    "aperture_J": 0.0,
+    "atm_J": 0.0,
+    "beam_J": 0.0,
+    "captured_J": 0.0,
+    "dc_to_tx_J": 0.0,
+    "grid_J": 0.0,
+    "pv_electric_J": 1155084218509759.5,
+    "pv_to_transmitter_J": 0.0,
+    "receiver_J": 0.0
+  },
+  "summary_schema": "helioswarm-summary/1",
+  "thermal": {
+    "binding_margin_K_min": -158.766953285814,
+    "feasible_time_fraction": 0.0,
+    "pv_temperature_K": {
+      "max": 558.766953285814,
+      "mean": 558.7608411267083,
+      "median": 558.7608592159173,
+      "min": 558.7547007295838,
+      "p05": 558.7552038608644,
+      "p95": 558.7663614662339
+    },
+    "radiator_area_m2_max": 4372.831827195991
+  },
+  "time": {
+    "end_tdb_s": 978285669.183919,
+    "n_samples": 8767,
+    "output_step_s": 3600.0,
+    "sampling": "trapezoid weights (end samples dt/2); emission epochs (TDB)",
+    "start_tdb_s": 946728069.183919,
+    "window_s": 31557600.0
+  },
+  "timeseries_content_sha256": "f2757c850c6a9004743576a28f1678e36893f9e507f18d4ac38eba3df5342a80",
+  "timeseries_saved": true,
+  "transmitter_mode": "optical",
+  "unavailability": {
+    "blocking": {
+      "BELOW_MIN_ELEVATION": {
+        "time_fraction_flagged": 0.554985169974903,
+        "time_fraction_primary": 0.554985169974903
+      },
+      "EARTH_OCCULTATION": {
+        "time_fraction_flagged": 0.500228154232261,
+        "time_fraction_primary": 0.0
+      },
+      "ECLIPSE": {
+        "time_fraction_flagged": 0.0,
+        "time_fraction_primary": 0.0
+      },
+      "MOON_OCCULTATION": {
+        "time_fraction_flagged": 0.0,
+        "time_fraction_primary": 0.0
+      },
+      "POINTING": {
+        "time_fraction_flagged": 0.0,
+        "time_fraction_primary": 0.0
+      },
+      "POWER_DENSITY_ABORT": {
+        "time_fraction_flagged": 0.0,
+        "time_fraction_primary": 0.0
+      },
+      "SUN_AVOIDANCE": {
+        "time_fraction_flagged": 0.0,
+        "time_fraction_primary": 0.0
+      },
+      "SUN_OCCULTATION": {
+        "time_fraction_flagged": 0.006274241387177732,
+        "time_fraction_primary": 0.0017111567419575632
+      },
+      "THERMAL": {
+        "time_fraction_flagged": 1.0,
+        "time_fraction_primary": 0.4433036732831394
+      },
+      "WEATHER": {
+        "time_fraction_flagged": 0.0,
+        "time_fraction_primary": 0.0
+      }
+    },
+    "limiting_flags_time_fraction": {
+      "PARTIAL_ECLIPSE": 0.0,
+      "RECEIVER_SATURATION": 0.0
+    },
+    "note": "time_fraction_flagged counts every epoch with the bit set (reasons overlap); time_fraction_primary assigns each unavailable epoch to its first reason in precedence order and sums to 1 - availability"
+  }
+}

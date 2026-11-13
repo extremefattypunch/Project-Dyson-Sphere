@@ -1,0 +1,31 @@
+# helioswarm sweep: optical MVP design over heliocentric radius, aperture and receiver radius.
+#
+# Run: helioswarm sweep configs/optical_1au_sweep.yaml --out $HELIOSWARM_RUNS_DIR/optical_1au_sweep
+# (Slurm: slurm/sweep_array.sbatch). Every point is a full validated run of the base
+# configuration with the values below substituted (provenance relabelled 'swept').
+#
+# Values (scenario inputs, not design recommendations):
+#   - orbit.semimajor_axis_au: the PDF §2 candidate radii 0.3, 0.5, 0.7, 1.0, 1.2 au (circular
+#     orbits; the base true anomaly 30 deg is kept, so the Earth-satellite geometry differs per
+#     radius: inner orbits lap the Earth during the year, outer ones fall behind);
+#   - receiver.radius_m: the PDF §2 receiver radii 1, 5, 10 km;
+#   - transmitter.aperture_diameter_m: 10 m (PDF §5 example), 30 m and 100 m (assumed; the PDF
+#     names no aperture sweep). At 100 m and 1 um the Fraunhofer validity N_F = D^2/(lambda R)
+#     <= 0.5 needs R >= 0.134 au. The closest approach in these one-year windows is 0.303 au
+#     (0.7 au orbit near inferior conjunction; N_F = 0.22), so every point is valid; a violation
+#     would raise and be recorded as a failed point.
+# The time window, step and every other parameter are those of the base configuration.
+# No Sun-avoidance constraint is applied (receiver.sun_avoidance_deg = 0, the base value). The
+# inner orbits pass close to the Sun as seen from the receiver: at 0.7 au part of the delivered
+# energy (and the peak power of some points) arrives within a few degrees of the solar disk,
+# where a laser-PV receiver would face full sunlight and safety limits would normally apply.
+# The fractions are quantified in docs/milestones/M6.md; a constrained variant needs a sourced
+# or explicitly assumed receiver.sun_avoidance_deg.
+sweep_schema_version: 1
+name: optical_1au_sweep
+description: "Optical MVP: heliocentric radius x transmit aperture x receiver radius"
+base_config: mvp_single_satellite.yaml
+parameters:
+  orbit.semimajor_axis_au: [0.3, 0.5, 0.7, 1.0, 1.2]
+  transmitter.aperture_diameter_m: [10.0, 30.0, 100.0]
+  receiver.radius_m: [1000.0, 5000.0, 10000.0]

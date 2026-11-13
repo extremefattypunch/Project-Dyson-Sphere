@@ -1,0 +1,32 @@
+# pre-commit hooks. Install once with `uv run pre-commit install`; run on everything with
+# `uv run pre-commit run --all-files`. On the Cannon cluster `source scripts/cluster_env.sh`
+# first so hook environments live in $PRE_COMMIT_HOME on netscratch, not in /n/home05.
+# Keep the ruff rev equal to the ruff version locked in uv.lock.
+exclude: ^gpt-insights/
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.4
+    hooks:
+      - id: ruff-check
+        args: ["--fix"]
+      - id: ruff-format
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (strict, src/)
+        entry: uv run --locked mypy src
+        language: system
+        pass_filenames: false
+        types: [python]

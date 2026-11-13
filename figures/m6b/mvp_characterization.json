@@ -1,0 +1,110 @@
+{
+  "collector_condition": "normal incidence, full Sun (Sun-tracking, unshadowed: optimistic bound, PDF \u00a78.1)",
+  "config_hash": "3db50d831d9546c79850b95e1857f8cab67d1a4385ade096e9e6cbe1a70eef7e",
+  "definitions": {
+    "capture_vs_pointing.parquet": "PDF \u00a79.5 \"capture efficiency versus pointing sigma and receiver radius\".\n\n    Each row is :func:`helioswarm.beam.evaluate_beam` of the configured beam (model,\n    wavelength, aperture, bias, wavefront and lattice factors, receiver orientation) at\n    ``geometry`` with ``pointing_sigma_rad`` and ``receiver.radius_m`` replaced. ``capture``\n    is the expected capture over the Rice-distributed offset (bias + isotropic jitter),\n    ``capture_nominal`` the perfect-pointing value and ``p05/p50/p95`` the percentiles over\n    the jitter.\n\n    Raises:\n        BeamModelValidityError: the beam model is invalid at this geometry.\n    ",
+    "capture_vs_wavefront.parquet": "Capture versus RMS wavefront (phase) error at ``geometry`` (PDF \u00a79.2/\u00a79.3/\u00a79.5).\n\n    The wavefront factor is the Ruze/Strehl law ``exp(-(2 pi sigma_w / lambda)^2)`` applied\n    once to the far-field pattern (:func:`helioswarm.aperture.wavefront_efficiency`); for a\n    phased array it is the phase-error degradation of the main lobe. The configured pointing\n    and receiver are kept.\n    ",
+    "power_thermal_vs_distance.parquet": "PDF \u00a78.4 curves versus heliocentric distance and transmitter operating point.\n\n    Each operating point replaces ``eta_electrical_to_beam`` of the configured on-board chain\n    (the other stage efficiencies, the collector, PV node and radiator are the configured ones)\n    and calls :func:`helioswarm.thermal.power_thermal_vs_distance` (normal incidence, full Sun):\n    ``S(r) = S_1AU (au/r)^2``, ``P_abs = alpha A S``, self-consistent PV temperature,\n    ``P_PV = P_abs eta_PV(T)``, ``P_dc_to_tx = eta_pc P_PV`` (net electrical power available to\n    the transmitter), ``Q_waste = P_PV - P_aperture + Q_other`` and the radiator area\n    ``A = Q_waste / (eps sigma n F (T_lim^4 - T_space^4))`` (or its temperature for a fixed area).\n\n    Args:\n        config: Validated configuration.\n        sun_distance_m: Heliocentric distances [m].\n        electrical_to_beam_efficiencies: Operating points [1]; default the configured value.\n\n    Returns:\n        Long table, one row per (operating point, distance).\n    "
+  },
+  "diffraction_angle_rad": 1e-07,
+  "files": {
+    "capture_vs_pointing.parquet": "05ce33be491bf5e3048581c6c21a3dab9d10eade7f59fd0326e2e546f4832f25",
+    "capture_vs_wavefront.parquet": "2702c914f42c5a34b17acf124a70109527f8fc58de4b33ecfd047e3a7670fd22",
+    "config_resolved.yaml": "1744f33a9f60e32e6f727d83fe3226f66332b434f7d4374174b9155e50c14b4f",
+    "power_thermal_vs_distance.parquet": "40a43b8cc58cdaa8a3021fd5962f02748578e3cee8bacd4ba926beb5b3231c2e"
+  },
+  "git": {
+    "commit": "218de9b496c93196f195c1fe945d16d24c2d2cdf",
+    "dirty": true,
+    "repository": "/n/home05/ianpoon/Project-Dyson-Sphere"
+  },
+  "helioswarm_version": "0.1.0.dev0",
+  "idealised_settings": [
+    {
+      "effect": "lossless power conditioning",
+      "path": "transmitter.power_conditioning_efficiency",
+      "value": 1.0
+    },
+    {
+      "effect": "lossless transmit optics / RF feed",
+      "path": "transmitter.optics_or_rf_efficiency",
+      "value": 1.0
+    },
+    {
+      "effect": "perfect wavefront (no Ruze/Strehl loss)",
+      "path": "transmitter.rms_wavefront_error_m",
+      "value": 0.0
+    },
+    {
+      "effect": "normal solar incidence at every epoch (optimistic bound, PDF \u00a78.1)",
+      "path": "collector.incidence_mode",
+      "value": "sun_tracking"
+    },
+    {
+      "effect": "PV efficiency clipped only at the energy-conservation bound",
+      "path": "collector.pv_efficiency_max",
+      "value": 1.0
+    },
+    {
+      "effect": "isolated PV plate (no view of the spacecraft)",
+      "path": "thermal.pv_view_factor",
+      "value": 1.0
+    },
+    {
+      "effect": "no pointing-availability threshold (inactive constraint)",
+      "path": "transmitter.min_pointing_efficiency",
+      "value": null
+    },
+    {
+      "effect": "no power-density / beam-abort limit",
+      "path": "receiver.max_power_density_W_m2",
+      "value": null
+    },
+    {
+      "effect": "no receiver heat-rejection limit",
+      "path": "receiver.max_heat_rejection_W",
+      "value": null
+    },
+    {
+      "effect": "no Sun-avoidance constraint at the receiver",
+      "path": "receiver.sun_avoidance_deg",
+      "value": 0.0
+    },
+    {
+      "effect": "permanently clear sky: no cloud outage at any epoch (availability is a weather upper bound)",
+      "path": "models.weather_scenario",
+      "value": "clear"
+    },
+    {
+      "effect": "no clear-sky optical extinction",
+      "path": "atmosphere.optical_zenith_transmittance_clear",
+      "value": 1.0
+    }
+  ],
+  "link_geometry": {
+    "elevation_rad": 1.5707963267948966,
+    "fresnel_number": 0.0006684587122268446,
+    "note": "explicit scenario input of the capture curves, not a run geometry",
+    "range_m": 149597870700.0
+  },
+  "packages": {
+    "astropy": "8.0.2",
+    "helioswarm": "0.1.0.dev0",
+    "itur": "0.4.0",
+    "jax": "0.12.0.1",
+    "jax-cuda12-plugin": "0.12.0.1",
+    "jaxlib": "0.12.0.1",
+    "matplotlib": "3.11.2",
+    "numpy": "2.5.4",
+    "pandas": "3.1.1",
+    "pyarrow": "26.0.1",
+    "pydantic": "2.14.3",
+    "pyyaml": "6.0.3",
+    "scipy": "1.18.1",
+    "spiceypy": "8.4.0"
+  },
+  "project_name": "single_satellite_optical_baseline",
+  "schema": "helioswarm-characterization/1",
+  "wall_clock_end_utc": "2026-11-13T01:27:45.843796Z",
+  "wall_clock_start_utc": "2026-11-13T01:27:43.955014Z"
+}

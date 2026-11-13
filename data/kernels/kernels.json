@@ -1,0 +1,57 @@
+{
+  "manifest_version": 1,
+  "kernel_set_id": "helioswarm-de440s-v1",
+  "description": "SPICE kernels used by helioswarm M2+: leap seconds, IAU rotation/shape constants, DE440 GM values and the DE440 short planetary ephemeris (1849-12-26 to 2150-01-22). Load order is the list order; later kernels take priority for any kernel-pool variable defined twice.",
+  "license": "NAIF generic kernels are produced by NASA/JPL NAIF and distributed publicly without restriction (https://naif.jpl.nasa.gov/naif/rules.html). They are not committed to this repository; scripts/fetch_kernels.py downloads them.",
+  "hash_policy": "NAIF does not publish SHA-256 checksums for these files. Each SHA-256 below was computed by helioswarm on first retrieval (trust on first use) and is enforced from then on: fetch_kernels refuses a file whose SHA-256 differs. Where NAIF publishes an MD5 (spk/planets/aa_checksums.txt) it is recorded and was cross-checked at retrieval; it is also enforced.",
+  "kernels": [
+    {
+      "name": "naif0012.tls",
+      "kind": "LSK",
+      "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/lsk/naif0012.tls",
+      "purpose": "Leap-seconds kernel: UTC <-> TDB conversion (str2et, et2utc). Contains leap seconds up to 2017-01-01 (TAI-UTC = 37 s).",
+      "size_bytes": 5257,
+      "sha256": "678e32bdb5a744117a467cd9601cd6b373f0e9bc9bbde1371d5eee39600a039b",
+      "md5": null,
+      "md5_source": null,
+      "server_last_modified": "Fri, 15 Jul 2016 00:00:37 GMT",
+      "retrieved_utc": "2026-11-12T06:54:48Z"
+    },
+    {
+      "name": "pck00011.tpc",
+      "kind": "PCK",
+      "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/pck00011.tpc",
+      "purpose": "Text PCK: IAU WGCCRE rotation models and radii (IAU_EARTH frame, used from M3).",
+      "size_bytes": 131226,
+      "sha256": "3dff7b1dbeceaa01f25467767d3fa25816051c85d162d1edf04acb310ee28bb1",
+      "md5": null,
+      "md5_source": null,
+      "server_last_modified": "Tue, 27 Dec 2022 16:28:50 GMT",
+      "retrieved_utc": "2026-11-12T06:54:48Z"
+    },
+    {
+      "name": "gm_de440.tpc",
+      "kind": "PCK",
+      "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/pck/gm_de440.tpc",
+      "purpose": "Text PCK of DE440 gravitational parameters GM (km^3 s^-2), read with bodvrd.",
+      "size_bytes": 12406,
+      "sha256": "924ddf4fb9ead9fe8a1aa55780bcabde40b09d00065d58226e24b68d8092f140",
+      "md5": null,
+      "md5_source": null,
+      "server_last_modified": "Wed, 14 Dec 2022 20:00:00 GMT",
+      "retrieved_utc": "2026-11-12T06:54:48Z"
+    },
+    {
+      "name": "de440s.bsp",
+      "kind": "SPK",
+      "url": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/de440s.bsp",
+      "purpose": "DE440 short planetary ephemeris (SPK): Sun, planetary-system barycentres, Mercury, Venus, Earth and Moon relative to the solar-system barycentre, 1849-2150.",
+      "size_bytes": 32726016,
+      "sha256": "c1c7feeab882263fc493a9d5a5b2ddd71b54826cdf65d8d17a76126b260a49f2",
+      "md5": "3917ee56769db332790c751e2168843d",
+      "md5_source": "https://naif.jpl.nasa.gov/pub/naif/generic_kernels/spk/planets/aa_checksums.txt",
+      "server_last_modified": "Mon, 21 Dec 2020 19:39:26 GMT",
+      "retrieved_utc": "2026-11-12T06:54:48Z"
+    }
+  ]
+}

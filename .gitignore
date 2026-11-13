@@ -1,0 +1,37 @@
+# --- Python / tooling caches -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# --- Run outputs (on the cluster they go to $HELIOSWARM_RUNS_DIR on netscratch) -----------------
+runs/*
+!runs/.gitkeep
+
+# --- SPICE kernels: large, regenerable, fetched by scripts/fetch_kernels.py (M2) ---------------
+data/kernels/*
+!data/kernels/kernels.json
+!data/kernels/README.md
+
+# --- Large tabular outputs: only small test fixtures under tests/data are versioned -------------
+*.parquet
+!tests/data/**/*.parquet
+
+# --- Figure caches ----------------------------------------------------------------------------
+figures/.cache/
+figures/**/_cache/
+.matplotlib/
+
+# --- Editors / OS -----------------------------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
+*.swp
