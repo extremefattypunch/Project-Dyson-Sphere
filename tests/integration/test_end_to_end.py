@@ -20,7 +20,7 @@ import pytest
 
 import helioswarm.system as system_mod
 from helioswarm.cli import main
-from helioswarm.config import RunConfig, parse_config, read_yaml
+from helioswarm.config import RunConfig, load_config, parse_config, read_yaml
 from helioswarm.ephemeris import SpiceEphemeris
 from helioswarm.io import execute_run, prepare_run_dir, read_json
 from helioswarm.kernels import KernelSet
@@ -395,8 +395,30 @@ def test_cli_run_outputs_plot_and_reproducibility(
     assert man["rng_state_unchanged"]
     assert "TDB" in man["time_scale"]
     assert "J2000" in man["frame"]
+    assert man["manifest_schema"] == "helioswarm-run-manifest/2"
+    assert "SI" in man["units"]
+    assert man["approximations"] == []  # the MVP selects no named approximation (PDF §17)
+    assert "m, s, kg, W" in man["units"]
     tab = pq.read_table(out / "timeseries.parquet")
     assert tab.num_rows == 49
+    # Simulation window (PDF §14.1): first/last emission epoch of the saved grid, and the end in
+    # UTC = start + 2 days (TDB - UTC changes by microseconds over two days: ms digits are 0).
+    win = man["simulation_window"]
+    t_emit = tab.column("t_emit_tdb_s").to_numpy()
+    assert (win["start_tdb_s"], win["end_tdb_s"]) == (t_emit[0], t_emit[-1])
+    assert win["n_epochs"] == 49
+    assert win["output_step_s"] == 3600.0
+    assert win["start_utc"] == "2030-01-01T00:00:00"
+    assert win["end_utc"] == "2030-01-03T00:00:00.000"
+    # Report labels the idealised settings of the MVP and carries the PDF §7.3 diagnostics.
+    report = (out / "report.md").read_text()
+    assert "## Idealised settings in this run" in report
+    assert "`collector.incidence_mode` = sun_tracking" in report
+    assert "`receiver.sun_avoidance_deg` = 0.0" in report
+    assert "`models.weather_scenario` = clear: permanently clear sky" in report
+    assert "Named approximations in force" not in report
+    assert "## Orbital outputs and diagnostics (PDF §7.3)" in report
+    assert "Light time min / mean / max" in report
     assert "grid_W" in tab.column_names
     assert "reason_code" in tab.column_names
     assert tab.schema.metadata[b"frame"] == b"J2000"
@@ -440,6 +462,51 @@ def test_cli_run_outputs_plot_and_reproducibility(
     assert hashlib.sha256((out / "summary.json").read_bytes()).hexdigest() == before
     assert "## Metrics" in (out / "report.md").read_text()
 
+    # PDF §13.4: the power-stage and composite figures name every idealised setting of the run
+    # (figure text captured before saving; line wrapping undone).
+    import helioswarm.plotting as plotting_mod
+    from helioswarm.config import idealised_settings
+
+    texts: dict[str, str] = {}
+    real_save = plotting_mod._save
+
+    def capture(fig: Any, path: Path) -> Path:
+        parts = [fig._suptitle.get_text()] if fig._suptitle is not None else []
+        parts += [t.get_text() for ax in fig.axes for t in ax.texts]
+        texts[path.name] = " ".join(" ".join(parts).split())
+        return real_save(fig, path)
+
+    monkeypatch.setattr(plotting_mod, "_save", capture)
+    plotting_mod.make_figures(out)
+    ideal = idealised_settings(load_config(out / "config_resolved.yaml"))
+    assert len(ideal) >= 10
+    for name in ("power_stages.png", "composite.png"):
+        for i in ideal:
+            assert i.effect in texts[name], (name, i.path)
+
+
+def test_fixed_normal_srp_approximation_is_logged_and_in_the_manifest(
+    kernel_set: KernelSet,
+) -> None:
+    # PDF §17 "never silently replace a physical model": a fixed-normal collector with radial
+    # SRP is a named approximation, written to the run log and the manifest with its
+    # comparison path, and the state carries the configured normal.
+    from helioswarm.manifest import build_manifest
+
+    cfg = _cfg(**{
+        "time.duration_days": 0.25,
+        "collector.incidence_mode": "fixed_normal",
+        "collector.fixed_normal_unit_j2000": [0.0, 0.6, 0.8],
+    })  # fmt: skip
+    res = _run(kernel_set, cfg)
+    warn = [e for e in res.log if e.stage == "config"]
+    assert len(warn) == 1
+    assert warn[0].level == "WARNING"
+    assert "collector.incidence_mode = fixed_normal" in warn[0].message
+    assert "include_solar_radiation_pressure = false" in warn[0].message
+    man = build_manifest(res, wall_clock_start_utc="a", wall_clock_end_utc="b", outputs={})
+    assert man.approximations == [warn[0].message.removeprefix("named approximation in force: ")]
+
 
 def test_summary_is_recomputable_from_saved_timeseries(
     tmp_path: Path, kernel_set: KernelSet
@@ -456,9 +523,32 @@ def test_summary_is_recomputable_from_saved_timeseries(
     again = summarize_timeseries(pq.read_table(tmp_path / "r" / "timeseries.parquet"),
                                  summary_inputs(res))  # fmt: skip
     saved = json.loads((tmp_path / "r" / "summary.json").read_text())
-    assert again["delivered_energy_J"] == saved["delivered_energy_J"]
-    assert again["availability"] == saved["availability"]
-    assert out.summary["timeseries_content_sha256"] == saved["timeseries_content_sha256"]
+    assert again.delivered_energy_J == saved["delivered_energy_J"]
+    assert again.availability == saved["availability"]
+    assert out.summary.timeseries_content_sha256 == saved["timeseries_content_sha256"]
+    # PDF §7.3 diagnostics from the saved table agree with the in-memory AccessResult summary
+    # (independent path: visibility.summarize_access on the model objects). Extremes are exact;
+    # the time fractions use trapezoid weights against the plain sample mean there, so they
+    # differ by at most one end-sample weight 1/(2N) per end, i.e. <= 1/N.
+    od, acc = again.orbital_diagnostics, res.access_summary
+    assert od is not None
+    n = len(res)
+    assert (od.light_time.min_s, od.light_time.max_s) == (
+        acc.light_time_min_s,
+        acc.light_time_max_s,
+    )
+    assert od.light_time.mean_s == pytest.approx(acc.light_time_mean_s, rel=1e-14)
+    assert (od.range_rate_m_s.min, od.range_rate_m_s.max) == (
+        acc.range_rate_min_m_s, acc.range_rate_max_m_s)  # fmt: skip
+    assert od.pointing_rate_rad_s.max == acc.pointing_rate_max_rad_s
+    assert od.earth_range_m.max == acc.range_max_m
+    assert od.orbit_drift_vs_l0_m_max == acc.orbit_drift_max_m
+    assert od.access_fraction == pytest.approx(acc.access_fraction, abs=1.0 / (n - 1))
+    assert od.occultation_fraction == pytest.approx(acc.occultation_fraction, abs=1.0 / (n - 1))
+    assert od.earth_occultation_fraction > 0.0  # the 2-day MVP window has Earth occultation
+    u = np.array([od.beam_direction_j2000_unit_first, od.beam_direction_j2000_unit_last])
+    np.testing.assert_array_equal(u[0], res.access.transmit_direction_unit[0])
+    np.testing.assert_allclose(np.linalg.norm(u, axis=1), 1.0, rtol=0, atol=1e-15)
 
 
 def test_cli_sweep_with_array_split_and_collation(

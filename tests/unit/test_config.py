@@ -698,3 +698,96 @@ def test_provenance_override_of_unknown_path_is_rejected(mvp_data: dict[str, Any
     _assert_issue(mvp_data, "provenance_overrides", "did you mean 'receiver.radius_m'")
     mvp_data["provenance_overrides"] = {"receiver.radius_m": "guessed"}
     _assert_issue(mvp_data, "provenance_overrides", "'measured', 'sourced', 'assumed' or 'swept'")
+
+
+def test_idealised_settings_of_the_mvp_and_after_overrides() -> None:
+    # PDF §13.4 "label idealised upper bounds": the MVP config keeps the optimistic defaults
+    # listed in docs/model_assumptions.md ("Optimistic defaults"), so each must be reported.
+    from helioswarm.config import approximations_in_force, idealised_settings, parse_config
+
+    from config_helpers import load_mvp_data
+
+    paths = {s.path for s in idealised_settings(cfgmod.load_config(MVP_CONFIG))}
+    assert paths == {
+        "transmitter.power_conditioning_efficiency",
+        "transmitter.optics_or_rf_efficiency",
+        "transmitter.rms_wavefront_error_m",
+        "transmitter.min_pointing_efficiency",
+        "collector.incidence_mode",
+        "collector.pv_efficiency_max",
+        "thermal.pv_view_factor",
+        "models.weather_scenario",  # one clear-sky state for the whole year: no cloud outage
+        "atmosphere.optical_zenith_transmittance_clear",
+        "receiver.max_power_density_W_m2",
+        "receiver.max_heat_rejection_W",
+        "receiver.sun_avoidance_deg",
+    }
+    # Configuring a real loss or constraint removes exactly that label (not a fixed list).
+    data = load_mvp_data()
+    set_path(data, "transmitter.power_conditioning_efficiency", 0.95)
+    set_path(data, "receiver.sun_avoidance_deg", 5.0)
+    set_path(data, "transmitter.min_pointing_efficiency", 0.5)
+    set_path(data, "transmitter.pointing_sigma_rad", 0.0)  # perfect pointing is now idealised
+    after = {s.path for s in idealised_settings(parse_config(data))}
+    assert after == (paths - {
+        "transmitter.power_conditioning_efficiency", "receiver.sun_avoidance_deg",
+        "transmitter.min_pointing_efficiency",
+    }) | {"transmitter.pointing_sigma_rad"}  # fmt: skip
+    # Every other lossless stage and every disabled occultation check is labelled; a cloudy
+    # scenario is not an upper bound (and an optical cloudy transmittance < 1 is not labelled).
+    data = load_mvp_data()
+    for path in ("transmitter.electrical_to_beam_efficiency", "receiver.conversion_efficiency",
+                 "receiver.grid_efficiency"):  # fmt: skip
+        set_path(data, path, 1.0)
+    for body in ("earth", "sun", "moon"):
+        set_path(data, f"models.{body}_occultation", False)
+    set_path(data, "models.weather_scenario", "cloudy")
+    set_path(data, "models.light_time", False)
+    lossless = {s.path for s in idealised_settings(parse_config(data))}
+    assert lossless == (paths - {
+        "models.weather_scenario", "atmosphere.optical_zenith_transmittance_clear",
+    }) | {
+        "transmitter.electrical_to_beam_efficiency", "receiver.conversion_efficiency",
+        "receiver.grid_efficiency", "models.earth_occultation", "models.sun_occultation",
+        "models.moon_occultation",
+    }  # fmt: skip
+    # Light-time off is a named approximation of either sign, not an upper bound.
+    assert [a.path for a in approximations_in_force(parse_config(data))] == ["models.light_time"]
+    assert approximations_in_force(cfgmod.load_config(MVP_CONFIG)) == ()
+    # The microwave MVP uses ITU-R (no clear-sky scenario label) and a rectenna.
+    mw_cfg = cfgmod.load_config(MVP_CONFIG.parent / "mvp_single_satellite_microwave.yaml")
+    assert mw_cfg.models.atmosphere == "itu_r"
+    mw = {s.path for s in idealised_settings(mw_cfg)}
+    assert "atmosphere.optical_zenith_transmittance_clear" not in mw
+    assert "atmosphere.microwave_zenith_attenuation_clear_dB" not in mw
+    assert "models.weather_scenario" not in mw
+    # Scenario-mode microwave: the configured scenario's 0 dB zenith attenuation is labelled.
+    mw_data = read_yaml(MVP_CONFIG.parent / "mvp_single_satellite_microwave.yaml")
+    set_path(mw_data, "models.atmosphere", "scenario")
+    set_path(mw_data, "models.weather_scenario", "cloudy")
+    mw_cloudy = {s.path for s in idealised_settings(parse_config(mw_data))}
+    assert "atmosphere.microwave_zenith_attenuation_cloudy_dB" in mw_cloudy
+    assert "models.weather_scenario" not in mw_cloudy
+    set_path(mw_data, "atmosphere.microwave_zenith_attenuation_cloudy_dB", 3.0)
+    mw_cloudy = {s.path for s in idealised_settings(parse_config(mw_data))}
+    assert "atmosphere.microwave_zenith_attenuation_cloudy_dB" not in mw_cloudy
+
+
+def test_fixed_normal_with_srp_is_a_named_approximation() -> None:
+    # PDF §17: the radial SRP model on a fixed-normal collector is named, with a comparison path.
+    from helioswarm.config import approximations_in_force, parse_config
+
+    from config_helpers import load_mvp_data
+
+    data = load_mvp_data()
+    set_path(data, "collector.incidence_mode", "fixed_normal")
+    set_path(data, "collector.fixed_normal_unit_j2000", [0.0, 0.6, 0.8])
+    (a,) = approximations_in_force(parse_config(data))
+    assert (a.path, a.value) == ("collector.incidence_mode", "fixed_normal")
+    assert "include_solar_radiation_pressure = false" in a.comparison_path
+    assert "(1+eps)/(cos(theta)[(1-eps)+2 eps cos^2(theta)])" in a.approximation
+    # Without SRP there is nothing to approximate.
+    set_path(data, "orbit.include_solar_radiation_pressure", False)
+    del_path(data, "orbit.cr")
+    del_path(data, "orbit.area_to_mass_m2_kg")
+    assert approximations_in_force(parse_config(data)) == ()

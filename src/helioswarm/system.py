@@ -68,7 +68,7 @@ from helioswarm.atmosphere import (
     atmospheric_transmission,
 )
 from helioswarm.beam import BeamResult, BeamSettings, beam_settings_from_config, evaluate_beam
-from helioswarm.config import RunConfig, config_hash
+from helioswarm.config import RunConfig, approximations_in_force, config_hash
 from helioswarm.ephemeris import EphemerisProvider
 from helioswarm.frames import CartesianTrajectory
 from helioswarm.ground import EarthOrientation, GroundSite, SpiceEarthOrientation
@@ -93,7 +93,7 @@ from helioswarm.thermal import (
     power_thermal_from_illumination,
     power_thermal_models_from_config,
 )
-from helioswarm.timescale import TimeGrid, time_grid_from_config, utc_to_tdb_s
+from helioswarm.timescale import TimeGrid, tdb_s_to_utc, time_grid_from_config, utc_to_tdb_s
 from helioswarm.visibility import (
     AccessResult,
     AccessSummary,
@@ -304,6 +304,8 @@ class SystemRunResult:
         rng_state_unchanged: The supplied Generator was not drawn from (no stochastic step).
         timings: Wall time per stage.
         log: Warnings and diagnostics for ``logs/run.log``.
+        window_end_utc: UTC of the last output epoch (SPICE ``et2utc``, milliseconds; for the
+            manifest's simulation window only, never used in arithmetic).
     """
 
     config: RunConfig
@@ -333,6 +335,7 @@ class SystemRunResult:
     rng_state_unchanged: bool
     timings: tuple[StageTiming, ...] = field(repr=False)
     log: tuple[RunLogEntry, ...] = field(repr=False)
+    window_end_utc: str | None = None
 
     def __post_init__(self) -> None:
         n = len(self.grid)
@@ -536,7 +539,10 @@ def run_single_satellite(
     check_kernel_set(config, kernels)
     rng_state = rng.bit_generator.state
     timings: list[StageTiming] = []
-    log: list[RunLogEntry] = []
+    log: list[RunLogEntry] = [
+        RunLogEntry("WARNING", "config", "named approximation in force: " + a.describe())
+        for a in approximations_in_force(config)
+    ]
     orientation: EarthOrientation = (
         earth_orientation if earth_orientation is not None else SpiceEarthOrientation(kernels)
     )
@@ -781,6 +787,7 @@ def run_single_satellite(
         rng_state_unchanged=bool(rng_unchanged),
         timings=tuple(timings),
         log=tuple(log),
+        window_end_utc=tdb_s_to_utc(float(grid.epochs_tdb_s[-1]), kernels, decimals=3),
     )
 
 

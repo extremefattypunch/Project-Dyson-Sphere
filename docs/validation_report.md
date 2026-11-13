@@ -226,6 +226,17 @@ examples; never the module's own helpers.
 | ITU-R production revisions (P.676-12, P.1511-2, τ = 0/45/90°) at the same site | **regression pin** of this wrapper with `itur` 0.4.0 (not a validation) | 1e-9 dB | pinned; gas 0.22687 dB vs 0.22369 dB with P.676-11 (+1.4 %); rain H > circular > V (P.838 k_H > k_V) |
 | MVP year (SPICE, 3700 visible epochs) | closed-form EE(x_eff); 2s²κ pointing loss | 1e-12; 1 % | pass; capture 0.15–0.83 % (negative result) |
 
+## M6b: completeness audit: added checks and reproduction
+
+| Check | Reference | Tolerance | Result |
+|---|---|---|---|
+| §8.4 curves (`helioswarm characterize`) vs closed forms: S(r), P_abs, η_PV(T) law, P_PV, P_dc_to_tx, Q_waste, A_rad; Q_waste difference between operating points | closed forms written in the test; σ from the exact 2019 SI constants | 1e-15–1e-13; A_rad 1e-9 | **pass** (`test_characterize.py::test_power_thermal_curves_against_closed_forms`) |
+| §9.5 capture vs pointing sigma and receiver radius: perfect pointing = 1 − J0(x)² − J1(x)², orderings | Born & Wolf encircled energy (scipy `j0`, `j1`) | 1e-9; strict | **pass** (`test_capture_curves_centred_airy_and_monotonicity`) |
+| Ruze factor applied once to the expected capture | exp(−(2πσ_w/λ)²) | 1e-12 | **pass** |
+| §7.3 diagnostics from the saved time series vs the in-memory `AccessSummary` of the same run | independent code path (`visibility.summarize_access`) | extremes exact; fractions ≤ 1/N (weighting) | **pass** (`test_end_to_end.py::test_summary_is_recomputable_from_saved_timeseries`) |
+| Microwave sweep consistency: 1.0 au / 1 km point vs the microwave MVP run | M6 job 60127172 (0.3145 W) | printed digits | **pass** (array 60141210: 0.3145 W) |
+| Fresh-clone reproduction of the optical and microwave MVP runs | M6 jobs 60127166 / 60127172 | printed digits | **pass** (job 60144119; `docs/compliance_matrix.md`) |
+
 <!-- BEGIN validate-models -->
 
 ## Programmatic validation (`helioswarm validate-models`, generated)

@@ -21,10 +21,15 @@ notes for each milestone are in `docs/milestones/`.
 You need Python ≥ 3.11 and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-git clone git@github.com:extremefattypunch/Project-Dyson-Sphere.git
+git clone --branch helioswarm-m0-m6 git@github.com:extremefattypunch/Project-Dyson-Sphere.git
 cd Project-Dyson-Sphere
 uv sync --locked --extra dev --extra xcheck --extra itur --extra jax   # exact env from uv.lock
 ```
+
+The code lives on the branch `helioswarm-m0-m6` (the default branch `main` holds only the
+requirements document until the branch is merged). The GitHub repository is currently
+**private**: cloning needs read access (an SSH key as above, or
+`https://github.com/extremefattypunch/Project-Dyson-Sphere.git` with a personal access token).
 
 Do **not** use `uv sync --all-extras`: it also installs the `gpu` extra (`jax[cuda12]`, ~4.4 GB
 of NVIDIA wheels on Linux), which only the GPU benchmark needs. Add `--extra gpu` explicitly
@@ -61,6 +66,18 @@ The script keeps everything out of `/n/home05`:
 No `.venv` is created in the repository. Netscratch is purged after 90 days. Everything stored
 there can be regenerated.
 
+To build a second, throwaway environment (e.g. to check a fresh clone without touching the
+shared one), override the locations **after** sourcing the script, all on netscratch:
+
+```bash
+source scripts/cluster_env.sh
+SCR=/n/netscratch/hekstra_lab/Lab/ian_poon/scratch-env      # any netscratch directory
+export UV_PROJECT_ENVIRONMENT=$SCR/venv UV_CACHE_DIR=$SCR/uv-cache \
+       HELIOSWARM_KERNEL_DIR=$SCR/kernels HELIOSWARM_RUNS_DIR=$SCR/runs
+uv sync --locked --extra dev --extra xcheck --extra itur --extra jax
+# ... and `rm -rf $SCR` when done.
+```
+
 ## Quick start
 
 ```bash
@@ -70,7 +87,11 @@ uv run helioswarm run configs/mvp_single_satellite.yaml --out runs/mvp          
 uv run helioswarm plot runs/mvp                       # redraw figures/ + report.md from saved data
 uv run helioswarm sweep configs/optical_1au_sweep.yaml --out runs/optical_sweep   # 45 runs
 uv run helioswarm validate-models --report docs/validation_report.md              # ~1 min
+uv run helioswarm characterize configs/mvp_single_satellite.yaml --out runs/mvp_curves  # ~10 s
 ```
+
+`helioswarm validate-config configs/*.yaml` checks every shipped file (run configurations and
+sweeps). Without `--out`, `run` writes to `$HELIOSWARM_RUNS_DIR/<project.name>`.
 
 - `validate-config` checks a configuration (exit 1 with every problem listed if invalid);
   `--show-provenance` lists every parameter with unit and provenance (`measured`, `sourced`,
@@ -107,8 +128,24 @@ uv run helioswarm validate-models --report docs/validation_report.md            
   and writes value, reference, tolerance and pass/fail into the generated block of
   `docs/validation_report.md`; a check whose optional library is missing is reported as
   "not run" and listed as unresolved.
+- `characterize` writes the PDF §8.4 and §9.5 response curves of one configuration (no kernels
+  needed): solar flux, PV power/efficiency/temperature, waste heat, radiator area, net power to
+  the transmitter and thermal feasibility versus heliocentric distance and transmitter
+  operating point (`power_thermal_vs_distance.parquet`), and expected capture versus pointing
+  sigma, receiver radius and RMS wavefront error at one stated link geometry (`--range-au`,
+  `--elevation-deg`; `capture_vs_pointing.parquet`, `capture_vs_wavefront.parquet`), with
+  `characterization.json` and figures drawn from the saved tables.
 - `--backend jax` (with the `jax` or `gpu` extra) evaluates the Airy capture through the batched
   JAX kernel; the default `numpy` is the reference.
+
+Every `report.md` lists the run's *idealised* settings (lossless stages, inactive constraints,
+Sun-tracking collector, clear sky for the whole window) so that a result that is an upper bound
+is labelled as one (PDF §13.4), and any named approximation the configuration selects (e.g.
+radial SRP on a fixed-normal collector) with its comparison path (PDF §17; also in
+`manifest.json` and `logs/run.log`);
+`summary.json` is a typed, versioned record (`helioswarm.metrics.RunSummary`) that includes the
+PDF §7.3 orbital diagnostics (range, access and occultation fractions, pointing direction and
+rate, light time min/mean/max, range rate, orbit drift).
 
 ### Slurm (Harvard Cannon; see `slurm/`)
 
@@ -118,6 +155,8 @@ Long runs go to Slurm jobs, never the interactive session. Create the log direct
 ```bash
 sbatch slurm/run.sbatch configs/mvp_single_satellite.yaml           # -> $HELIOSWARM_RUNS_DIR/<stem>/
 sbatch slurm/run.sbatch configs/mvp_single_satellite_microwave.yaml
+sbatch --array=0-4 --mem=768M -t 0-00:12 slurm/sweep_array.sbatch \
+       configs/microwave_1au_sweep.yaml $HELIOSWARM_RUNS_DIR/microwave_1au_sweep  # 15 points
 JID=$(sbatch --parsable --array=0-4 slurm/sweep_array.sbatch configs/optical_1au_sweep.yaml \
       $HELIOSWARM_RUNS_DIR/optical_1au_sweep)
 # test QOS: max 5 submitted jobs per user -> submit the collation after the array has finished
@@ -161,18 +200,91 @@ The schema follows these rules:
 
 ## Project status
 
-| Milestone | Content | Status |
+Test counts are the size of the whole suite (`uv run pytest -q`) at the end of each milestone,
+after its review, as recorded in `docs/milestones/`; every SPICE, REBOUND, HCIPy and ITU-R test
+runs on the cluster environment (the one skip is the real-GPU test, run by
+`slurm/gpu_bench.sbatch`).
+
+| Milestone | Content | Status | Tests (suite) |
+|---|---|---|---|
+| M0 Scaffold | env + lock, package layout, config schema, `validate-config`, lint/type/test, CI | done | 192 passed |
+| M1 Analytic orbit | constants, two-body elements ↔ state, Kepler propagation, invariants | done | 368 passed |
+| M2 Ephemeris geometry | SPICE kernels, UTC→TDB, ephemeris provider, L1 propagator, SRP | done | 504 passed |
+| M3 Access + light time | ground sites, Earth rotation, retarded-time targeting, occultation | done | 628 passed |
+| M4 Solar + thermal | S(r), PV efficiency law, PV and radiator thermal balance | done | 717 passed |
+| M5 Beam physics | Airy/Gaussian/Fresnel optics, microwave aperture, capture, pointing, atmosphere | done | 874 passed |
+| M6 End-to-end single satellite | link budget, system run, metrics, run outputs, CLI run/plot/sweep/validate-models, Slurm templates, optional JAX/GPU capture kernel | done | 972 passed, 1 skipped |
+| M6b Completeness audit | `docs/compliance_matrix.md`; typed summary, §7.3 diagnostics, manifest window/units, `characterize`, idealised-bound labels, microwave sweep, fresh-clone reproduction, review fixes | done | 1059 passed, 1 skipped |
+| M7 Constellation | multiple satellites, scheduling, receiver capacity | not started | — |
+| M8 Optimisation/uncertainty | sweeps, constrained optimisation, sensitivity | not started | — |
+| M9 Paper package | frozen configs, figures, methods/validation notes | not started | — |
+
+## Headline results so far
+
+All numbers below are copied from the committed validation report
+(`docs/validation_report.md`, generated block, Slurm job 60127176) and from the M6 run
+summaries (`summary.json`) recorded in `docs/milestones/M6.md` and `experiments/README.md`.
+Runs: one year from 2030-01-01 UTC, hourly output, run directories under
+`$HELIOSWARM_RUNS_DIR = /n/netscratch/hekstra_lab/Lab/ian_poon/helioswarm/runs` (netscratch,
+90-day purge; regenerate with the commands above). Every design value is an **assumed**
+scenario input (the optical design is the PDF §5 schema example, which the PDF calls "not a
+recommended engineering design").
+
+| Quantity | Optical MVP | Microwave MVP |
 |---|---|---|
-| M0 Scaffold | env + lock, package layout, config schema, `validate-config`, lint/type/test, CI | implemented |
-| M1 Analytic orbit | constants, two-body elements ↔ state, Kepler propagation, invariants | implemented |
-| M2 Ephemeris geometry | SPICE kernels, UTC→TDB, ephemeris provider, L1 propagator, SRP | implemented |
-| M3 Access + light time | ground sites, Earth rotation, retarded-time targeting, occultation | implemented |
-| M4 Solar + thermal | S(r), PV efficiency law, PV and radiator thermal balance | implemented |
-| M5 Beam physics | Airy/Gaussian/Fresnel optics, microwave aperture, capture, pointing, atmosphere | implemented |
-| M6 End-to-end single satellite | link budget, system run, metrics, run outputs, CLI run/plot/sweep/validate-models, Slurm templates, optional JAX/GPU capture kernel | implemented |
-| M7 Constellation | multiple satellites, scheduling, receiver capacity | not authorised |
-| M8 Optimisation/uncertainty | sweeps, constrained optimisation, sensitivity | not authorised |
-| M9 Paper package | frozen configs, figures, methods/validation notes | not authorised |
+| Run (Slurm job) | `mvp_single_satellite/` (60110148; repeated as 60127166) | `mvp_single_satellite_microwave/` (60110151; repeated as 60127172) |
+| Design | 10 m aperture, 1 µm, 1 km laser-PV receiver | 1 km phased array, 2.45 GHz, 10 km rectenna, ITU-R p = 1 % |
+| PV power (mean) | 3.6706 MW | 3.6706 MW |
+| P_grid time mean | **1751.1 W** | **0.3145 W** |
+| P_grid median / p95 / peak | 0 / 5647 / 5937 W | 0 / 1.019 / 1.073 W |
+| Availability | 0.42209 (sky clear all year: a weather upper bound) | 0.42209 (no weather outage; ITU-R attenuation exceeded 1 % of the time applied at every epoch) |
+| Capacity factor (rated power) | 0.2970 (5895.9 W) | 0.2951 (1.0658 W) |
+| Delivered energy | 5.526e10 J = 15.35 MWh | 9.925e6 J = 2.76 kWh |
+| End-to-end efficiency E_grid/E_incident | 1.287e-4 | 2.31e-8 |
+| Expected capture when available (median) | 6.31e-3 | 3.88e-7 |
+| Outages: count / longest | 366 / 14.0 h | 366 / 14.0 h |
+
+- **Negative result:** diffraction dominates. At ~1.15 au the 10 m, 1 µm beam's first-null
+  radius is ~21 km (dark ring ~42 km across) and a 1 km receiver captures < 1 % of it; microwave power beaming from ~1 au with
+  a 1 km array delivers ~0.3 W.
+- **Sweep** (`optical_1au_sweep/`, array 60112261, repeated as 60127591, collated by 60130847;
+  45 points, all ok): 0.3 and 0.5 au deliver nothing (PV temperature 558.8 K and 430.5 K above
+  the assumed 400 K limit, so the transmitter never operates); the best point is 0.7 au,
+  D = 100 m, 10 km receiver: **604.5 kW** mean, capacity factor 0.44, end-to-end efficiency
+  0.0218. That point applies no Sun-avoidance constraint: 1.6 % of its energy arrives within 1°
+  and 14.4 % within 10° of the Sun as seen from the receiver.
+- **Sampling bias:** hourly steps alias with the diurnal cycle: availability 0.4221 at 3600 s
+  vs 0.4416 at the day-incommensurate 3896 s step (`mvp_single_satellite_step3896s/`, job
+  60110154, repeated as 60127174); delivered energy −1.2 %.
+- **Validation** (`helioswarm validate-models`, job 60127176): 37 checks, 37 passed, 0 failed,
+  0 not run; e.g. Earth–Sun state vs JPL Horizons 5.3 cm, encircled energy at the first Airy
+  dark ring 0.837784869173, REBOUND full force model 1.03 m over one year, ITU-R P.618-13
+  validation example 1.5e-7 dB (production P.676-12 gas term regression-pinned only; open item).
+
+## Reproducing from a fresh clone
+
+The definition of done (PDF §19) was checked in M6b by following only this README in a clean
+shell with a throwaway environment on netscratch; the procedure and its outcome are in
+`docs/compliance_matrix.md` ("Fresh-clone reproduction") and `docs/milestones/M6b.md`. In
+short:
+
+```bash
+git clone --branch helioswarm-m0-m6 git@github.com:extremefattypunch/Project-Dyson-Sphere.git
+cd Project-Dyson-Sphere
+source scripts/cluster_env.sh            # cluster only; then optionally the throwaway overrides above
+uv sync --locked --extra dev --extra xcheck --extra itur --extra jax
+uv run helioswarm fetch-kernels
+uv run helioswarm validate-config configs/*.yaml
+uv run helioswarm run configs/mvp_single_satellite.yaml --out $HELIOSWARM_RUNS_DIR/mvp_single_satellite
+uv run helioswarm run configs/mvp_single_satellite_microwave.yaml \
+    --out $HELIOSWARM_RUNS_DIR/mvp_single_satellite_microwave
+uv run helioswarm plot $HELIOSWARM_RUNS_DIR/mvp_single_satellite     # figures + report from saved data
+uv run pytest -q                                                      # full suite
+```
+
+The two runs reproduce the headline table above (compare `summary.json` with
+`docs/milestones/M6.md`); on the cluster run them as Slurm jobs (`slurm/run.sbatch`). The
+sweeps reproduce with the `sweep` commands in the Slurm section.
 
 ## Documentation
 
@@ -180,6 +292,8 @@ The schema follows these rules:
 - `docs/data_provenance.md`: kernels, external data and the provenance of parameter defaults.
 - `docs/validation_report.md`: tests, independent comparisons, tolerances and discrepancies.
 - `docs/milestones/`: per-milestone implementation notes (sections A–F of PDF §18).
+- `docs/compliance_matrix.md`: every PDF requirement in M0–M6 scope with its evidence and status
+  (M6b audit), including the deferred M7–M9 items and the fresh-clone reproduction.
 - `experiments/README.md`: the experiment log convention.
 
 ## Notes vault

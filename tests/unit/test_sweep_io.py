@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import math
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pyarrow.parquet as pq
 import pytest
 import yaml
@@ -19,6 +21,7 @@ from helioswarm.io import (
     resolve_run_dir,
     write_json,
 )
+from helioswarm.metrics import summarize_timeseries
 from helioswarm.sweep import (
     SWEEP_SUMMARY_FILE,
     collate_sweep,
@@ -26,6 +29,7 @@ from helioswarm.sweep import (
     points_for_task,
     prepare_sweep_dir,
 )
+from summary_helpers import INPUTS, LAYOUT1_SUMMARY, synthetic_table
 
 from config_helpers import MVP_CONFIG
 
@@ -93,16 +97,12 @@ def test_sweep_dir_and_collation_record_failures(tmp_path: Path) -> None:
     other = load_sweep(_sweep(tmp_path, {"receiver.radius_m": [7000.0]}))
     with pytest.raises(FileExistsError, match="different sweep"):
         prepare_sweep_dir(other, out)
-    summary = {
-        "p_grid_W": {"time_mean": 12.5},
-        "availability": 0.4,
-        "capacity_factor": None,
-        "capacity_factor_denominator": {
-            "rated_power_W": 0.0,
-            "reference_thermal_feasible": False,
-            "reference_power_density_abort": False,
-        },
-    }
+    # A complete, valid summary record (collation validates the layout): 12.5 W constant, rated
+    # power 0 (capacity factor undefined), reference thermally infeasible.
+    inputs = dataclasses.replace(INPUTS, rated_power_W=0.0, reference_thermal_feasible=False)
+    summary = summarize_timeseries(
+        synthetic_table(5, 10.0, grid_W=np.full(5, 12.5)), inputs
+    ).to_json_dict()
     write_json(out / "points" / "p0000" / "summary.json", summary | {"timeseries_saved": False})
     write_json(out / "points" / "p0000" / "manifest.json", {})
     write_json(
@@ -124,6 +124,19 @@ def test_sweep_dir_and_collation_record_failures(tmp_path: Path) -> None:
     assert t[1]["error"] == "BeamModelValidityError: N_F too large"
     assert [r["receiver.radius_m"] for r in t] == [1000.0, 2000.0, 3000.0, 4000.0]
     assert (out / SWEEP_SUMMARY_FILE).is_file()
+
+    # A point summary of layout helioswarm-summary/1 (written by M6, before the orbital
+    # diagnostics existed) is still collated; its three diagnostics columns are null.
+    legacy = json.loads(LAYOUT1_SUMMARY.read_text(encoding="utf-8"))
+    write_json(out / "points" / "p0002" / "summary.json", legacy)
+    write_json(out / "points" / "p0002" / "manifest.json", {})
+    (out / "points" / "p0002" / "report.md").write_text("x", encoding="utf-8")
+    t = pq.read_table(collate_sweep(plan, out)).to_pylist()
+    assert t[2]["status"] == "ok"
+    assert t[2]["availability"] == 0.0
+    for col in ("light_time_min_s", "light_time_max_s", "occultation_fraction"):
+        assert t[2][col] is None, col
+        assert t[0][col] is not None, col  # layout-2 point: present
 
 
 def test_run_dir_refuses_overwrite_and_only_replaces_run_dirs(tmp_path: Path) -> None:

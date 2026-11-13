@@ -91,6 +91,34 @@ the individual files. A new kernel set needs a new `kernel_set_id` and a schema 
 | Thread safety | `itur` keeps the selected revisions as library-global state; the wrapper holds a module lock, pins the revisions and restores the previous ones on exit. Direct `itur` calls from other threads are not protected |
 | Packaging caveats | `itur` installs a top-level package named `test` into site-packages (the Python standard library's `test` package shadows it; nothing in helioswarm imports it). `itur` emits a spurious P.676 "elevation" warning at exactly 90° (its check uses `mod(el, 90) < 5`); the wrapper records warnings in `AtmosphereResult.notes` instead of suppressing them |
 
+**Gridded data inside `itur` (PDF §14.1 "external weather-data product", M6b audit).** With
+`models.atmosphere = "itu_r"` the attenuation is computed from the ITU-R digital maps that the
+`itur` 0.4.0 wheel bundles (`itur/data/`, 169 MB measured with `du -sh`; wheel
+`itur-0.4.0-py2.py3-none-any.whl` from PyPI, SHA-256 pinned in `uv.lock`). No other weather
+data (ERA5, site statistics) is used. Grid spacings below were **measured** from the bundled
+latitude grids (`numpy.load`, unique-value spacing) for the map revisions this project pins:
+
+| Recommendation (pinned revision) | Variable used | Bundled file(s) | Grid spacing (lat × lon) | Temporal nature |
+|---|---|---|---|---|
+| P.837-7 | rainfall rate exceeded for 0.01 % of an average year R₀.₀₁; monthly mean total rainfall | `837/v7_lat_r001.npz`, `837/v7_lat_mt.npz` (+ lon, values) | 0.125° (R₀.₀₁); 0.25° (monthly totals) | long-term climatological statistics (annual exceedance; 12 monthly means) |
+| P.839-4 | mean annual 0 °C isotherm height (rain height) | `839/v4_esa0height.npz`, `v4_esalat/lon` | 1.5° | long-term annual mean |
+| P.840-7 | reduced cloud liquid water content (exceedance statistics) | `840/v7_*` | 1.125° | long-term exceedance statistics |
+| P.836-6 | surface water-vapour density / total columnar water vapour (exceedance statistics) | `836/v6_*` (topography grid `v6_topolat` 0.5°) | 1.125° | long-term exceedance statistics |
+| P.453-13 | wet term of the surface refractivity (exceedance statistics) | `453/v13_*` | 0.75° | long-term exceedance statistics |
+| P.1510-1 | mean annual surface temperature | `1510/v1_*` | 0.75° | long-term annual (and monthly) means |
+| P.1511-2 | topographic height of the Earth's surface | `1511/v2_topo.npz`, `v2_egm2008.npz` | 0.0833° (1/12°) | static |
+
+Retrieval: installed from PyPI by `uv sync --locked --extra itur` (the wheel's hash in
+`uv.lock` fixes the exact bytes; nothing is downloaded at run time). Attribution: ITU-R
+Recommendations P.453, P.618, P.676, P.836, P.837, P.839, P.840, P.1510, P.1511 (International
+Telecommunication Union, Radiocommunication Sector), as packaged by ITU-Rpy (I. del Portillo,
+MIT, https://github.com/inigodelportillo/ITU-Rpy). Licence: the wheel's `LICENSE.txt` is the
+MIT licence of the ITU-Rpy *code* (copyright 2016 I. del Portillo, MIT); it says nothing about
+the ITU digital maps, whose terms are ITU's. This project neither redistributes the maps nor
+derived gridded products; checking ITU's terms is an open item before any data product
+derived from them is published. The pinned revisions are recorded in every run manifest
+(`itu_r_versions`).
+
 M5 adds no other external data. Its reference values in tests are closed forms (Airy,
 Lommel, Fresnel on-axis, non-central χ²), the zero j₁,₁ = 3.8317059702 (Abramowitz & Stegun
 Table 9.5, equal to `scipy.special.jn_zeros`), Kasten & Young (1989, Appl. Opt. 28, 4735) for
@@ -110,6 +138,8 @@ M6 adds no external data set. Provenance of what it uses or produces:
 | JAX (optional `jax` / `gpu` extras) | `jax` / `jaxlib` 0.12.0.1 from PyPI (Apache-2.0), pinned in `uv.lock`, Python ≥ 3.12 only. The `gpu` extra adds `jax-cuda12-plugin`/`jax-cuda12-pjrt` and the NVIDIA CUDA 12 runtime wheels (`nvidia-*`, ~4.4 GB; project environment total 6.0 GB on holylabs, checked with `du`; nothing written to `$HOME`). Used only by `helioswarm.capture_batch` and the GPU benchmark (`slurm/gpu_bench.sbatch`). |
 | Microwave MVP scenario values | `configs/mvp_single_satellite_microwave.yaml`: every transmitter/receiver value is **assumed** (documented in the file header); 2.45 GHz is the PDF §2 illustrative carrier. |
 | Sweep values | `configs/optical_1au_sweep.yaml`: heliocentric radii and receiver radii from the PDF §2 scenario table; aperture diameters 10 m (PDF §5 example), 30 m and 100 m (assumed); relabelled `swept` per point. |
+| Microwave sweep values (M6b) | `configs/microwave_1au_sweep.yaml`: heliocentric radii from the PDF §2 scenario table; phased-array diameters 1 km (the microwave MVP), 3 km and 10 km (assumed, deliberately generous); relabelled `swept` per point. |
+| Characterisation grids (M6b) | `helioswarm characterize` defaults: 0.3–1.2 au in 0.05 au steps (contains the PDF §2 radii), receiver radii 1/5/10 km (PDF §2) plus the configured one, pointing sigmas 0–1 × λ/D and wavefront errors 0–0.2 λ plus the configured values (assumed grid choices); the capture curves' link range and elevation are explicit inputs written to `characterization.json`. |
 
 ## Sourced constants and defaults
 

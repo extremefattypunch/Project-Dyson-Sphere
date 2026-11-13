@@ -9,12 +9,16 @@ Figures: ``orbit_access.png`` (orbit, Earth range, elevation and access), ``sola
 (PV power, temperatures, radiator area), ``beam_capture.png`` (expected / perfect-pointing
 capture, pointing percentile band, pointing efficiency, Fresnel number), ``power_stages.png``
 (stage-energy waterfall and ``P_grid(t)``), ``unavailability.png`` (time fractions by primary
-reason) and ``composite.png`` (all panels on one page).
+reason) and ``composite.png`` (all panels on one page). Idealised settings of the run
+(:func:`helioswarm.config.idealised_settings`, :func:`idealised_note`) are named on the
+power-stage and composite figures and on the ``characterize`` power/thermal and capture
+figures, and the beam figures carry the scalar-diffraction upper-bound note (PDF §13.4).
 """
 
 from __future__ import annotations
 
 import math
+import textwrap
 from pathlib import Path
 from typing import Any, Final
 
@@ -23,7 +27,7 @@ from matplotlib.axes import Axes
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 
-from helioswarm.config import RunConfig, load_config
+from helioswarm.config import RunConfig, idealised_settings, load_config
 from helioswarm.constants import AU_M
 from helioswarm.link_budget import STAGE_COLUMNS
 from helioswarm.system import BLOCKING_REASONS
@@ -46,13 +50,34 @@ UPPER_BOUND_NOTE: Final[str] = (
 _DPI: Final[int] = 110
 
 
+def idealised_note(config: RunConfig, width: int = 180) -> str:
+    """Figure label naming every idealised setting of ``config`` (PDF §13.4).
+
+    The effects of :func:`helioswarm.config.idealised_settings`, joined with ``"; "`` and
+    wrapped at ``width`` characters (whitespace only, so each effect stays readable).
+    """
+    ideal = idealised_settings(config)
+    text = (
+        "Idealised (upper-bound) settings: " + "; ".join(i.effect for i in ideal)
+        if ideal
+        else "No idealised stage or constraint settings"
+    )
+    return textwrap.fill(text, width=width, break_on_hyphens=False, break_long_words=False)
+
+
+def _num(value: float | None) -> float:
+    """``value``, or NaN for an undefined (``None``) summary entry."""
+    return math.nan if value is None else value
+
+
 class _RunData:
     """Columns, summary and configuration of one saved run (read-only)."""
 
     def __init__(self, run_dir: Path) -> None:
         import pyarrow.parquet as pq
 
-        from helioswarm.io import CONFIG_FILE, SUMMARY_FILE, TIMESERIES_FILE, read_json
+        from helioswarm.io import CONFIG_FILE, SUMMARY_FILE, TIMESERIES_FILE
+        from helioswarm.metrics import RunSummary, read_summary
 
         self.run_dir = run_dir
         table = pq.read_table(run_dir / TIMESERIES_FILE)
@@ -60,14 +85,15 @@ class _RunData:
             name: np.asarray(table.column(name).to_numpy(zero_copy_only=False))
             for name in table.column_names
         }
-        self.summary: dict[str, Any] = read_json(run_dir / SUMMARY_FILE)
+        self.summary: RunSummary = read_summary(run_dir / SUMMARY_FILE)
         self.config: RunConfig = load_config(run_dir / CONFIG_FILE)
         self.days = self.cols["elapsed_s"] / 86400.0
         self.label = (
-            f"{self.config.project.name} | config {self.summary['config_hash'][:12]} | "
+            f"{self.config.project.name} | config {self.summary.config_hash[:12]} | "
             f"start {self.config.time.start_utc} UTC, step {self.config.time.output_step_s:g} s"
             " | from saved run data"
         )
+        self.idealised_note = idealised_note(self.config)
 
     def col(self, name: str) -> np.ndarray[Any, Any]:
         return self.cols[name]
@@ -103,7 +129,7 @@ def _orbit_panels(rd: _RunData, ax_xy: Axes, ax_r: Axes, ax_el: Axes) -> None:
     ax_el.set_xlabel("time since start [d]")
     ax_el.set_ylabel("elevation [deg]")
     ax_el.legend(fontsize=7, loc="lower right")
-    ax_el.set_title(f"Access fraction {rd.summary['diurnal_aliasing']['access_fraction']:.4f}")
+    ax_el.set_title(f"Access fraction {rd.summary.diurnal_aliasing.access_fraction:.4f}")
 
 
 def _solar_panels(rd: _RunData, ax_p: Axes, ax_t: Axes) -> None:
@@ -113,7 +139,15 @@ def _solar_panels(rd: _RunData, ax_p: Axes, ax_t: Axes) -> None:
     ax_p.set_xlabel("time since start [d]")
     ax_p.set_ylabel("power [MW]")
     ax_p.legend(fontsize=7)
-    ax_p.set_title("Solar collection (M4)")
+    ax_p.set_title(
+        "Solar collection (M4)"
+        + (
+            "; sun-tracking = optimistic bound"
+            if rd.config.collector.incidence_mode == "sun_tracking"
+            else ""
+        ),
+        fontsize=8,
+    )
     ax_t.plot(rd.days, rd.col("pv_temperature_K"), label="PV temperature")
     ax_t.axhline(
         rd.config.collector.max_operating_temperature_K, color="r", lw=0.8, label="PV limit"
@@ -121,8 +155,8 @@ def _solar_panels(rd: _RunData, ax_p: Axes, ax_t: Axes) -> None:
     ax_t.set_xlabel("time since start [d]")
     ax_t.set_ylabel("temperature [K]")
     ax_t.set_title(
-        f"Thermal: radiator area max {rd.summary['thermal']['radiator_area_m2_max']:.4g} m^2, "
-        f"feasible {rd.summary['thermal']['feasible_time_fraction']:.3f}",
+        f"Thermal: radiator area max {rd.summary.thermal.radiator_area_m2_max:.4g} m^2, "
+        f"feasible {rd.summary.thermal.feasible_time_fraction:.3f}",
         fontsize=8,
     )
     ax_t.legend(fontsize=7)
@@ -156,7 +190,7 @@ def _beam_panels(rd: _RunData, ax_c: Axes, ax_pe: Axes) -> None:
 
 
 def _power_panels(rd: _RunData, ax_w: Axes, ax_g: Axes) -> None:
-    energy = rd.summary["stage_energy_J"]
+    energy = rd.summary.stage_energy_J
     names = [sym for sym, _ in STAGE_COLUMNS]
     vals = np.array([energy[attr.replace("_W", "_J")] for _, attr in STAGE_COLUMNS]) / 3.6e9
     pos = np.where(vals > 0.0, vals, np.nan)
@@ -170,19 +204,19 @@ def _power_panels(rd: _RunData, ax_w: Axes, ax_g: Axes) -> None:
     ax_g.set_xlabel("time since start [d]")
     ax_g.set_ylabel("P_grid [kW]")
     s = rd.summary
-    cf = s["capacity_factor"]
+    cf = s.capacity_factor
     ax_g.set_title(
-        f"P_grid(t): mean {s['p_grid_W']['time_mean'] / 1e3:.4g} kW, availability "
-        f"{s['availability']:.3f}, CF {'n/a' if cf is None else f'{cf:.3f}'}",
+        f"P_grid(t): mean {_num(s.p_grid_W.time_mean) / 1e3:.4g} kW, availability "
+        f"{s.availability:.3f}, CF {'n/a' if cf is None else f'{cf:.3f}'}",
         fontsize=8,
     )
 
 
 def _unavail_panel(rd: _RunData, ax: Axes) -> None:
-    blocking = rd.summary["unavailability"]["blocking"]
+    blocking = rd.summary.unavailability.blocking
     names = [str(r.name) for r in BLOCKING_REASONS]
-    prim = [blocking[n]["time_fraction_primary"] for n in names]
-    flagged = [blocking[n]["time_fraction_flagged"] for n in names]
+    prim = [blocking[n].time_fraction_primary for n in names]
+    flagged = [blocking[n].time_fraction_flagged for n in names]
     y = np.arange(len(names))
     ax.barh(y - 0.2, prim, height=0.4, label="primary reason")
     ax.barh(y + 0.2, flagged, height=0.4, label="flagged (overlapping)")
@@ -191,7 +225,7 @@ def _unavail_panel(rd: _RunData, ax: Axes) -> None:
     ax.set_xlabel("time fraction")
     ax.set_xlim(0.0, 1.0)
     ax.legend(fontsize=7)
-    ax.set_title(f"Unavailability (availability {rd.summary['availability']:.3f})")
+    ax.set_title(f"Unavailability (availability {rd.summary.availability:.3f})")
 
 
 def make_figures(run_dir: Path | str) -> tuple[Path, ...]:
@@ -224,7 +258,7 @@ def make_figures(run_dir: Path | str) -> tuple[Path, ...]:
     fig = Figure(figsize=(10, 4))
     axs = fig.subplots(1, 2)
     _power_panels(rd, axs[0], axs[1])
-    fig.suptitle(rd.label, fontsize=8)
+    fig.suptitle(rd.label + "\n" + rd.idealised_note, fontsize=6)
     fig.tight_layout()
     paths.append(_save(fig, out_dir / "power_stages.png"))
 
@@ -244,24 +278,147 @@ def make_figures(run_dir: Path | str) -> tuple[Path, ...]:
     axs[2, 2].axis("off")
     s = rd.summary
     text = [
-        f"P_grid mean {s['p_grid_W']['time_mean']:.4g} W",
-        f"median {s['p_grid_W']['median']:.4g} W, p95 {s['p_grid_W']['p95']:.4g} W",
-        f"peak {s['p_grid_W']['peak']:.4g} W",
-        f"availability {s['availability']:.4f}",
-        f"delivered energy {s['delivered_energy_J'] / 3.6e9:.4g} MWh",
-        f"end-to-end efficiency {s['end_to_end_efficiency']['energy_ratio'] or 0.0:.3e}",
-        f"outages {s['outages']['count']}, longest {s['outages']['longest_s'] / 3600:.1f} h",
-        f"diurnal gap {math.degrees(s['diurnal_aliasing']['hour_angle_max_gap_rad']):.2f} deg"
-        + (" (ALIASING WARNING)" if s["diurnal_aliasing"]["warning"] else ""),
+        f"P_grid mean {_num(s.p_grid_W.time_mean):.4g} W",
+        f"median {s.p_grid_W.median:.4g} W, p95 {s.p_grid_W.p95:.4g} W",
+        f"peak {s.p_grid_W.peak:.4g} W",
+        f"availability {s.availability:.4f}",
+        f"delivered energy {s.delivered_energy_J / 3.6e9:.4g} MWh",
+        f"end-to-end efficiency {_num(s.end_to_end_efficiency.energy_ratio):.3e}",
+        f"outages {s.outages.count}, longest {s.outages.longest_s / 3600:.1f} h",
+        f"diurnal gap {math.degrees(s.diurnal_aliasing.hour_angle_max_gap_rad):.2f} deg"
+        + (" (ALIASING WARNING)" if s.diurnal_aliasing.warning else ""),
     ]
     axs[2, 2].text(0.0, 1.0, "\n".join(text), va="top", fontsize=10, family="monospace")
     _power_panels(rd, axs[3, 0], axs[3, 1])
     axs[3, 2].axis("off")
-    axs[3, 2].text(0.0, 1.0, UPPER_BOUND_NOTE, va="top", fontsize=8, wrap=True)
+    axs[3, 2].text(
+        0.0, 1.0, UPPER_BOUND_NOTE + ".\n" + rd.idealised_note, va="top", fontsize=7, wrap=True
+    )
     fig.suptitle(rd.label, fontsize=9)
     fig.tight_layout()
     paths.append(_save(fig, out_dir / "composite.png"))
     return tuple(paths)
 
 
-__all__ = ["FIGURE_FILES", "UPPER_BOUND_NOTE", "make_figures"]
+CHARACTERIZATION_FIGURE_FILES: Final[tuple[str, ...]] = (
+    "power_thermal_vs_distance.png",
+    "capture_vs_pointing.png",
+    "capture_vs_wavefront.png",
+)
+"""Files written by :func:`make_characterization_figures` into ``figures/``."""
+
+
+def make_characterization_figures(out_dir: Path | str) -> tuple[Path, ...]:
+    """Draw the ``helioswarm characterize`` figures from the saved Parquet files only.
+
+    Reads ``power_thermal_vs_distance.parquet``, ``capture_vs_pointing.parquet``,
+    ``capture_vs_wavefront.parquet``, ``characterization.json`` and ``config_resolved.yaml``
+    of ``out_dir`` (PDF §13.4: figures from saved data, stating their configuration).
+    """
+    import pyarrow.parquet as pq
+
+    from helioswarm.characterize import (
+        CAPTURE_POINTING_FILE,
+        CAPTURE_WAVEFRONT_FILE,
+        METADATA_FILE,
+        POWER_THERMAL_FILE,
+    )
+    from helioswarm.io import read_json
+
+    d = Path(out_dir)
+    meta = read_json(d / METADATA_FILE)
+    cfg = load_config(d / "config_resolved.yaml")
+    geo = meta["link_geometry"]
+    label = (
+        f"{cfg.project.name} | config {meta['config_hash'][:12]} | from saved characterization"
+        f" data | {meta['collector_condition']}"
+    )
+    paths: list[Path] = []
+
+    def cols(name: str) -> dict[str, np.ndarray[Any, Any]]:
+        t = pq.read_table(d / name)
+        return {c: np.asarray(t.column(c).to_numpy(zero_copy_only=False)) for c in t.column_names}
+
+    pt = cols(POWER_THERMAL_FILE)
+    fig = Figure(figsize=(13, 7.5))
+    axs = fig.subplots(2, 3)
+    for eta in np.unique(pt["eta_electrical_to_beam"]):
+        m = pt["eta_electrical_to_beam"] == eta
+        r_au = pt["sun_distance_m"][m] / AU_M
+        tag = f"eta_e2b {eta:.3g}"
+        axs[0, 0].plot(r_au, pt["flux_W_m2"][m], label=tag)
+        axs[0, 1].plot(r_au, pt["pv_electric_W"][m] / 1e6, label=f"P_PV, {tag}")
+        axs[0, 1].plot(r_au, pt["dc_to_tx_W"][m] / 1e6, ls="--", label=f"P_dc_to_tx, {tag}")
+        axs[0, 2].plot(r_au, pt["pv_efficiency"][m], label=tag)
+        axs[1, 0].plot(r_au, pt["pv_temperature_K"][m], label=tag)
+        axs[1, 1].plot(r_au, pt["waste_heat_W"][m] / 1e6, label=f"Q_waste, {tag}")
+        axs[1, 2].plot(r_au, pt["radiator_area_m2"][m], label=tag)
+        bad = m & ~pt["thermal_feasible"].astype(bool)
+        axs[1, 0].plot(pt["sun_distance_m"][bad] / AU_M, pt["pv_temperature_K"][bad], "rx", ms=5)
+    axs[1, 0].axhline(cfg.collector.max_operating_temperature_K, color="r", lw=0.8)
+    titles = (
+        ("Solar flux S(r) [W/m^2]", "Collector power [MW]", "PV efficiency eta_PV(T)"),
+        (
+            "PV temperature [K] (x: thermally infeasible; red: limit)",
+            "Radiator waste heat [MW]",
+            "Required radiator area [m^2]",
+        ),
+    )
+    for i in range(2):
+        for j in range(3):
+            axs[i, j].set_title(titles[i][j], fontsize=8)
+            axs[i, j].set_xlabel("heliocentric distance [au]")
+            axs[i, j].legend(fontsize=6)
+    fig.suptitle(label + "\nPDF §8.4 curves\n" + idealised_note(cfg, width=230), fontsize=6)
+    fig.tight_layout()
+    paths.append(_save(fig, d / "figures" / CHARACTERIZATION_FIGURE_FILES[0]))
+
+    cp = cols(CAPTURE_POINTING_FILE)
+    fig = Figure(figsize=(11, 4.5))
+    ax_c, ax_p = fig.subplots(1, 2)
+    for a in np.unique(cp["receiver_radius_m"]):
+        m = cp["receiver_radius_m"] == a
+        x = cp["pointing_sigma_over_diffraction"][m]
+        ax_c.plot(x, cp["capture"][m], "o-", ms=3, label=f"receiver radius {a:.4g} m")
+        ax_c.fill_between(x, cp["capture_p05"][m], cp["capture_p95"][m], alpha=0.15)
+        ax_p.plot(x, cp["pointing_efficiency"][m], "o-", ms=3, label=f"{a:.4g} m")
+    ax_c.set_xlabel("pointing sigma / (lambda/D)")
+    ax_c.set_ylabel("expected capture (band: p05-p95)")
+    ax_c.set_yscale("log")
+    ax_c.legend(fontsize=6)
+    ax_p.set_xlabel("pointing sigma / (lambda/D)")
+    ax_p.set_ylabel("E[capture] / capture(perfect pointing)")
+    ax_p.legend(fontsize=6)
+    fig.suptitle(
+        f"{label}\nPDF §9.5: capture vs pointing sigma and receiver radius at R = "
+        f"{geo['range_m'] / AU_M:.4g} au, elevation {math.degrees(geo['elevation_rad']):.3g} deg, "
+        f"N_F = {geo['fresnel_number']:.3g}; {UPPER_BOUND_NOTE}\n" + idealised_note(cfg, width=200),
+        fontsize=5,
+    )
+    fig.tight_layout()
+    paths.append(_save(fig, d / "figures" / CHARACTERIZATION_FIGURE_FILES[1]))
+
+    cw = cols(CAPTURE_WAVEFRONT_FILE)
+    fig = Figure(figsize=(6, 4.5))
+    ax = fig.subplots(1, 1)
+    ax.plot(cw["phase_rms_rad"], cw["capture"], "o-", ms=3, label="expected capture")
+    ax2 = ax.twinx()
+    ax2.plot(cw["phase_rms_rad"], cw["wavefront_efficiency"], "s--", ms=3, color="0.5")
+    ax2.set_ylabel("Ruze/Strehl factor exp(-phi_rms^2)", fontsize=7)
+    ax.set_xlabel("RMS phase error 2 pi sigma_w / lambda [rad]")
+    ax.set_ylabel("expected capture")
+    ax.legend(fontsize=6)
+    fig.suptitle(label + "\nCapture vs wavefront (phase) error", fontsize=5)
+    fig.tight_layout()
+    paths.append(_save(fig, d / "figures" / CHARACTERIZATION_FIGURE_FILES[2]))
+    return tuple(paths)
+
+
+__all__ = [
+    "CHARACTERIZATION_FIGURE_FILES",
+    "FIGURE_FILES",
+    "UPPER_BOUND_NOTE",
+    "idealised_note",
+    "make_characterization_figures",
+    "make_figures",
+]

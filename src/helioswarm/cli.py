@@ -4,10 +4,11 @@ Implemented subcommands (later milestones add more; none exist as placeholders).
 follow one convention: 0 success, 1 invalid input or failure, 2 command-line usage error
 (argparse).
 
-``helioswarm validate-config CONFIG [--show-provenance] [--write-resolved PATH]``
-    Validate a run configuration, or a sweep file (recognised by its ``sweep_schema_version``
-    key; every grid point is validated as a full configuration, nothing runs). Exit code 0 if
-    valid, 1 if invalid or unreadable.
+``helioswarm validate-config CONFIG [CONFIG ...] [--show-provenance] [--write-resolved PATH]``
+    Validate run configurations and/or sweep files, each one in turn (the provenance and
+    resolved-dump options take a single CONFIG). A sweep file is recognised by its
+    ``sweep_schema_version`` key; every grid point is validated as a full configuration and
+    nothing runs. Exit code 0 if every file is valid, 1 if any is invalid or unreadable.
 
 ``helioswarm run CONFIG [--out DIR] [--overwrite] [--backend numpy|jax] [--kernel-dir DIR]``
     End-to-end single-satellite run into a run directory (``helioswarm.io``). Exit code 0 on
@@ -25,6 +26,14 @@ follow one convention: 0 success, 1 invalid input or failure, 2 command-line usa
 ``helioswarm validate-models --report PATH [--quick] [--base-config CONFIG]``
     Programmatic validation checks (``helioswarm.validation``); writes the generated block of
     the report. Exit code 0 if every check passed, 1 if any failed or did not run.
+
+``helioswarm characterize CONFIG --out DIR [--overwrite] [--range-au R] [--elevation-deg E]
+[--radii-au ...] [--electrical-to-beam-efficiency ...] [--receiver-radii-m ...]
+[--pointing-sigmas-rad ...]``
+    Response curves of one configuration (``helioswarm.characterize``; PDF §8.4, §9.5): solar,
+    PV, thermal and radiator quantities versus heliocentric distance and transmitter operating
+    point; beam capture versus pointing sigma, receiver radius and wavefront error at one stated
+    link geometry. No kernels needed. Exit code 0 on success, 1 on an error.
 
 ``helioswarm fetch-kernels [--manifest PATH] [--kernel-dir DIR]``
     Download the SPICE kernels listed in ``data/kernels/kernels.json`` into the kernel
@@ -55,6 +64,7 @@ from helioswarm.kernels import KernelError, KernelSet, fetch_kernels
 
 EXIT_OK = 0
 EXIT_INVALID = 1
+EXIT_USAGE = 2
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -72,7 +82,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "sweep file (sweep_schema_version; every point validated, nothing runs). "
         "Exit status: 0 valid, 1 invalid, 2 usage error.",
     )
-    validate.add_argument("config", metavar="CONFIG", help="path to the YAML configuration")
+    validate.add_argument(
+        "config",
+        metavar="CONFIG",
+        nargs="+",
+        help="path(s) to YAML configurations or sweep files (each validated; exit 1 if any fails)",
+    )
     validate.add_argument(
         "--show-provenance",
         action="store_true",
@@ -169,6 +184,58 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     val.add_argument("--quick", action="store_true", help="skip the slow convergence checks")
     val.add_argument("--kernel-dir", metavar="DIR", default=None, help="SPICE kernel directory")
+
+    char = sub.add_parser(
+        "characterize",
+        help="response curves of one configuration (PDF §8.4, §9.5)",
+        description="Evaluate the solar/thermal model versus heliocentric distance and "
+        "transmitter operating point, and the beam capture versus pointing sigma, receiver "
+        "radius and wavefront error at one stated link geometry; write Parquet tables, "
+        "metadata and figures drawn from them. No kernels needed. Exit status: 0 ok, 1 error.",
+    )
+    char.add_argument("config", metavar="CONFIG", help="path to the YAML configuration")
+    char.add_argument("--out", metavar="DIR", required=True, help="output directory")
+    char.add_argument("--overwrite", action="store_true", help="replace an existing output")
+    char.add_argument(
+        "--range-au",
+        type=float,
+        default=1.0,
+        help="link range of the capture curves [au] (scenario input; default 1)",
+    )
+    char.add_argument(
+        "--elevation-deg",
+        type=float,
+        default=90.0,
+        help="beam elevation at the receiver of the capture curves [deg] (default 90)",
+    )
+    char.add_argument(
+        "--radii-au",
+        type=float,
+        nargs="+",
+        default=None,
+        help="heliocentric distances [au] (default 0.3-1.2 in 0.05 steps)",
+    )
+    char.add_argument(
+        "--electrical-to-beam-efficiency",
+        type=float,
+        nargs="+",
+        default=None,
+        help="transmitter operating points eta_electrical_to_beam (default: configured)",
+    )
+    char.add_argument(
+        "--receiver-radii-m",
+        type=float,
+        nargs="+",
+        default=None,
+        help="receiver radii [m] (default 1, 5, 10 km plus the configured radius)",
+    )
+    char.add_argument(
+        "--pointing-sigmas-rad",
+        type=float,
+        nargs="+",
+        default=None,
+        help="per-axis pointing sigmas [rad] (default 0-1 x lambda/D plus the configured one)",
+    )
     return parser
 
 
@@ -202,19 +269,20 @@ def _cmd_run(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
         err.write(f"ERROR: {type(exc).__name__}: {exc}\n")
         return EXIT_INVALID
     s = res.summary
-    cf = s["capacity_factor"]
+    cf = s.capacity_factor
+    mean = s.p_grid_W.time_mean
     out.write(
         f"OK: run written to {res.run_dir}\n"
-        f"  P_grid mean {s['p_grid_W']['time_mean']:.6g} W, median {s['p_grid_W']['median']:.6g} W,"
-        f" peak {s['p_grid_W']['peak']:.6g} W\n"
-        f"  availability {s['availability']:.6g}, capacity factor "
+        f"  P_grid mean {'n/a' if mean is None else f'{mean:.6g}'} W, median "
+        f"{s.p_grid_W.median:.6g} W, peak {s.p_grid_W.peak:.6g} W\n"
+        f"  availability {s.availability:.6g}, capacity factor "
         f"{'n/a' if cf is None else f'{cf:.6g}'}, delivered energy "
-        f"{s['delivered_energy_J']:.6g} J\n"
+        f"{s.delivered_energy_J:.6g} J\n"
     )
-    if s["diurnal_aliasing"]["warning"]:
+    if s.diurnal_aliasing.warning:
         out.write(
             "  WARNING: diurnal aliasing (hour-angle gap "
-            f"{s['diurnal_aliasing']['hour_angle_max_gap_rad']:.4g} rad); see logs/run.log\n"
+            f"{s.diurnal_aliasing.hour_angle_max_gap_rad:.4g} rad); see logs/run.log\n"
         )
     return EXIT_OK
 
@@ -227,7 +295,7 @@ def _cmd_plot(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
     try:
         paths = make_figures(run_dir)
         report = write_report(run_dir)
-    except (OSError, KeyError, ConfigError) as exc:
+    except (OSError, KeyError, ValueError, ConfigError) as exc:
         err.write(f"ERROR: cannot plot {run_dir}: {exc}\n")
         return EXIT_INVALID
     out.write(f"OK: {len(paths)} figures and {report.name} regenerated in {run_dir}\n")
@@ -410,6 +478,21 @@ def _cmd_validate_sweep(args: argparse.Namespace, out: TextIO, err: TextIO) -> i
 
 
 def _cmd_validate_config(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
+    paths: list[str] = list(args.config)
+    if len(paths) > 1 and (args.show_provenance or args.write_resolved):
+        err.write(
+            "ERROR: --show-provenance/--write-resolved take exactly one CONFIG "
+            f"({len(paths)} given)\n"
+        )
+        return EXIT_USAGE  # a command-line usage error (module convention), not invalid input
+    worst = EXIT_OK
+    for path in paths:
+        one = argparse.Namespace(**{**vars(args), "config": path})
+        worst = max(worst, _validate_one_config(one, out, err))
+    return worst
+
+
+def _validate_one_config(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
     if _is_sweep_file(args.config):
         return _cmd_validate_sweep(args, out, err)
     try:
@@ -433,6 +516,45 @@ def _cmd_validate_config(args: argparse.Namespace, out: TextIO, err: TextIO) -> 
     return EXIT_OK
 
 
+def _cmd_characterize(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
+    import math
+
+    from helioswarm.aperture import BeamModelValidityError
+    from helioswarm.characterize import METADATA_FILE, LinkGeometry, write_characterization
+    from helioswarm.constants import AU_M
+    from helioswarm.io import RunDirectoryError, prepare_run_dir
+
+    try:
+        config = load_config(args.config)
+    except ConfigError as exc:
+        err.write(f"ERROR: {exc.format()}\n")
+        return EXIT_INVALID
+    try:
+        geometry = LinkGeometry(
+            range_m=args.range_au * AU_M, elevation_rad=math.radians(args.elevation_deg)
+        )
+        out_dir = prepare_run_dir(
+            Path(args.out), overwrite=args.overwrite, markers=(METADATA_FILE,)
+        )
+        res = write_characterization(
+            config,
+            out_dir,
+            geometry=geometry,
+            sun_distance_m=None if args.radii_au is None else [r * AU_M for r in args.radii_au],
+            electrical_to_beam_efficiencies=args.electrical_to_beam_efficiency,
+            receiver_radius_m=args.receiver_radii_m,
+            pointing_sigma_rad=args.pointing_sigmas_rad,
+        )
+    except (RunDirectoryError, BeamModelValidityError, OSError, ValueError) as exc:
+        err.write(f"ERROR: {type(exc).__name__}: {exc}\n")
+        return EXIT_INVALID
+    out.write(
+        f"OK: characterization written to {res.out_dir} ({len(res.files)} files, "
+        f"{len(res.figures)} figures)\n"
+    )
+    return EXIT_OK
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point of the ``helioswarm`` console script; returns the process exit code."""
     parser = _build_parser()
@@ -450,6 +572,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_sweep(args, sys.stdout, sys.stderr)
     if command == "validate-models":
         return _cmd_validate_models(args, sys.stdout, sys.stderr)
+    if command == "characterize":
+        return _cmd_characterize(args, sys.stdout, sys.stderr)
     parser.error(f"unknown command {command!r}")  # argparse already rejects unknown commands
 
 

@@ -352,7 +352,27 @@ def test_satellite_initial_state_closed_form_with_analytic_sun() -> None:
     )
     assert (st.state.frame, st.state.origin, st.epoch_tdb_s) == ("J2000", SSB, 1000.0)
     assert st.mass_kg is None
-    assert st.attitude == "sun_facing"
+    # PDF p.4 "attitude/normal vector": sun-tracking normal points from the satellite to the
+    # Sun's centre, i.e. -rot @ (cos 30, sin 30, 0) in J2000 (closed form above).
+    assert st.attitude == "sun_tracking"
+    assert st.collector_normal_unit is not None
+    np.testing.assert_allclose(st.collector_normal_unit, -(rot @ [c, s, 0.0]), rtol=0, atol=1e-15)
+    to_sun = sun.position_m - st.position_m
+    np.testing.assert_allclose(
+        st.collector_normal_unit, to_sun / np.linalg.norm(to_sun), rtol=0, atol=1e-12
+    )
+    fixed = satellite_initial_state(
+        cfg.orbit, cfg.constants, epoch_tdb_s=1000.0, ephemeris=eph,
+        attitude="fixed_normal", fixed_normal_unit_j2000=(0.0, 0.6, 0.8),
+    )  # fmt: skip
+    assert (fixed.attitude, fixed.collector_normal_unit) == ("fixed_normal", (0.0, 0.6, 0.8))
+    np.testing.assert_array_equal(fixed.position_m, st.position_m)  # attitude leaves the orbit
+    with pytest.raises(ValueError, match="requires fixed_normal_unit_j2000"):
+        satellite_initial_state(cfg.orbit, cfg.constants, epoch_tdb_s=1000.0, ephemeris=eph,
+                                attitude="fixed_normal")  # fmt: skip
+    with pytest.raises(ValueError, match="unit 3-vector"):
+        SatelliteState(state=st.state, force_model=st.force_model,
+                       collector_normal_unit=(0.0, 0.0, 2.0))  # fmt: skip
 
 
 # ---------------------------------------------------------------------------------------------
@@ -391,6 +411,32 @@ def test_initial_state_from_mvp_config_in_j2000_ssb(spice_kernels: LoadedKernels
     assert np.linalg.norm(sun.position_m) > 5e7
     assert st.force_model.srp is not None
     assert len(st.force_model.bodies) == 10
+    # Attitude from collector.incidence_mode (sun_tracking in the MVP): normal = -r/|r|.
+    assert st.attitude == "sun_tracking"
+    np.testing.assert_allclose(st.collector_normal_unit, -r / AU_M, rtol=0, atol=1e-15)
+
+
+@pytest.mark.spice
+def test_fixed_normal_config_reaches_the_satellite_state(spice_kernels: LoadedKernels) -> None:
+    # PDF p.4 SatelliteState "attitude/normal vector" from the configuration: a fixed-normal
+    # collector must arrive in the state (the M6b fix; sun_tracking is also the default of
+    # satellite_initial_state, so the MVP test alone cannot detect a dropped argument). The
+    # attitude does not enter the radial SRP force, so the position is unchanged.
+    from helioswarm.config import parse_config
+
+    from config_helpers import load_mvp_data, set_path
+
+    data = load_mvp_data()
+    set_path(data, "collector.incidence_mode", "fixed_normal")
+    set_path(data, "collector.fixed_normal_unit_j2000", [0.0, 0.6, 0.8])
+    eph = SpiceEphemeris(spice_kernels)
+    st = initial_state_from_config(parse_config(data), eph, spice_kernels)
+    assert st.attitude == "fixed_normal"
+    assert tuple(st.collector_normal_unit) == (0.0, 0.6, 0.8)
+    ref = initial_state_from_config(load_config(MVP_CONFIG), eph, spice_kernels)
+    assert ref.attitude == "sun_tracking"
+    np.testing.assert_array_equal(st.position_m, ref.position_m)
+    np.testing.assert_array_equal(st.velocity_m_s, ref.velocity_m_s)
 
 
 @pytest.mark.spice

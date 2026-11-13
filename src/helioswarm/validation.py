@@ -772,8 +772,7 @@ def _c_e2e_baseline(ctx: ValidationContext) -> _Outcome:
             "figures", "logs", "report.md"}  # fmt: skip
     ok = need.issubset(files) and figs == 6
     return _Outcome(
-        f"outputs {files}; {figs} figures; mean P_grid "
-        f"{out.summary['p_grid_W']['time_mean']:.4g} W",
+        f"outputs {files}; {figs} figures; mean P_grid {out.summary.p_grid_W.time_mean:.4g} W",
         "config -> resolved config, manifest, timeseries, summary, figures, report, log",
         "all present",
         ok,

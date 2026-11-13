@@ -12,7 +12,9 @@
 # has left the queue (or use -p shared for wider arrays). Sizing (measured, arrays 60112261 and
 # 60127591, 9 points per task): 11.8-14.8 min wall, peak RSS 436-489 MB, CPU efficiency 97-98 %
 # -> 1 core, 560 MB (489 MB + 10 %), 17 min. The COLLATE_ONLY job needs ~2 min and 512 MB (pass
-# -t 0-00:02 --mem=512M).
+# -t 0-00:02 --mem=512M). Microwave sweeps need more memory (ITU-R maps): configs/microwave_1au_sweep.yaml
+# as 5 tasks of 3 points (array 60141210, M6b) took 2:13-2:17 wall with peak RSS 632-704 MB, so
+# submit it with --mem=768M -t 0-00:12 (README).
 #SBATCH -J helioswarm-sweep
 #SBATCH -p test
 #SBATCH -c 1

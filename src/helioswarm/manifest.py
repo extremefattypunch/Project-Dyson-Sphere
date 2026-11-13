@@ -24,10 +24,10 @@ from pathlib import Path
 from typing import Any, Final
 
 from helioswarm import __version__
-from helioswarm.config import SCHEMA_VERSION
+from helioswarm.config import SCHEMA_VERSION, approximations_in_force
 from helioswarm.system import SystemRunResult
 
-MANIFEST_SCHEMA: Final[str] = "helioswarm-run-manifest/1"
+MANIFEST_SCHEMA: Final[str] = "helioswarm-run-manifest/2"
 """Version tag of the manifest.json layout."""
 
 RECORDED_PACKAGES: Final[tuple[str, ...]] = (
@@ -53,6 +53,12 @@ TIME_SCALE_NOTE: Final[str] = (
     "are converted once with SPICE str2et (naif0012.tls leap seconds); UTC and TDB are never "
     "mixed implicitly. Output epochs are satellite emission epochs t_emit; arrival epochs "
     "t_arrival = t_emit + light time are stored alongside."
+)
+UNITS_NOTE: Final[str] = (
+    "SI internally and in every output file: m, s, kg, W, J, rad, K (dimensionless ratios "
+    "unsuffixed); every quantity name carries its unit suffix. Astronomical units, degrees, "
+    "days and dB appear only in configuration field names that say so and are converted at the "
+    "configuration boundary."
 )
 FRAME_NOTE: Final[str] = (
     "Inertial frame J2000 (ICRF-aligned), origin SOLAR SYSTEM BARYCENTER for every state; "
@@ -154,6 +160,29 @@ def utc_now_iso() -> str:
 
 
 @dataclass(frozen=True)
+class SimulationWindow:
+    """Simulated time window of a run (PDF §14.1 "simulation start/end time").
+
+    Attributes:
+        start_utc: Configured start (``time.start_utc``; converted once with SPICE ``str2et``).
+        end_utc: UTC of the last output epoch (SPICE ``et2utc``, ms), or ``None``.
+        start_tdb_s: First output (emission) epoch [TDB s past J2000].
+        end_tdb_s: Last output epoch [TDB s past J2000].
+        output_step_s: Output step [s].
+        n_epochs: Number of output epochs.
+        orbit_initial_epoch_utc: Epoch of the configured orbital elements (UTC).
+    """
+
+    start_utc: str
+    end_utc: str | None
+    start_tdb_s: float
+    end_tdb_s: float
+    output_step_s: float
+    n_epochs: int
+    orbit_initial_epoch_utc: str
+
+
+@dataclass(frozen=True)
 class RunManifest:
     """PDF p.4 ``RunManifest`` (written as ``manifest.json``).
 
@@ -179,7 +208,12 @@ class RunManifest:
         itu_r_versions: ITU-R recommendations used, or empty.
         itu_r_polarization_tilt_deg: Rain polarisation tilt used, or ``None``.
         time_scale: Time-scale handling.
-        frame: Frame/origin/unit conventions.
+        frame: Frame/origin conventions.
+        units: Unit conventions (:data:`UNITS_NOTE`).
+        approximations: Named approximations selected by the configuration, each with its
+            comparison path (:func:`helioswarm.config.approximations_in_force`, PDF §17);
+            empty when none is in force.
+        simulation_window: Simulated start/end epochs (:class:`SimulationWindow`).
         command: Command line.
         wall_clock_start_utc: Run start (UTC).
         wall_clock_end_utc: Run end (UTC).
@@ -209,6 +243,9 @@ class RunManifest:
     itu_r_polarization_tilt_deg: float | None
     time_scale: str
     frame: str
+    units: str
+    approximations: list[str]
+    simulation_window: SimulationWindow
     command: list[str]
     wall_clock_start_utc: str
     wall_clock_end_utc: str
@@ -253,6 +290,17 @@ def build_manifest(
         itu_r_polarization_tilt_deg=result.itu_r_polarization_tilt_deg,
         time_scale=TIME_SCALE_NOTE,
         frame=FRAME_NOTE,
+        units=UNITS_NOTE,
+        approximations=[a.describe() for a in approximations_in_force(cfg)],
+        simulation_window=SimulationWindow(
+            start_utc=cfg.time.start_utc,
+            end_utc=result.window_end_utc,
+            start_tdb_s=float(result.grid.epochs_tdb_s[0]),
+            end_tdb_s=float(result.grid.epochs_tdb_s[-1]),
+            output_step_s=float(result.grid.step_s),
+            n_epochs=len(result.grid),
+            orbit_initial_epoch_utc=cfg.orbit.initial_epoch_utc,
+        ),
         command=list(command) if command is not None else list(sys.argv),
         wall_clock_start_utc=wall_clock_start_utc,
         wall_clock_end_utc=wall_clock_end_utc,
@@ -266,8 +314,10 @@ __all__ = [
     "MANIFEST_SCHEMA",
     "RECORDED_PACKAGES",
     "TIME_SCALE_NOTE",
+    "UNITS_NOTE",
     "GitInfo",
     "RunManifest",
+    "SimulationWindow",
     "build_manifest",
     "cpu_model",
     "git_info",

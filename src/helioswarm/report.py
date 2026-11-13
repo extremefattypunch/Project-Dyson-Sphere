@@ -3,7 +3,11 @@
 The report lists the configuration's key parameters with their provenance labels (measured /
 sourced / assumed / swept, PDF §13.4), the headline metrics with their definitions, the
 provenance of code and data (from ``manifest.json``) and links to the figures, including the
-composite page ``figures/composite.png``. It reads only ``config_resolved.yaml``,
+composite page ``figures/composite.png``. Settings that make a stage lossless or a constraint
+inactive are listed as idealised (upper-bound) assumptions (PDF §13.4,
+:func:`helioswarm.config.idealised_settings`); named approximations selected by the
+configuration are listed with their comparison path (PDF §17,
+:func:`helioswarm.config.approximations_in_force`). It reads only ``config_resolved.yaml``,
 ``summary.json`` and ``manifest.json``.
 """
 
@@ -13,7 +17,12 @@ import math
 from pathlib import Path
 from typing import Any, Final
 
-from helioswarm.config import load_config, provenance_table
+from helioswarm.config import (
+    approximations_in_force,
+    idealised_settings,
+    load_config,
+    provenance_table,
+)
 from helioswarm.plotting import FIGURE_FILES, UPPER_BOUND_NOTE
 
 KEY_PARAMETERS: Final[tuple[str, ...]] = (
@@ -71,15 +80,16 @@ def _fmt(v: Any) -> str:
 def report_markdown(run_dir: Path) -> str:
     """Markdown text of the one-page report of ``run_dir``."""
     from helioswarm.io import CONFIG_FILE, MANIFEST_FILE, SUMMARY_FILE, read_json
+    from helioswarm.metrics import read_summary
 
     cfg = load_config(run_dir / CONFIG_FILE)
-    s = read_json(run_dir / SUMMARY_FILE)
+    s = read_summary(run_dir / SUMMARY_FILE)
     m = read_json(run_dir / MANIFEST_FILE)
     rows = {r.path: r for r in provenance_table(cfg)}
     lines = [
         f"# Run report: {cfg.project.name}",
         "",
-        f"Configuration hash `{s['config_hash']}` (schema {m['config_schema_version']}); "
+        f"Configuration hash `{s.config_hash}` (schema {m['config_schema_version']}); "
         f"helioswarm {m['helioswarm_version']}, git `{m['git']['commit']}` "
         f"(dirty: {m['git']['dirty']}); backend `{m['backend']}`; seed {m['seed']} "
         f"(generator used: {not m['rng_state_unchanged']}). Generated from the saved run files "
@@ -97,51 +107,90 @@ def report_markdown(run_dir: Path) -> str:
         if r is None:
             continue
         lines.append(f"| `{key}` | {_fmt(r.value)} | {r.unit} | {r.provenance} |")
-    pg = s["p_grid_W"]
-    cf = s["capacity_factor"]
-    den = s["capacity_factor_denominator"]
-    e2e = s["end_to_end_efficiency"]
-    out = s["outages"]
-    al = s["diurnal_aliasing"]
-    cap = s["beam_capture"]["eta_capture_when_available"]
-    dens = s["receiver_power_density_W_m2"]["incident_peak_when_transmitting"]
+    ideal = idealised_settings(cfg)
+    lines += [
+        "",
+        "## Idealised settings in this run (results are upper bounds in these respects)",
+        "",
+    ]
+    if ideal:
+        lines += [f"- `{i.path}` = {_fmt(i.value)}: {i.effect}" for i in ideal]
+    else:
+        lines.append("- none (every listed stage loss and constraint is configured)")
+    approx = approximations_in_force(cfg)
+    if approx:
+        lines += ["", "## Named approximations in force (PDF §17)", ""]
+        lines += [f"- {a.describe()}" for a in approx]
+    pg = s.p_grid_W
+    cf = s.capacity_factor
+    den = s.capacity_factor_denominator
+    e2e = s.end_to_end_efficiency
+    out = s.outages
+    al = s.diurnal_aliasing
+    cap = s.beam_capture.eta_capture_when_available
+    dens = s.receiver_power_density_W_m2.incident_peak_when_transmitting
     lines += [
         "",
         "## Metrics (definitions in summary.json and docs/model_assumptions.md, M6)",
         "",
         "| Metric | Value |",
         "|---|---|",
-        f"| P_grid time mean | {_fmt(pg['time_mean'])} W |",
-        f"| P_grid median / p05 / p95 / peak | {_fmt(pg['median'])} / {_fmt(pg['p05'])} / "
-        f"{_fmt(pg['p95'])} / {_fmt(pg['peak'])} W |",
-        f"| P_grid mean when available | {_fmt(pg['mean_when_available'])} W |",
-        f"| Delivered energy | {_fmt(s['delivered_energy_J'])} J |",
-        f"| Availability | {_fmt(s['availability'])} |",
-        f"| Capacity factor | {_fmt(cf)} (rated {_fmt(den['rated_power_W'])} W) |",
-        f"| End-to-end efficiency E_grid/E_incident | {_fmt(e2e['energy_ratio'])} |",
-        f"| Expected capture when available (median) | {_fmt(cap['median'])} |",
-        f"| Peak incident power density when transmitting (max) | {_fmt(dens['max'])} W/m² |",
-        f"| Outages: count / longest / median | {out['count']} / {_fmt(out['longest_s'])} s / "
-        f"{_fmt(out['median_s'])} s (±{_fmt(out['resolution_s'])} s; {out['censored_count']} "
+        f"| P_grid time mean | {_fmt(pg.time_mean)} W |",
+        f"| P_grid median / p05 / p95 / peak | {_fmt(pg.median)} / {_fmt(pg.p05)} / "
+        f"{_fmt(pg.p95)} / {_fmt(pg.peak)} W |",
+        f"| P_grid mean when available | {_fmt(pg.mean_when_available)} W |",
+        f"| Delivered energy | {_fmt(s.delivered_energy_J)} J |",
+        f"| Availability | {_fmt(s.availability)} |",
+        f"| Capacity factor | {_fmt(cf)} (rated {_fmt(den.rated_power_W)} W) |",
+        f"| End-to-end efficiency E_grid/E_incident | {_fmt(e2e.energy_ratio)} |",
+        f"| Expected capture when available (median) | {_fmt(cap.median)} |",
+        f"| Peak incident power density when transmitting (max) | {_fmt(dens.max)} W/m² |",
+        f"| Outages: count / longest / median | {out.count} / {_fmt(out.longest_s)} s / "
+        f"{_fmt(out.median_s)} s (±{_fmt(out.resolution_s)} s; {out.censored_count} "
         "censored) |",
-        f"| Receiver saturation time fraction | {_fmt(s['receiver_saturation_time_fraction'])} |",
-        f"| Thermal feasible time fraction | {_fmt(s['thermal']['feasible_time_fraction'])} |",
-        f"| Diurnal hour-angle gap | {_fmt(math.degrees(al['hour_angle_max_gap_rad']))} deg "
-        f"({_fmt(al['effective_distinct_diurnal_phases'])} effective phases; aliasing warning: "
-        f"{al['warning']}) |",
+        f"| Receiver saturation time fraction | {_fmt(s.receiver_saturation_time_fraction)} |",
+        f"| Thermal feasible time fraction | {_fmt(s.thermal.feasible_time_fraction)} |",
+        f"| Diurnal hour-angle gap | {_fmt(math.degrees(al.hour_angle_max_gap_rad))} deg "
+        f"({_fmt(al.effective_distinct_diurnal_phases)} effective phases; aliasing warning: "
+        f"{al.warning}) |",
         "",
-        f"Capacity-factor denominator: {den['definition']}.",
+        f"Capacity-factor denominator: {den.definition}.",
+    ]
+    od = s.orbital_diagnostics
+    if od is not None:
+        lines += [
+            "",
+            "## Orbital outputs and diagnostics (PDF §7.3)",
+            "",
+            "| Quantity | Value |",
+            "|---|---|",
+            f"| Earth range min / mean / max | {_fmt(od.earth_range_m.min)} / "
+            f"{_fmt(od.earth_range_m.mean)} / {_fmt(od.earth_range_m.max)} m |",
+            f"| Access fraction | {_fmt(od.access_fraction)} |",
+            f"| Occultation fraction (any / Earth / Sun / Moon) | {_fmt(od.occultation_fraction)}"
+            f" / {_fmt(od.earth_occultation_fraction)} / {_fmt(od.sun_occultation_fraction)} / "
+            f"{_fmt(od.moon_occultation_fraction)} |",
+            f"| Pointing rate mean / max | {_fmt(od.pointing_rate_rad_s.mean)} / "
+            f"{_fmt(od.pointing_rate_rad_s.max)} rad/s |",
+            f"| Light time min / mean / max | {_fmt(od.light_time.min_s)} / "
+            f"{_fmt(od.light_time.mean_s)} / {_fmt(od.light_time.max_s)} s |",
+            f"| Range rate min / max | {_fmt(od.range_rate_m_s.min)} / "
+            f"{_fmt(od.range_rate_m_s.max)} m/s |",
+            f"| Orbit drift vs L0 max / final | {_fmt(od.orbit_drift_vs_l0_m_max)} / "
+            f"{_fmt(od.orbit_drift_vs_l0_m_final)} m |",
+        ]
+    lines += [
         "",
         "## Unavailability (time fraction by primary reason)",
         "",
         "| Reason | Primary | Flagged |",
         "|---|---|---|",
     ]
-    for name, v in s["unavailability"]["blocking"].items():
-        if v["time_fraction_flagged"] > 0.0:
+    for name, v in s.unavailability.blocking.items():
+        if v.time_fraction_flagged > 0.0:
             lines.append(
-                f"| {name.lower()} | {_fmt(v['time_fraction_primary'])} | "
-                f"{_fmt(v['time_fraction_flagged'])} |"
+                f"| {name.lower()} | {_fmt(v.time_fraction_primary)} | "
+                f"{_fmt(v.time_fraction_flagged)} |"
             )
     kernels = ", ".join(f"{k['name']} (sha256 {k['sha256'][:12]}…)" for k in m["kernels"])
     job = m["slurm"].get("SLURM_JOB_ID")

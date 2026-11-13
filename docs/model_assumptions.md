@@ -113,8 +113,24 @@ listed by `helioswarm validate-config --show-provenance`:
   `receiver.sun_avoidance_deg = 0`, meaning these constraints are not enforced
 - `thermal.pv_view_factor = 1.0` (isolated PV plate; M4) and `collector.incidence_mode =
   sun_tracking` in the MVP config (normal incidence at every epoch)
+- `transmitter.min_pointing_efficiency = None` (no pointing-availability threshold)
+- `models.atmosphere = scenario` with `models.weather_scenario = clear` (the schema default):
+  the weather is one deterministic state for the whole window, so the sky is clear at every
+  epoch and no cloud outage ever occurs; availability is then a weather upper bound
+  (PDF §10.2/§17 "ground optical availability may be overestimated")
+- also labelled when configured (not defaults): any chain efficiency
+  (`transmitter.electrical_to_beam_efficiency`, `receiver.conversion_efficiency`,
+  `receiver.grid_efficiency`) equal to 1, a disabled `models.earth_occultation`,
+  `models.sun_occultation` or `models.moon_occultation` (inactive constraint), and
+  `models.atmosphere = none` (no attenuation, no weather outage)
 - `collector.max_operating_temperature_K = 400 K` (M4) is an assumed scenario limit, neither
   optimistic nor sourced; replace it with the qualification limit of the chosen cell
+
+`config.idealised_settings` evaluates exactly this list on a configuration (M6b). Not listed,
+with reason: `models.light_time = false` changes the geometry with either sign (a named
+approximation, `config.approximations_in_force`), a finite `receiver.max_input_power_W`
+(whether it binds is a run outcome, `receiver_saturation_time_fraction` in `summary.json`)
+and the ITU-R attenuation exceeded p % of the time (a statistical design value, not a bound).
 
 Studies must override these defaults with sourced values or sweep them.
 
@@ -359,7 +375,29 @@ The steps follow PDF §6.1:
 
 The result is a `SatelliteState` in J2000/SSB. Its `force_model` lists the bodies and SRP
 model. `mass_kg` is `None` because the config gives no mass and only A/m enters the dynamics.
-`attitude` is `"sun_facing"`, which is implied by the radial SRP model.
+`attitude` follows `collector.incidence_mode` and `collector_normal_unit` is the J2000 unit
+normal of the collector front face at the initial epoch (PDF p.4 "attitude/normal vector";
+added in M6b): `n = −r_helio/|r_helio|` (towards the Sun's centre) for `sun_tracking`, the
+configured `fixed_normal_unit_j2000` for `fixed_normal`. The SRP force stays radial for both
+attitudes (PDF §6.3 "simple radial SRP"); for a fixed-normal collector this is a named
+approximation. Model the collector as a flat plate of area A that absorbs a fraction 1 − ε and
+reflects a fraction ε specularly. Let ŝ be the unit vector from the Sun to the satellite, n̂
+the plate's unit normal on the side away from the Sun, and θ the incidence angle
+(cosθ = n̂·ŝ). The SRP force is `F = P A cosθ [(1 − ε) ŝ + 2ε cosθ n̂]` (Montenbruck & Gill
+2000, §3.4). At normal incidence this is `P A (1 + ε) ŝ`, so the configured `C_r`
+corresponds to `ε = C_r − 1` (0.3 for the MVP's C_r = 1.3; diffuse reflection is not
+included in this split). The radial model applies
+`P A C_r ŝ` at every θ. Relative to the plate's radial component it therefore overestimates by
+`(1 + ε) / (cosθ [(1 − ε) + 2ε cos²θ])`. This ratio reduces to `1/cosθ` only for a perfect
+absorber (ε = 0); with ε = 0.3 it is 3.06 at θ = 60°, not 2. The radial model also omits the
+non-radial component of magnitude `2ε P A cos²θ sinθ` (the part of the reflected-light term
+`2ε P A cos²θ n̂` perpendicular to ŝ). The
+approximation is reported at run time: `config.approximations_in_force` names it in
+`logs/run.log` (WARNING), `manifest.json` (`approximations`) and `report.md`, with its
+comparison path. The available comparison is a rerun with
+`orbit.include_solar_radiation_pressure: false`, which bounds the whole SRP contribution.
+Attitude-dependent SRP (L3) is deferred to the M8 sensitivity studies. `models.light_time:
+false` (instantaneous geometry) is reported the same way.
 
 With SRP enabled the elements remain *gravitational* osculating elements (μ = GM☉, not
 GM☉ − k). A "circular" configured orbit is therefore not exactly circular under SRP.
@@ -1377,6 +1415,39 @@ integral representations, exact up to aliasing terms `J_{N∓n}(x)` (< 1e-16 wit
 `η(d)`; otherwise the point falls back to the M5 per-point reference. Selected with
 `--backend jax` (airy_far_field only; any other model raises `NotImplementedError`). The CPU
 reference remains the default.
+
+### Additions of the M6b completeness audit
+
+- **PDF §7.3 orbital diagnostics in `summary.json`** (`orbital_diagnostics`, summary layout
+  `helioswarm-summary/2`), computed from the saved time series: Earth range statistics, access
+  fraction, occultation fraction (any body and per body; trapezoid time weights), inertial
+  beam direction (first/last epoch; every epoch in the new `transmit_dir_{x,y,z}` columns of
+  `timeseries.parquet`, layout `helioswarm-timeseries/2`) and pointing-rate statistics, light
+  time min/mean/max, range-rate statistics and the orbit drift against the L0 reference
+  (max/final). Definitions are written with the numbers.
+- **Typed summary record.** `summary.json` is produced and read as the frozen pydantic model
+  `metrics.RunSummary` (unknown keys rejected); a one-sample window gives `null` (not NaN) for
+  time means.
+- **Manifest** (`helioswarm-run-manifest/2`): `units` (SI convention) and `simulation_window`
+  (configured start UTC, last-epoch UTC via SPICE `et2utc`, first/last TDB epochs, step, epoch
+  count, orbit element epoch) (PDF §14.1 "simulation start/end time").
+- **Idealised-settings labels** (PDF §13.4): `config.idealised_settings` lists the active
+  settings that make a stage lossless or a constraint inactive (the "Optimistic defaults"
+  above, evaluated on the actual configuration); they are listed in `report.md`, in
+  `characterization.json`, on the power-stage and composite figures and on the `characterize`
+  power/thermal and capture figures, and the Sun-tracking collector is labelled an optimistic
+  bound on the solar figure. A disabled occultation check is written to `summary.json` as
+  `null` (not evaluated), not as a measured 0.
+- **Named approximations** (PDF §17): `config.approximations_in_force` (radial SRP on a
+  fixed-normal collector; instantaneous geometry with `models.light_time = false`) is written
+  as a WARNING to `logs/run.log`, to `manifest.json` (`approximations`) and to `report.md`,
+  each with its comparison path.
+- **Response curves** (`helioswarm characterize`, `helioswarm.characterize`; PDF §8.4, §9.5):
+  the M4 model versus heliocentric distance and transmitter operating point
+  (`eta_electrical_to_beam`) at normal incidence in full Sun; the M5 beam capture versus pointing
+  sigma, receiver radius and RMS wavefront error at one explicit link geometry (range and
+  elevation recorded with the output). Each row changes exactly one parameter of the validated
+  configuration; no new physics.
 
 ### Configuration field added in M6
 

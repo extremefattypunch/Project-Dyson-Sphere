@@ -38,12 +38,12 @@ import pyarrow.parquet as pq
 
 from helioswarm.config import RunConfig, write_resolved_yaml
 from helioswarm.kernels import KernelSet
-from helioswarm.metrics import SummaryInputs, summarize_timeseries
+from helioswarm.metrics import RunSummary, SummaryInputs, summarize_timeseries
 from helioswarm.system import Backend, SystemRunResult, primary_reason, run_single_satellite
 from helioswarm.visibility import satellite_hour_angle_rad
 
-TIMESERIES_SCHEMA: Final[str] = "helioswarm-timeseries/1"
-"""Version tag stored in the Parquet schema metadata."""
+TIMESERIES_SCHEMA: Final[str] = "helioswarm-timeseries/2"
+"""Version tag stored in the Parquet schema metadata (2: M6b added ``transmit_dir_{x,y,z}``)."""
 
 RUNS_DIR_ENV: Final[str] = "HELIOSWARM_RUNS_DIR"
 """Environment variable naming the default parent of run directories."""
@@ -154,6 +154,9 @@ def timeseries_table(result: SystemRunResult) -> pa.Table:
         "elevation_rad": _f64(acc.elevation_rad),
         "azimuth_rad": _f64(acc.azimuth_rad),
         "sun_separation_rad": _f64(acc.sun_separation_rad),
+        "transmit_dir_x": _f64(acc.transmit_direction_unit[:, 0]),
+        "transmit_dir_y": _f64(acc.transmit_direction_unit[:, 1]),
+        "transmit_dir_z": _f64(acc.transmit_direction_unit[:, 2]),
         "pointing_rate_rad_s": _f64(acc.pointing_rate_rad_s),
         "transmitter_aberration_rad": _f64(acc.transmitter_aberration_rad),
         "hour_angle_rad": _f64(satellite_hour_angle_rad(acc)),
@@ -299,6 +302,9 @@ def summary_inputs(result: SystemRunResult) -> SummaryInputs:
         max_power_density_W_m2=cfg.receiver.max_power_density_W_m2,
         max_input_power_W=cfg.receiver.max_input_power_W,
         collector_area_m2=cfg.collector.area_m2,
+        earth_occultation_checked=cfg.models.earth_occultation,
+        sun_occultation_checked=cfg.models.sun_occultation,
+        moon_occultation_checked=cfg.models.moon_occultation,
     )
 
 
@@ -319,14 +325,14 @@ class RunOutputs:
 
     Attributes:
         run_dir: Run directory.
-        summary: The summary document (as written to summary.json).
+        summary: The validated summary record (as written to summary.json).
         timeseries_content_sha256: Content hash of the time-series table.
         files: Relative file name -> SHA-256 of the written bytes.
         figures: Figure paths (empty without the time series).
     """
 
     run_dir: Path
-    summary: dict[str, Any]
+    summary: RunSummary
     timeseries_content_sha256: str
     files: dict[str, str]
     figures: tuple[Path, ...]
@@ -361,10 +367,13 @@ def write_run(
         pq.write_table(table, ts_path, compression="zstd")
         files[TIMESERIES_FILE] = file_sha256(ts_path)
         table = pq.read_table(ts_path)  # metrics from the saved data
-    summary = summarize_timeseries(table, summary_inputs(result))
-    summary["timeseries_content_sha256"] = content_hash
-    summary["timeseries_saved"] = bool(write_timeseries)
-    sum_path = write_json(run_dir / SUMMARY_FILE, summary)
+    summary = summarize_timeseries(table, summary_inputs(result)).model_copy(
+        update={
+            "timeseries_content_sha256": content_hash,
+            "timeseries_saved": bool(write_timeseries),
+        }
+    )
+    sum_path = write_json(run_dir / SUMMARY_FILE, summary.to_json_dict())
     files[SUMMARY_FILE] = file_sha256(sum_path)
     log_path = write_run_log(run_dir / LOG_FILE, result)
     files[LOG_FILE] = file_sha256(log_path)

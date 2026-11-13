@@ -176,3 +176,24 @@ def test_validate_config_accepts_sweep_files(
     assert main(["validate-config", str(bad)]) == 1
     assert "eccentricity" in capsys.readouterr().err
     assert not (tmp_path / "out").exists()
+
+
+def test_validate_config_accepts_several_files(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # README: `helioswarm validate-config configs/*.yaml` checks every shipped file (run
+    # configurations and sweeps); found missing by the M6b fresh-clone reproduction.
+    shipped = sorted(str(p) for p in MVP_CONFIG.parent.glob("*.yaml"))
+    assert len(shipped) >= 5
+    assert main(["validate-config", *shipped]) == 0
+    out = capsys.readouterr().out
+    assert out.count("OK: ") == len(shipped)
+    # One invalid file among valid ones: every file is still reported, exit 1.
+    bad = _write(tmp_path, {"schema_version": 1}, "bad.yaml")
+    assert main(["validate-config", str(MVP_CONFIG), str(bad), shipped[-1]]) == 1
+    cap = capsys.readouterr()
+    assert cap.out.count("OK: ") == 2
+    assert "bad.yaml" in cap.err
+    # Single-file options with several files are a usage error (exit 2, module convention).
+    assert main(["validate-config", str(MVP_CONFIG), shipped[-1], "--show-provenance"]) == 2
+    assert "exactly one CONFIG" in capsys.readouterr().err

@@ -394,6 +394,9 @@ SWEEP_SUMMARY_COLUMNS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     ("outage_longest_s", ("outages", "longest_s")),
     ("range_mean_m", ("geometry", "range_m", "mean")),
     ("sun_distance_mean_m", ("geometry", "sun_distance_m", "mean")),
+    ("light_time_min_s", ("orbital_diagnostics", "light_time", "min_s")),
+    ("light_time_max_s", ("orbital_diagnostics", "light_time", "max_s")),
+    ("occultation_fraction", ("orbital_diagnostics", "occultation_fraction")),
 )
 """Columns of ``sweep_summary.parquet`` taken from each point's summary.json (float64)."""
 
@@ -430,6 +433,7 @@ def collate_sweep(plan: SweepPlan, out: Path) -> Path:
     a complete table.
     """
     from helioswarm.io import ERROR_FILE, MANIFEST_FILE, SUMMARY_FILE, read_json
+    from helioswarm.metrics import read_summary
 
     rows: dict[str, list[Any]] = {"point": [], "status": [], "config_hash": [], "error": []}
     for key in plan.definition.parameters:
@@ -445,7 +449,8 @@ def collate_sweep(plan: SweepPlan, out: Path) -> Path:
             error = f"{err['error_type']}: {err['error']}"
             st = "failed"
         elif d.is_dir() and _point_complete(d, MANIFEST_FILE, SUMMARY_FILE, read_json):
-            summary = read_json(d / SUMMARY_FILE)
+            # Validated against the typed summary layout before any value is collated.
+            summary = read_summary(d / SUMMARY_FILE).to_json_dict()
             st = "ok"
         elif d.is_dir() and any(d.iterdir()):
             st = "incomplete"

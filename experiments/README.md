@@ -33,7 +33,7 @@ physics time series were unchanged (identical headline numbers).
 | Code commit | `1cc897e` + uncommitted M6 tree (dirty) |
 | Slurm | 60110148 (first run), 60127166 (after the review) |
 | Result location | `$HELIOSWARM_RUNS_DIR/mvp_single_satellite/` |
-| Interpretation | **Negative result.** Mean P_grid 1751.1 W from 3.67 MW of PV (end-to-end 1.29e-4); availability 0.422 (geometry only); capacity factor 0.297 against a 5895.9 W rated link. Diffraction dominates: the 1 km receiver captures < 1 % of a beam whose first null is ~21 km wide at ~1.15 au. The hourly step aliases with the diurnal cycle (warning in the summary; see E3). |
+| Interpretation | **Negative result.** Mean P_grid 1751.1 W from 3.67 MW of PV (end-to-end 1.29e-4); availability 0.422 (geometry only: the `clear` weather scenario keeps the sky clear all year, so this is a weather upper bound); capacity factor 0.297 against a 5895.9 W rated link. Diffraction dominates: the 1 km receiver captures < 1 % of a beam whose first-null radius is ~21 km (dark ring ~42 km across) at ~1.15 au. The hourly step aliases with the diurnal cycle (warning in the summary; see E3). |
 
 ### E2 (2026-11-12): microwave MVP, one year
 
@@ -78,3 +78,25 @@ physics time series were unchanged (identical headline numbers).
 | Slurm | 60118119 (31 checks), 60127176 (37 checks, after the review) |
 | Result location | generated block of `docs/validation_report.md`; copy in `$HELIOSWARM_RUNS_DIR/validate_models/<jobid>.md` |
 | Interpretation | 37/37 passed, none unresolved. |
+
+### E6 (2026-11-13): microwave sweep over radius and transmit aperture (M6b)
+
+| Field | Content |
+|---|---|
+| Question | Does a larger microwave aperture (1, 3, 10 km phased array, 2.45 GHz, 10 km rectenna) or a different heliocentric radius (0.3–1.2 au) make microwave delivery from heliocentric orbit useful? |
+| Config | `configs/microwave_1au_sweep.yaml` (15 points; base `configs/mvp_single_satellite_microwave.yaml`, config_hash `2343150a…19d7a7`; per-point hashes in the table) |
+| Code commit | `218de9b` + uncommitted M6b tree (dirty) |
+| Slurm | array 60141210 (5 tasks × 3 points, `--mem=768M`; 2:13–2:19 wall, peak RSS 632–704 MB, CPU 96 %), collation 60142439 |
+| Result location | `$HELIOSWARM_RUNS_DIR/microwave_1au_sweep/` (`sweep_summary.parquet`); copy `figures/m6b/microwave_1au_sweep_summary.csv` |
+| Interpretation | **Negative result.** 15/15 points ok. 0.3 and 0.5 au deliver nothing (PV 558.8 K / 430.5 K above the assumed 400 K limit; same collector as the optical sweep). Mean P_grid at 0.7 / 1.0 / 1.2 au: 2.169 / 0.3145 / 0.09747 W (D = 1 km), 19.48 / 2.824 / 0.8753 W (3 km), 211.1 / 30.62 / 9.49 W (10 km); median expected capture ≤ 4.5e-5 everywhere. Capture grows as D² in the small-x limit (3 km / 1 km: 8.98×). The 1.0 au, 1 km point reproduces E2 exactly (0.3145 W). Even a 10 km array delivers ~0.2 kW at best from ~3.7 MW of PV. |
+
+### E7 (2026-11-13): fresh-clone reproduction (PDF §19 definition of done; M6b)
+
+| Field | Content |
+|---|---|
+| Question | Can another researcher clone, install the locked environment, obtain the kernels, run the supplied configurations, regenerate the figures and reproduce the reported metrics by following only the README? |
+| Config | `configs/mvp_single_satellite.yaml`, `configs/mvp_single_satellite_microwave.yaml`; every shipped config validated |
+| Code commit | clone of `helioswarm-m0-m6` at `218de9b` + the uncommitted M6b working tree applied as a patch (M6b is committed afterwards) |
+| Slurm | setup in a clean `env -i` shell (no Slurm: clone, `uv sync`, `fetch-kernels`, `validate-config`); compute job 60144119 (runs, plots, characterize, gates, full test suite) |
+| Result location | throwaway tree `/n/netscratch/hekstra_lab/Lab/ian_poon/m6b_fresh_clone/` (deleted after the check); outcome in `docs/compliance_matrix.md` and `docs/milestones/M6b.md` |
+| Interpretation | **Reproduced.** Locked install from an empty uv cache (63 s), kernels fetched and SHA-256/MD5-verified, all five shipped configs valid; the optical and microwave MVP runs reproduce E1/E2 to every printed digit (1751.11 W, availability 0.422085, capacity factor 0.297005, 5.52609e10 J; 0.314505 W); figures and reports regenerated from saved data; ruff, ruff format and the full suite (1052 passed, 1 skipped) passed. Two problems found and fixed: `validate-config configs/*.yaml` (documented in the README) took only one file; one-off mypy INTERNAL ERROR (not reproduced; per-checkout mypy cache as a precaution). The throwaway HOME received no files. Details: `docs/compliance_matrix.md`, "Fresh-clone reproduction". |

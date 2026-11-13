@@ -116,6 +116,13 @@ PLANETARY_SYSTEMS: Final[tuple[tuple[BodyName, ...], ...]] = (
 system by its barycentre, or by EARTH and MOON together)."""
 
 
+Attitude = Literal["sun_tracking", "fixed_normal"]
+"""Collector attitude law of a :class:`SatelliteState` (``collector.incidence_mode``)."""
+
+NORMAL_UNIT_TOLERANCE: Final[float] = 1.0e-6
+"""Accepted ``| |n| - 1 |`` of a collector normal (the configuration schema's tolerance)."""
+
+
 class PropagationError(RuntimeError):
     """The integrator failed (``solve_ivp`` reported no success)."""
 
@@ -224,20 +231,33 @@ class SatelliteState:
         force_model: Forces acting on the satellite.
         mass_kg: Satellite mass [kg], or ``None``: the configuration does not specify a mass
             and the dynamics need only ``A/m`` (SRP).
-        attitude: Attitude assumption; ``sun_facing`` (the collector normal points at the Sun),
-            the attitude implied by the radial SRP model and by sun-tracking collectors.
+        attitude: Collector attitude law (``collector.incidence_mode``): ``sun_tracking`` (the
+            collector front-face normal points at the Sun) or ``fixed_normal`` (inertially fixed
+            normal). The SRP force model is radial for both (PDF §6.3 "simple radial SRP";
+            attitude-dependent SRP is the later L3 model).
+        collector_normal_unit: Unit normal of the collector front face at ``epoch`` in J2000
+            (PDF p.4 "attitude/normal vector"), or ``None`` when not supplied (direct
+            construction in tests). :func:`satellite_initial_state` always sets it.
     """
 
     state: CartesianState
     force_model: ForceModel
     mass_kg: float | None = None
-    attitude: Literal["sun_facing"] = "sun_facing"
+    attitude: Attitude = "sun_tracking"
+    collector_normal_unit: tuple[float, float, float] | None = None
 
     def __post_init__(self) -> None:
         if self.state.frame != "J2000" or self.state.origin != SSB:
             raise ValueError("SatelliteState.state must be in J2000 with origin SSB")
         if self.mass_kg is not None and not (math.isfinite(self.mass_kg) and self.mass_kg > 0):
             raise ValueError("mass_kg must be finite and > 0")
+        if self.attitude not in ("sun_tracking", "fixed_normal"):
+            raise ValueError(f"unknown attitude {self.attitude!r}")
+        n = self.collector_normal_unit
+        if n is not None:
+            norm = math.sqrt(sum(c * c for c in n))
+            if len(n) != 3 or not math.isfinite(norm) or abs(norm - 1.0) > NORMAL_UNIT_TOLERANCE:
+                raise ValueError(f"collector_normal_unit must be a unit 3-vector, got {n}")
 
     @property
     def epoch_tdb_s(self) -> float:
@@ -696,6 +716,7 @@ def assess_l1_run(run: L1Propagation, *, ephemeris: EphemerisProvider) -> L1RunA
             force_model=ForceModel(fm.bodies),
             mass_kg=run.initial.mass_kg,
             attitude=run.initial.attitude,
+            collector_normal_unit=run.initial.collector_normal_unit,
         )
         d = max_delta(off, s)
         srp_max, srp_final = float(np.max(d)), float(d[-1])
@@ -756,6 +777,8 @@ def satellite_initial_state(
     *,
     epoch_tdb_s: float,
     ephemeris: EphemerisProvider,
+    attitude: Attitude = "sun_tracking",
+    fixed_normal_unit_j2000: tuple[float, float, float] | None = None,
 ) -> SatelliteState:
     """Initial satellite state in J2000/SSB from the configured heliocentric elements.
 
@@ -764,6 +787,10 @@ def satellite_initial_state(
     (2) rotate ECLIPJ2000 -> J2000 (``R_x(-eps_0)``); (3) add the Sun's J2000/SSB state at the
     same epoch. With SRP enabled the elements remain *gravitational* osculating elements
     (mu = GM_sun, not GM_sun - k_srp).
+
+    The collector normal (PDF p.4 ``SatelliteState`` "attitude/normal vector") is
+    ``n = -r_helio/|r_helio|`` (towards the Sun's centre, geometric direction at the same epoch)
+    for ``sun_tracking`` and the configured J2000 unit vector for ``fixed_normal``.
     """
     elements = elements_from_config(
         orbit, epoch_tdb_s=epoch_tdb_s, mu_m3_s2=ephemeris.gm_m3_s2("SUN")
@@ -771,7 +798,24 @@ def satellite_initial_state(
     helio_ecl = elements_to_state(elements)
     helio_j2000 = transform_state(helio_ecl, "J2000")
     ssb = shift_state_origin(helio_j2000, SSB, ephemeris)
-    return SatelliteState(state=ssb, force_model=force_model_from_config(orbit, constants))
+    if attitude == "sun_tracking":
+        if fixed_normal_unit_j2000 is not None:
+            raise ValueError("sun_tracking takes no fixed_normal_unit_j2000")
+        r = helio_j2000.position_m
+        n = -r / float(np.linalg.norm(r))
+        normal = (float(n[0]), float(n[1]), float(n[2]))
+    elif attitude == "fixed_normal":
+        if fixed_normal_unit_j2000 is None:
+            raise ValueError("fixed_normal requires fixed_normal_unit_j2000")
+        normal = fixed_normal_unit_j2000
+    else:
+        raise ValueError(f"unknown attitude {attitude!r}")
+    return SatelliteState(
+        state=ssb,
+        force_model=force_model_from_config(orbit, constants),
+        attitude=attitude,
+        collector_normal_unit=normal,
+    )
 
 
 def l0_reference_trajectory(
@@ -837,7 +881,12 @@ def initial_state_from_config(
     check_kernel_set(config, kernels)
     epoch = utc_to_tdb_s(config.orbit.initial_epoch_utc, kernels)
     return satellite_initial_state(
-        config.orbit, config.constants, epoch_tdb_s=epoch, ephemeris=ephemeris
+        config.orbit,
+        config.constants,
+        epoch_tdb_s=epoch,
+        ephemeris=ephemeris,
+        attitude=config.collector.incidence_mode,
+        fixed_normal_unit_j2000=config.collector.fixed_normal_unit_j2000,
     )
 
 
@@ -882,7 +931,9 @@ def propagate_l1_from_config(
 
 __all__ = [
     "L1_MODEL",
+    "NORMAL_UNIT_TOLERANCE",
     "PLANETARY_SYSTEMS",
+    "Attitude",
     "ConfiguredL1Run",
     "ForceModel",
     "Formulation",

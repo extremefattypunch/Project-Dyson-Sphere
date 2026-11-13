@@ -34,6 +34,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Final, Literal, Self, cast, get_args, get_origin
 
 import yaml
@@ -116,10 +117,12 @@ interpolation errors over 2030 (de440s): < 1 m for every body at 7200 s (Mercury
 largest); at 21600 s Mercury reaches ~77 m and at 86400 s ~2e4 m (Moon ~5e3 m), so larger
 spacings are rejected. Each run also reports the measured cache error in its diagnostics."""
 
-RECEIVER_TECHNOLOGY_FOR_MODE: Final[Mapping[str, str]] = {
-    "optical": "laser_photovoltaic",
-    "microwave": "rectenna",
-}
+RECEIVER_TECHNOLOGY_FOR_MODE: Final[Mapping[str, str]] = MappingProxyType(
+    {
+        "optical": "laser_photovoltaic",
+        "microwave": "rectenna",
+    }
+)
 """Receiver technology required by each transmitter mode (PDF §10.4: optical and microwave
 receivers are different technology cases)."""
 
@@ -1816,6 +1819,221 @@ def provenance_table(config: RunConfig) -> tuple[ProvenanceRow, ...]:
     return tuple(rows)
 
 
+@dataclass(frozen=True, slots=True)
+class IdealisedSetting:
+    """A configured value that makes a stage lossless or a constraint inactive.
+
+    Attributes:
+        path: Dotted configuration path.
+        value: Configured value.
+        effect: What the value idealises (the result is an upper bound in that respect).
+    """
+
+    path: str
+    value: Any
+    effect: str
+
+
+def idealised_settings(config: RunConfig) -> tuple[IdealisedSetting, ...]:
+    """Active settings that turn a result into an idealised upper bound (PDF §13.4).
+
+    PDF §13.4: "If a model is only an idealized upper bound, label it as such in the figure and
+    manuscript." The rules mirror ``docs/model_assumptions.md`` "Optimistic defaults"; a value
+    is listed only if it is the lossless / unconstrained one in *this* configuration, so a
+    study that overrides it with a sourced value is not labelled. Three groups:
+
+    * lossless stages: every efficiency of the PDF §10.1 chain equal to 1, a perfect
+      wavefront, perfect pointing, PV efficiency clipped only at 1, an isolated PV plate;
+    * inactive constraints: a disabled Earth/Sun/Moon occultation check, no pointing-
+      availability threshold, no receiver power-density or heat-rejection limit, no Sun
+      avoidance;
+    * weather and atmosphere: no atmosphere at all, or the deterministic scenario model with
+      the ``clear`` scenario (one weather state for the whole window, so never a cloud outage:
+      availability is a weather upper bound, PDF §10.2/§17), and a configured scenario whose
+      zenith factor is lossless (optical transmittance 1, microwave attenuation 0 dB).
+
+    Not listed: ``models.light_time = false`` (an approximation of either sign, reported by
+    :func:`approximations_in_force`), a finite ``receiver.max_input_power_W`` (whether it binds
+    is a run outcome, reported as ``receiver_saturation_time_fraction``), the ITU-R statistical
+    attenuation (exceeded p % of the time, not an upper bound) and scalar diffraction without
+    turbulence (labelled separately in every beam figure).
+    """
+    c = config
+    out: list[IdealisedSetting] = []
+
+    def add(path: str, value: Any, effect: str) -> None:
+        out.append(IdealisedSetting(path=path, value=value, effect=effect))
+
+    tx, rx, m = c.transmitter, c.receiver, c.models
+    # Lossless stages (PDF §10.1 chain, in chain order).
+    if tx.power_conditioning_efficiency == 1.0:
+        add("transmitter.power_conditioning_efficiency", 1.0, "lossless power conditioning")
+    if tx.electrical_to_beam_efficiency == 1.0:
+        add(
+            "transmitter.electrical_to_beam_efficiency",
+            1.0,
+            "lossless electrical-to-beam conversion",
+        )
+    if tx.optics_or_rf_efficiency == 1.0:
+        add("transmitter.optics_or_rf_efficiency", 1.0, "lossless transmit optics / RF feed")
+    if tx.rms_wavefront_error_m == 0.0:
+        add("transmitter.rms_wavefront_error_m", 0.0, "perfect wavefront (no Ruze/Strehl loss)")
+    if tx.pointing_sigma_rad == 0.0 and tx.pointing_bias_rad == 0.0:
+        add("transmitter.pointing_sigma_rad", 0.0, "perfect pointing (no bias, no jitter)")
+    if rx.conversion_efficiency == 1.0:
+        add("receiver.conversion_efficiency", 1.0, "lossless receiver conversion")
+    if rx.grid_efficiency == 1.0:
+        add("receiver.grid_efficiency", 1.0, "lossless grid conditioning")
+    if c.collector.incidence_mode == "sun_tracking":
+        add(
+            "collector.incidence_mode",
+            "sun_tracking",
+            "normal solar incidence at every epoch (optimistic bound, PDF §8.1)",
+        )
+    if c.collector.pv_efficiency_max == 1.0:
+        add(
+            "collector.pv_efficiency_max",
+            1.0,
+            "PV efficiency clipped only at the energy-conservation bound",
+        )
+    if c.thermal.pv_view_factor == 1.0:
+        add("thermal.pv_view_factor", 1.0, "isolated PV plate (no view of the spacecraft)")
+    # Inactive constraints.
+    for body in ("earth", "sun", "moon"):
+        if not getattr(m, f"{body}_occultation"):
+            add(
+                f"models.{body}_occultation",
+                False,
+                f"{body.capitalize()} occultation not checked (inactive constraint: a blocked "
+                "beam counts as delivered)",
+            )
+    if tx.min_pointing_efficiency is None:
+        add(
+            "transmitter.min_pointing_efficiency",
+            None,
+            "no pointing-availability threshold (inactive constraint)",
+        )
+    if rx.max_power_density_W_m2 is None:
+        add("receiver.max_power_density_W_m2", None, "no power-density / beam-abort limit")
+    if rx.max_heat_rejection_W is None:
+        add("receiver.max_heat_rejection_W", None, "no receiver heat-rejection limit")
+    if rx.sun_avoidance_deg == 0.0:
+        add("receiver.sun_avoidance_deg", 0.0, "no Sun-avoidance constraint at the receiver")
+    # Weather and atmosphere.
+    if m.atmosphere == "none":
+        add("models.atmosphere", "none", "no atmospheric attenuation and no weather outage")
+    elif m.atmosphere == "scenario":
+        scenario = m.weather_scenario
+        if scenario == "clear":
+            add(
+                "models.weather_scenario",
+                "clear",
+                "permanently clear sky: no cloud outage at any epoch (availability is a "
+                "weather upper bound)",
+            )
+        a = c.atmosphere
+        if tx.mode == "optical":
+            tau = (
+                a.optical_zenith_transmittance_clear
+                if scenario == "clear"
+                else a.optical_zenith_transmittance_cloudy
+            )
+            if tau == 1.0:
+                add(
+                    f"atmosphere.optical_zenith_transmittance_{scenario}",
+                    1.0,
+                    f"no {scenario}-sky optical extinction",
+                )
+        else:
+            att = (
+                a.microwave_zenith_attenuation_clear_dB
+                if scenario == "clear"
+                else a.microwave_zenith_attenuation_cloudy_dB
+            )
+            if att == 0.0:
+                add(
+                    f"atmosphere.microwave_zenith_attenuation_{scenario}_dB",
+                    0.0,
+                    f"no {scenario}-sky microwave attenuation",
+                )
+    return tuple(out)
+
+
+@dataclass(frozen=True, slots=True)
+class NamedApproximation:
+    """A configured model choice that replaces a physical model by a named approximation.
+
+    PDF §17: "Never silently replace a physical model with an approximation: name it, document
+    its validity and provide a comparison path."
+
+    Attributes:
+        path: Dotted configuration path of the setting that selects it.
+        value: Configured value.
+        approximation: What is approximated and its validity.
+        comparison_path: How to quantify its effect.
+    """
+
+    path: str
+    value: Any
+    approximation: str
+    comparison_path: str
+
+    def describe(self) -> str:
+        """One-line text ``path = value: approximation; comparison: ...``."""
+        return (
+            f"{self.path} = {self.value}: {self.approximation}; comparison path: "
+            f"{self.comparison_path}"
+        )
+
+
+def approximations_in_force(config: RunConfig) -> tuple[NamedApproximation, ...]:
+    """Named approximations selected by this configuration (PDF §17; run log, manifest, report).
+
+    * ``collector.incidence_mode = fixed_normal`` with SRP in the L1 propagator: the SRP force
+      stays the radial cannonball law on the full ``A/m`` (PDF §6.3). For a flat plate with
+      specular reflectivity ``eps = C_r - 1`` (rest absorbed; Montenbruck & Gill 2000,
+      §3.4; ``s`` from the Sun to the satellite) at incidence ``theta`` the true force is
+      ``P A cos(theta) [(1 - eps) s + 2 eps cos(theta) n]``, so the radial model overestimates
+      the radial component by ``(1 + eps) / (cos(theta) [(1 - eps) + 2 eps cos^2(theta)])``
+      (``1/cos(theta)`` only for ``eps = 0``) and omits the non-radial component
+      ``2 eps P A cos^2(theta) sin(theta)`` along the plate normal.
+    * ``models.light_time = false``: instantaneous geometry (site at the emission epoch).
+    """
+    out: list[NamedApproximation] = []
+    o = config.orbit
+    if (
+        config.collector.incidence_mode == "fixed_normal"
+        and o.model == "prescribed_ephemeris_perturbed_test_particle"
+        and o.include_solar_radiation_pressure
+    ):
+        out.append(
+            NamedApproximation(
+                path="collector.incidence_mode",
+                value="fixed_normal",
+                approximation="radial (cannonball) SRP on the full A/m although the collector "
+                "normal is inertially fixed: overestimates the radial SRP by "
+                "(1+eps)/(cos(theta)[(1-eps)+2 eps cos^2(theta)]), eps = C_r - 1, and omits "
+                "the non-radial component along the plate normal (docs/model_assumptions.md, "
+                "M6b)",
+                comparison_path="rerun with orbit.include_solar_radiation_pressure = false to "
+                "bound the SRP contribution; attitude-dependent SRP (L3) is deferred to M8",
+            )
+        )
+    if not config.models.light_time:
+        out.append(
+            NamedApproximation(
+                path="models.light_time",
+                value=False,
+                approximation="instantaneous geometry: the receiver site is taken at the "
+                "emission epoch (no retarded-time targeting, PDF §7.1); during the light "
+                "time range/c the site moves |v_site| range/c (per au of range ~1.5e4 km from "
+                "the Earth's orbital motion and up to ~230 km from its rotation)",
+                comparison_path="rerun with models.light_time = true (the default)",
+            )
+        )
+    return tuple(out)
+
+
 # ---------------------------------------------------------------------------------------------
 # Errors
 # ---------------------------------------------------------------------------------------------
@@ -2058,7 +2276,9 @@ __all__ = [
     "ConstantsConfig",
     "FieldMeta",
     "FramesConfig",
+    "IdealisedSetting",
     "ModelsConfig",
+    "NamedApproximation",
     "OrbitConfig",
     "PerturbingBody",
     "ProjectConfig",
@@ -2069,11 +2289,13 @@ __all__ = [
     "ThermalConfig",
     "TimeConfig",
     "TransmitterConfig",
+    "approximations_in_force",
     "canonical_json",
     "canonical_utc",
     "config_hash",
     "dump_resolved_yaml",
     "field_meta",
+    "idealised_settings",
     "leaf_paths",
     "load_config",
     "parse_config",
