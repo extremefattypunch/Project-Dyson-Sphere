@@ -598,6 +598,8 @@ def _section_classes() -> list[type[BaseModel]]:
 
 SECTION_FIELDS = {"project", "time", "frames", "orbit", "collector", "transmitter", "receiver"}
 SECTION_FIELDS |= {"thermal", "atmosphere", "models", "constants", "sites"}
+# M7 constellation sub-sections (nested models, not leaves).
+SECTION_FIELDS |= {"technology", "scheduler"}
 
 UNIT_SUFFIX = {
     "m": "_m",
@@ -614,6 +616,7 @@ UNIT_SUFFIX = {
     "K^-1": "_per_K",
     "m^2 kg^-1": "_m2_kg",
     "kg m^-2": "_kg_m2",
+    "kg": "_kg",
     "m s^-1": "_m_s",
     "UTC ISO-8601": "_utc",
     "%": "_percent",

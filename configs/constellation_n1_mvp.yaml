@@ -1,0 +1,107 @@
+# helioswarm run configuration: the single-satellite optical baseline as a ONE-SATELLITE
+# CONSTELLATION (M7 consistency case). Identical to configs/mvp_single_satellite.yaml except
+# project.name and the constellation section below (one ring, one satellite, every element and
+# the phase inherited from the orbit section, unlimited beam slots, greedy scheduler). Its
+# network P_grid must equal the single-satellite run epoch by epoch
+# (tests/integration/test_constellation.py).
+#
+# Original header of configs/mvp_single_satellite.yaml follows.
+#
+# Adapted from the example in the implementation brief (PDF §5, p.8). That example is a
+# *schema example, not a recommended engineering design*: every number below is a scenario
+# input with provenance 'assumed' unless the schema marks the default as 'sourced'.
+# Run `helioswarm validate-config configs/mvp_single_satellite.yaml --show-provenance` to list
+# every resolved value with its unit and provenance.
+#
+# Changes relative to the PDF example (all required by the schema):
+#   - schema_version added (schema versioning, PDF p.9; required, no default).
+#   - receiver.technology added: optical links need a laser-photovoltaic receiver (PDF §10.4).
+#   - Omitted fields take the documented schema defaults (see the resolved dump).
+#
+# Receiver limits and safety (PDF §10.4; laser-photovoltaic technology case): only the PDF
+# example's max_input_power_W = 1e12 W is set, and it never binds (captured power <= ~15 kW).
+# No max_power_density_W_m2 and no max_heat_rejection_W are set, deliberately: this project has
+# no sourced laser-PV flux, eye-safety or heat-rejection limit to use, and inventing one would
+# be an unlabelled assumption. The M6 run gives a peak incident density of ~5e-3 W/m^2 (about
+# 1e-5 of the solar constant), so no plausible limit binds for this design; a study at higher
+# flux (larger aperture, shorter range) must set a sourced value. The microwave rectenna config
+# makes its own, separate statement.
+
+schema_version: 1
+
+project:
+  name: "constellation_n1_mvp"
+  seed: 20261111
+  output_dir: "runs/constellation_n1_mvp"
+
+time:
+  start_utc: "2030-01-01T00:00:00"
+  duration_days: 365.25
+  output_step_s: 3600
+  integrator_step_s: 300
+
+frames:
+  inertial: "J2000"
+  origin: "SOLAR SYSTEM BARYCENTER"
+  earth_fixed: "IAU_EARTH"
+
+orbit:
+  model: "prescribed_ephemeris_perturbed_test_particle"
+  initial_epoch_utc: "2030-01-01T00:00:00"
+  semimajor_axis_au: 1.0
+  eccentricity: 0.0
+  inclination_deg: 0.0
+  raan_deg: 0.0
+  arg_periapsis_deg: 0.0
+  true_anomaly_deg: 30.0
+  include_planetary_perturbations: true
+  include_solar_radiation_pressure: true
+  cr: 1.3
+  area_to_mass_m2_kg: 0.02
+
+collector:
+  area_m2: 10000
+  pv_efficiency_reference: 0.30
+  reference_temperature_K: 300
+  temperature_coefficient_per_K: -0.0004
+  absorptivity: 0.90
+  incidence_mode: "sun_tracking"
+
+transmitter:
+  mode: "optical"
+  wavelength_m: 1.0e-6
+  aperture_diameter_m: 10.0
+  electrical_to_beam_efficiency: 0.50
+  pointing_sigma_rad: 1.0e-9
+  aperture_illumination: "uniform_circular"
+
+receiver:
+  sites:
+    - name: "example_site"
+      latitude_deg: 0.0
+      longitude_deg: 0.0
+      altitude_m: 0.0
+  technology: "laser_photovoltaic"
+  radius_m: 1000
+  min_elevation_deg: 10
+  conversion_efficiency: 0.40
+  grid_efficiency: 0.97
+  max_input_power_W: 1.0e12
+
+thermal:
+  emissivity: 0.90
+  radiator_temperature_limit_K: 450
+  radiating_sides: 2
+  radiator_view_factor: 1.0
+
+models:
+  beam: "airy_far_field"
+  atmosphere: "scenario"
+  weather_scenario: "clear"
+  light_time: true
+  sun_occultation: true
+
+constellation:
+  rings:
+    - name: "mvp"
+      n_satellites: 1

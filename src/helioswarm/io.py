@@ -300,7 +300,7 @@ def summary_inputs(result: SystemRunResult) -> SummaryInputs:
         reference_thermal_feasible=ref.thermal_feasible,
         reference_power_density_abort=ref.power_density_abort,
         max_power_density_W_m2=cfg.receiver.max_power_density_W_m2,
-        max_input_power_W=cfg.receiver.max_input_power_W,
+        max_input_power_W=cfg.receiver.site_max_input_power_W(cfg.receiver.sites[0]),
         collector_area_m2=cfg.collector.area_m2,
         earth_occultation_checked=cfg.models.earth_occultation,
         sun_occultation_checked=cfg.models.sun_occultation,

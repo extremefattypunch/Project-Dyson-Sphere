@@ -1462,3 +1462,215 @@ reference remains the default.
 - The capacity-factor reference uses window means, not a design point; it is a normalisation,
   not a nameplate rating.
 
+
+## M7: Constellation (rings, phases, receiver network, scheduler, network metrics)
+
+Modules: `constellation.py` (members, stage A link candidates, stage B scheduling and network
+power), `scheduler.py` (per-epoch capacity-constrained scheduler), `constellation_io.py`
+(network/receiver/satellite tables, summary, per-link detail, array-task link files),
+additions to `propagate.py` (Earth-relative phase, stacked L1), `system.py` (shared single-link
+budget), `link_budget.py` (per-site receiver model), `config.py` (schema). Implementation notes
+and measured numbers: `docs/milestones/M7.md`.
+
+### Orbit phase reference (`orbit.phase_reference`, ring `phase_reference`)
+
+- `absolute` (default; every pre-M7 configuration): `orbit.true_anomaly_deg` is the true anomaly
+  ν of the osculating Sun-centred ECLIPJ2000 elements (unchanged, bit for bit).
+- `earth_relative`: the configured angle φ is the offset of the satellite's heliocentric
+  ecliptic longitude from the Earth's at the element epoch t₀, **positive ahead of the Earth**
+  in its (prograde) orbital motion: `λ_sat = λ_E(t₀) + φ`, where `λ_E = atan2(y, x)` of the
+  geometric (no light time) position `r_EARTH(t₀) − r_SUN(t₀)` (NAIF 399, DE440, J2000 rotated
+  to ECLIPJ2000 by `R_x(ε₀)`). The argument of latitude follows from
+  `tan(λ − Ω) = cos i · tan u` as `u = atan2(sin Δ · sgn(cos i), cos Δ · |cos i|)`, `Δ = λ − Ω`
+  (the quadrant is fixed because `cos u` and `cos Δ` have the same sign), and `ν = u − ω`
+  (mod 2π). Undefined for polar orbits (`|cos i| < 1e-12`, rejected by the schema). Function:
+  `propagate.resolve_orbit_phase`; `orbit.elements_from_config` refuses an Earth-relative
+  configuration without the resolved anomaly, so the angle can never be silently read as a
+  true anomaly. Test: the satellite at +30° has Earth-relative longitude 30° at t₀ from SPICE
+  `spkezr`/`pxform` directly (1e-9 rad), for a circular ecliptic and an inclined eccentric
+  orbit.
+
+### Constellation definition (`constellation` section; PDF §11.2)
+
+- Rings: each ring sets its orbital elements (`None` = the `orbit` section's), `n_satellites`,
+  phases `φ_k = offset + span·k/n` (`even`) or `offset + U_k`, `U_k ~ U[0, span)` drawn from the
+  run's `numpy.random.Generator` seeded with `project.seed` (`random`; rings in order),
+  `phase_span_deg` (default 360; the demo uses 300° to keep satellites ≥ 30° from the Earth —
+  an **assumed scenario choice**, not a validity limit: the Earth's pull is in the L1 force
+  model, and the far-field condition N_F = D²/(λR) ≤ 0.5 needs only R ≥ 2·10⁸ m ≈ 0.0013 au
+  for D = 10 m, λ = 1 µm, whereas the excluded arc starts at a 0.52 au chord; the choice shapes
+  the results because the near-Earth slots deliver the most, see M7.md),
+  the phase reference, and optional technology overrides (collector area, transmitter aperture,
+  electrical-to-beam efficiency, pointing sigma). Each satellite is a full single-satellite
+  configuration (`config.satellite_config`), validated with the same schema rules (an override
+  that breaks a rule fails like the same value in a single-satellite file). Force model, orbit
+  model and element epoch are common to all satellites.
+- Even spacing is in true anomaly (`absolute`) or ecliptic longitude (`earth_relative`), i.e.
+  equal spacing in time only for circular orbits.
+
+### Propagation of N satellites
+
+- **L1 stacked**: independent massless test particles in the same prescribed-ephemeris field
+  are integrated as one 6N-state `solve_ivp` (DOP853, heliocentric formulation) sharing the
+  Hermite ephemeris cache and step sequence (`propagate.propagate_l1_stacked`). Every
+  tolerance is divided by √N (a heuristic). This is **not** a guarantee that each accepted
+  stacked step meets every satellite's solo criterion: for an RMS error norm (e.g. RK45) it
+  would be, but scipy's DOP853 norm is `|h|·E5/√((E5 + 0.01·E3)·6N)` with `E5`, `E3` summed
+  over all 6N components, which is not separable by satellite (a satellite with a large
+  3rd-order estimate lowers the norm seen by another; M7 review). What holds is **empirical**
+  agreement, measured on six heterogeneous orbits (0.4–1.3 au, e ≤ 0.2, i ≤ 10°, one satellite
+  5° from the Earth) over one year, with the configured `max_step` (300 s in the demos, under
+  which the step is capped and the error norm hardly sets it) and without `max_step` (the
+  error norm alone sets the step): `scripts/validate_stacked_l1.py`, job and numbers in
+  M7.md D. Stacks hold at most `(rtol/1e-13)²` satellites (100 at rtol = 1e-12) and a stack of
+  one is the solo integrator (bit for bit). Tests: stacked vs solo < 1 cm over 20 days
+  (measured 0.8–1.3 mm), and the stack split and the 1/√N scaling of rtol/atol are asserted on
+  the `solve_ivp` call.
+- **L0**: the closed-form Kepler propagation per satellite (vectorised over epochs), also the
+  drift reference of each L1 satellite.
+
+### Link candidates (stage A) and the shared single-link budget
+
+For every satellite × site: access (retarded time, elevation, Earth/Sun/Moon occultation, Sun
+avoidance), atmosphere and beam at the epochs with access, and the availability bits and PDF
+§10.1 budget of `system.site_link_budget` — the function the single-satellite run uses, so a
+one-satellite constellation is the M6 run bit for bit (tested). The beam is evaluated per pair
+with the M5 reference (`backend = numpy`, default), or batched over all pairs of a block of
+satellites with the same beam settings (`numpy_batch`, `jax`; the batched kernel agrees with the
+reference to 6.3e-13 on the N = 1000 workload, job 60286071). Receiver limits are **not** applied per link: the single-beam
+receiver-saturation flag is cleared and the limits act on the site sum in stage B. The
+single-beam power-density abort stays a link condition (a beam over the limit alone can never be
+scheduled).
+
+### Scheduler (PDF §11.2, §13.1 scheduler row, §10.4 several transmitters)
+
+Per epoch, feasible links `l = (i, j)` with `P_l = P_captured` and peak irradiance `d_l`:
+
+```
+beam exclusivity   Σ_j x_ij ≤ 1                (one target per satellite)
+beam slots         Σ_i x_ij ≤ k_j              (receiver.max_simultaneous_beams / site override)
+density interlock  Σ_i d_ij x_ij ≤ D_j         (receiver.max_power_density_W_m2, incoherent sum)
+accepted power     A_j = min(Σ_i P_ij x_ij, L_j),  L_j = min(P_max_input,j, Q_max,j/(1 − η_rx))
+objective          max Σ_j A_j                 (= Σ P_grid / (η_rx η_grid); same η at every site)
+duty cycle         ≤ m = ⌊duty·N_w⌋ transmitting epochs in any N_w = ⌊window/Δt⌋ consecutive ones
+```
+
+- `greedy_max_power` (default): links in the total order (P desc, satellite index, site index),
+  each taken iff the satellite is free, the site has a slot, is not yet saturated (Σ P < L_j)
+  and the density sum stays ≤ D_j.
+- `optimal_assignment`: exact per-epoch optimum. (1) If every satellite's best link forms a
+  feasible unsaturated set it is optimal (it attains the upper bound Σ_i max_j P_ij). (2) If no
+  power or density limit can bind (the k_j largest candidate powers/densities fit), the problem
+  is a bipartite assignment of satellites to slots, solved by
+  `scipy.optimize.linear_sum_assignment` (site j replicated k_j times). (3) Otherwise a MILP
+  (`scipy.optimize.milp`, HiGHS, `mip_rel_gap = 0` and `mip_abs_gap = 0`, data scaled to
+  O(1) by max P and D_j). `mip_abs_gap` is not a documented `milp` option: scipy passes it to
+  HiGHS verbatim (with a RuntimeWarning that the scheduler suppresses); without it HiGHS's
+  default absolute gap 1e-6 would certify the optimum only to 1e-6 × max P. HiGHS still works
+  to its feasibility/integrality tolerances (1e-6 on the scaled problem), so "exact" in the
+  MILP branch means optimal to those tolerances. The rounded solution is re-checked exactly and
+  repaired (weakest beam of a violating site dropped) if the tolerance let a violation through;
+  a **repaired epoch is feasible but not certified optimal** (counted per epoch,
+  `ScheduleTimeseries.repaired`, logged; 0 in every run so far). Steps (1) and (2) are exact.
+  Cross-checked against brute-force enumeration on 40 seeded random instances (1e-9 relative)
+  and against greedy (optimal ≥ greedy at every epoch).
+- Determinism: candidate links are put in canonical (satellite, site) order before either
+  policy, so the result is independent of input order (tested with permutations). No randomness.
+- Duty cycle: causal, per satellite; a resting satellite's links get `DUTY_CYCLE`. `N_w` and
+  `m` are floors taken in exact rational arithmetic on the configured decimal values
+  (`config.duty_cycle_epochs`, shared by the scheduler and the schema validator): binary
+  floating point would round `0.29 × 100 = 28.999999999999996` down to 28 (M7 review).
+- **Retargeting is instantaneous** (`scheduler.retarget_model = instantaneous`, named
+  approximation): no slew, acquisition or settling time; retarget events are counted and
+  reported (`retarget_events`). A finite-time model is not implemented.
+- Decision reasons per link: `SCHEDULER_NOT_SELECTED` (satellite serves another site, or the
+  policy preferred other links, or the link delivers 0 W), `RECEIVER_CAPACITY` (slots full,
+  site saturated, or density interlock), `DUTY_CYCLE`. They are new `Unavailability` bits 10–12,
+  never set by a single-satellite run.
+
+### Incoherent summation (PDF §2 non-goal, §11.3)
+
+Satellites are independent transmitters: received powers (and peak intensities in the density
+interlock) add; field amplitudes are never added and no coherent combining exists in the code
+(`BeamResult.coherent_combining` is always False and its constructor rejects True). Two beams of
+1 W and 4 W on one receiver give 5 W, not the in-phase (√1 + √4)² = 9 W (tested). The density
+sum assumes the beam peaks coincide at the receiver centre — an upper bound of the true peak.
+
+### Emission-epoch aggregation (named approximation, M7 review)
+
+The output grid is the satellites' **emission** epochs. A beam emitted at `t_e` reaches site j
+at `t_e + τ_ij`, `τ_ij = range_ij/c`, and τ differs between satellites (258 s for a satellite
+30° from the Earth, 964 s at 150° on the 1 au ring). The scheduler sums, clips and limits the
+beams scheduled at one emission epoch (slots k_j, summed input/heat limit L_j, summed density
+D_j), i.e. beams that are not simultaneous at the receiver, and `P_grid,j` is reported on the
+emission grid. (The M6 justification — emission and arrival series differ by |ṙ|/c ~ 1e-5 —
+holds for one satellite, not for aggregating several.) Beam exclusivity is a transmitter
+constraint and is exact on the emission grid. A full reception-time scheduler (constraints on
+the receiver grid with exclusivity on each satellite's emission time, which couples epochs) is
+not implemented. Instead every run bounds the approximation (`constellation.
+reception_time_aggregates`): each scheduled beam is held over its emission step and shifted by
+its own light time, arriving over `[t_k + τ_k, t_{k+1} + τ_{k+1})`; per site the arriving beams
+are counted and summed in continuous reception time (sample-and-hold). `receivers.parquet`
+gets, per emission epoch, the light-time spread of the beams summed at the site and, per
+reception slot `[t_k, t_{k+1})`, the largest number of simultaneous beams and summed density,
+the time over the slot and density limits, and the incident and accepted energies;
+`summary.json → reception_time` compares the accepted energy in reception time with the
+emission-grid value under the same hold convention (incident energies differ only by the
+light-time rate). It is listed among the named approximations of every multi-satellite run
+(`config.approximations_in_force`, manifest and run log). Measured effect: M7.md.
+
+### Network power and outputs (PDF §11.4)
+
+`P_grid,j = min(Σ P_captured, L_j)·η_rx·η_grid`, `P_grid,net = Σ_j P_grid,j`. Per-satellite
+delivered power (per-satellite summaries only) shares the site's `P_grid` in proportion to the
+captured powers (pro-rata clipping). Time weighting, percentiles and outages use the M6
+conventions; network (and per-receiver) availability = time fraction with `P_grid > 0`.
+Unavailability breakdown: per satellite-epoch, the reason of the link that got furthest through
+the chain (largest precedence index in `constellation.LINK_REASONS` over the satellite's sites);
+per link, its first reason (tested against hand-built codes and an independent loop recount).
+Double counting (`summary.json → double_counting`): network energy = Σ receiver energies is a
+*consistency* check only (the network column is that sum by construction); the independent
+evidence is a recount of the network P_grid from the satellite assignments and link powers
+(`Σ_j min(Σ_{i→j} P_captured,ij, L_j)·η_rx·η_grid`, not from the scheduler's site totals), the
+sum of the per-satellite shares, and scheduled beams = transmitting satellites at every epoch,
+plus the tests (sum of independent single-satellite runs, scheduler exclusivity).
+Unconstrained baseline (`unconstrained`): every satellite on its best feasible link with no
+site capacity, ×η_rx·η_grid — the sum of the satellites' runs with unlimited receivers. It
+separates placement (geometry) from receiver capacity: `capacity_loss_fraction = 1 −
+E_grid/E_unconstrained`; the mean over the satellites of an evenly phased ring is a
+placement-neutral per-satellite baseline.
+
+Receiver site overrides (`receiver.sites[*].max_input_power_W` / `max_heat_rejection_W`) apply
+to the single-satellite run too (`link_budget.receiver_model_for_site`, one definition for both
+paths; before the M7 review the single-satellite run silently ignored them). Beam slots cannot
+bind for one satellite (one beam).
+
+### Mass proxy (PDF §11.4 "mass proxy", "power per assumed deployed mass")
+
+`m_sat = m_bus + s_col·A_col + s_rad·A_rad + s_tx·πD²/4` with `s_rad =
+thermal.radiator_specific_mass_kg_m2` (the M4 field, required when a mass proxy is configured),
+`A_rad` the configured plate area or else the largest required radiator area over the run. All
+specific masses are **assumed** scenario inputs with no default and no source (demo: 1 kg/m²
+collector, 5 kg/m² radiator, 50 kg/m² of transmitter aperture, 500 kg bus). It is a proxy, not
+a mass budget (no structure, propellant, ADCS, margins).
+
+### Configuration fields added in M7
+
+- `orbit.phase_reference` (`absolute` default), `receiver.max_simultaneous_beams` (None =
+  unlimited), `receiver.sites[*].max_simultaneous_beams` / `max_input_power_W` /
+  `max_heat_rejection_W` (None = receiver value), and the optional `constellation` section
+  (rings, scheduler, mass proxy). All **assumed**. The MVP configuration hash was re-pinned
+  (`a3fafc4d…23af`); removing exactly the new keys restores the M6 digest (test).
+
+### Neglected effects (M7)
+
+- Finite slew/retarget and acquisition time; beam splitting (one beam per satellite).
+- Coherent combining (out of scope by the PDF); mutual interference between beams at one
+  receiver beyond the incoherent power sum; the density interlock's coincident-peak bound.
+- Correlated weather between sites (the scenario atmosphere is one setting for all sites).
+- Satellite-satellite occultation, collisions and station keeping; the satellites do not
+  interact (test particles).
+- Scheduler foresight: each epoch is optimised on its own (no look-ahead over the duty-cycle
+  window); the duty-cycle rule is causal and myopic.
+- Reception-time scheduling: the receiver constraints act on emission epochs (named
+  approximation above, bounded per run).

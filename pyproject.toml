@@ -54,6 +54,12 @@ itur = [
 jax = [
     "jax>=0.12,<0.13; python_version >= '3.12'",
 ]
+# Optimisation and global sensitivity analysis (M8: pymoo NSGA-II, SALib Sobol). Both install from
+# wheels on Python 3.12 (pymoo 0.6.2 ships a cp312 manylinux wheel; SALib 1.6.0 is pure Python).
+opt = [
+    "pymoo>=0.6.2,<0.7",
+    "SALib>=1.6,<1.7",
+]
 # GPU (CUDA 12) build of the same backend: jaxlib CUDA plugin + NVIDIA runtime wheels (~4.4 GB of
 # nvidia-* wheels). Only for the gpu_test benchmark job; never needed for the CPU reference.
 gpu = [
@@ -132,7 +138,7 @@ init_typed = true
 warn_required_dynamic_aliases = true
 
 [[tool.mypy.overrides]]
-module = ["spiceypy.*", "rebound.*", "hcipy.*", "scipy.*", "itur.*", "pyarrow.*", "jax.*"]
+module = ["spiceypy.*", "rebound.*", "hcipy.*", "scipy.*", "itur.*", "pyarrow.*", "jax.*", "pymoo.*", "SALib.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------------------------------------

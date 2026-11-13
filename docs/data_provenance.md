@@ -141,6 +141,18 @@ M6 adds no external data set. Provenance of what it uses or produces:
 | Microwave sweep values (M6b) | `configs/microwave_1au_sweep.yaml`: heliocentric radii from the PDF §2 scenario table; phased-array diameters 1 km (the microwave MVP), 3 km and 10 km (assumed, deliberately generous); relabelled `swept` per point. |
 | Characterisation grids (M6b) | `helioswarm characterize` defaults: 0.3–1.2 au in 0.05 au steps (contains the PDF §2 radii), receiver radii 1/5/10 km (PDF §2) plus the configured one, pointing sigmas 0–1 × λ/D and wavefront errors 0–0.2 λ plus the configured values (assumed grid choices); the capture curves' link range and elevation are explicit inputs written to `characterization.json`. |
 
+### M7: constellation scenarios, link files and optional dependencies
+
+M7 adds no external data set. Provenance of what it uses or produces:
+
+| Item | Provenance |
+|---|---|
+| Constellation configurations | `configs/constellation_demo.yaml` (N = 10), `configs/constellation_demo_n1000.yaml`, `configs/constellation_demo_sweep.yaml` (N = 1/10/100 × even/random × greedy/optimal), `configs/constellation_n1_mvp.yaml` (the MVP as a one-satellite ring). Every value is **assumed**: the three receiver sites (scenario locations, not real installations), their capacities (8 beam slots; one site with 4 slots and a 200 kW input limit), the ring (1 au, Earth-relative phases over [30°, 330°)), and the mass-proxy specific masses (collector 1 kg/m², radiator 5 kg/m² via `thermal.radiator_specific_mass_kg_m2`, transmitter 50 kg/m² of aperture, bus 500 kg; **not sourced**, a proxy for M8 sensitivity studies). The technology is the MVP's (PDF §5 example). Random phases come from `numpy.random.default_rng(project.seed)` and are reproducible. |
+| Earth position for Earth-relative phases | DE440 via the kernel set of M2 (`spkezr`-equivalent provider calls, NAIF 399 relative to the Sun, geometric); no new data. |
+| Constellation run outputs | `network.parquet`, `receivers.parquet`, `satellites.parquet`, optional `links/*.parquet`, `summary.json`, `manifest.json`, figures in `$HELIOSWARM_RUNS_DIR` on netscratch (90-day purge; regenerable from the configs). Array-task link files `linkset_<i>_of_<n>.npz` (intermediate stage-A arrays, uncompressed NumPy archives, also on netscratch). Nothing large is committed. |
+| `opt` extra (for M8) | `pymoo` 0.6.2 (Apache-2.0; cp312 manylinux wheel) and `SALib` 1.6.0 (MIT; pure Python) from PyPI, pinned `pymoo>=0.6.2,<0.7`, `SALib>=1.6,<1.7` and locked in `uv.lock`; installed from wheels on Python 3.12 (checked with `uv sync --locked --all-extras`). Not imported by M7 code. |
+| Scheduler solvers | `scipy.optimize.linear_sum_assignment` and `scipy.optimize.milp` (HiGHS) of SciPy 1.18.1 (`uv.lock`); signatures checked from the installed package. |
+
 ## Sourced constants and defaults
 
 | Quantity | Value | Where | Source |

@@ -1,4 +1,10 @@
-# Compliance matrix: M0–M6 against the requirements PDF
+# Compliance matrix: M0–M7 against the requirements PDF
+
+**M7 update (constellation).** The rows deferred to M7 (§4 layout `constellation_demo.yaml` /
+`scheduler.py`, §4 SciPy.optimize for the scheduler, §6.4 several sites to the scheduler, §10.4
+several transmitters, §11.2–§11.4, §13.1 scheduler row, §15 M7 exit, §17 receiver double
+counting) are now **satisfied (M7)** with the evidence given in each row; the remaining
+deferrals are M8/M9 items. The counts in the summary paragraph below are those of the M6b audit.
 
 Audit of the whole M0–M6 code base (milestone M6b) against every requirement and acceptance
 item of `gpt-insights/Heliocentric_Dyson_Swarm_Coding_Agent_Implementation_Plan.pdf` that falls
@@ -74,11 +80,12 @@ review); §19 fresh-clone reproduction.
 | Python ≥ 3.11, uv, lock file; record runtime versions in every manifest | `pyproject.toml` (`requires-python`), `uv.lock`; manifest `python_version`, `packages` (`src/helioswarm/manifest.py:111` `package_versions`); CI on 3.11 and 3.12 | satisfied |
 | NumPy/SciPy; Astropy for checks; SpiceyPy; REBOUND cross-check; HCIPy; NumPy/SciPy microwave model; ITU-R; pandas/pyarrow/matplotlib; pytest/ruff/mypy/pre-commit/CI | `pyproject.toml` dependencies and extras (`xcheck`: rebound, hcipy; `itur`; `jax`/`gpu`); `.pre-commit-config.yaml`; `.github/workflows/ci.yml` | satisfied |
 | REBOUNDx | no additional forces are integrated in REBOUND (it is a cross-check of the gravitational model only) | N/A |
-| SciPy.optimize / pymoo | optimisation is M8 | deferred (M8) |
+| SciPy.optimize / pymoo | `scipy.optimize.linear_sum_assignment` and `milp` used by the M7 scheduler (`src/helioswarm/scheduler.py`); the `opt` extra (pymoo 0.6.2, SALib 1.6.0) is installed and locked for M8; optimisation itself is M8 | partial: scheduler satisfied (M7); optimisation deferred (M8) |
 | JAX/Numba only after profiling; CPU reference kept | profiling in `docs/milestones/M6.md` D; `src/helioswarm/capture_batch.py:285` `airy_capture_batch` optional, numpy default; `tests/unit/test_capture_batch.py::test_jax_backend_equals_numpy_batch` | satisfied |
 | Layout: README, pyproject, uv.lock, .gitignore, `src/helioswarm/{__init__,constants,config,ephemeris,frames,orbit,srp,ground,visibility,solar,thermal,aperture,optical,microwave,atmosphere,link_budget,system,metrics,plotting,cli}.py`, `tests/{unit,integration,regression}`, `experiments/README.md`, `data/kernels`, `runs/.gitkeep`, `figures/`, `docs/{model_assumptions,validation_report,data_provenance}.md` | all present (`tests/regression/` holds no files: regression pins live beside the unit tests, e.g. `tests/unit/test_atmosphere.py::test_itu_r_production_revisions_regression_pin`) | satisfied |
 | `configs/mvp_single_satellite.yaml`, `optical_1au_sweep.yaml`, `microwave_1au_sweep.yaml` | present; **`microwave_1au_sweep.yaml` added in M6b** (5 radii × 3 apertures; validated by `test_shipped_sweep_expands_to_valid_points[microwave_1au_sweep.yaml]`) | satisfied (M6b) |
-| `configs/constellation_demo.yaml`, `optimization.yaml`, `scheduler.py`, `optimization.py`, `paper/` | not created (no stubs for later milestones; `tests/unit/test_engineering_rules.py::test_no_stubs_for_later_milestones`) | deferred (M7, M8, M9) |
+| `configs/constellation_demo.yaml`, `scheduler.py` | present (M7): `configs/constellation_demo.yaml` (+ `constellation_demo_n1000.yaml`, `constellation_demo_sweep.yaml`, `constellation_n1_mvp.yaml`), `src/helioswarm/scheduler.py`; `tests/unit/test_constellation_config.py::test_shipped_constellation_configs_are_valid_and_n1_matches_the_mvp` | satisfied (M7) |
+| `optimization.yaml`, `optimization.py`, `paper/` | not created (no stubs for later milestones; `tests/unit/test_engineering_rules.py::test_no_stubs_for_later_milestones`) | deferred (M8, M9) |
 | `experiments/notebooks/`, `data/external/` | no notebook and no cached external dataset exists (ITU-R maps live inside the `itur` wheel, see `docs/data_provenance.md`) | N/A |
 
 ## §4 Engineering rules
@@ -132,7 +139,7 @@ review); §19 fresh-clone reproduction.
 | §6.4 Earth blockage by ray/ellipsoid intersection | `src/helioswarm/visibility.py:335` `segment_intersects_ellipsoid`; `tests/unit/test_visibility.py::test_segment_ellipsoid_test_agrees_with_spice_surfpt`, `tests/unit/test_visibility.py::test_earth_blocking_flips_at_the_geodetic_horizon` | satisfied |
 | §6.4 Sun blocking the beam with configurable limb margin | `models.sun_occultation_limb_margin_deg`; `tests/unit/test_visibility.py::test_sun_blocking_flips_at_the_limb_plus_margin` | satisfied |
 | §6.4 Receiver minimum elevation and Sun-avoidance angle | `receiver.min_elevation_deg`, `receiver.sun_avoidance_deg`; `tests/unit/test_visibility.py::test_min_elevation_flag`, `tests/unit/test_visibility.py::test_sun_separation_and_avoidance` | satisfied |
-| §6.4 Several sites: access independently, then valid links to the scheduler | access per site: `tests/integration/test_access_mvp.py::test_access_from_config_handles_every_site_and_checks_the_kernel_set`; the scheduler does not exist, so `run` accepts one site | partial → deferred (M7: scheduler and receiver capacity are the M7 deliverable) |
+| §6.4 Several sites: access independently, then valid links to the scheduler | access per satellite × site in stage A (`src/helioswarm/constellation.py` `evaluate_links`), feasible links to the scheduler (`finish_constellation`); `tests/integration/test_constellation.py::test_capacity_limits_clip_and_schedule_incoming_power`, `::test_optimal_policy_never_delivers_less_than_greedy_and_breakdown_is_complete` (3 sites) | satisfied (M7) |
 
 ## §7 Light-time targeting, ground geometry, orbital outputs
 
@@ -217,7 +224,7 @@ review); §19 fresh-clone reproduction.
 | §10.4 Receiver area, conversion efficiency, max input power, thermal rejection | `src/helioswarm/link_budget.py:89` `ReceiverModel`; `tests/unit/test_link_budget.py::test_receiver_input_limit_clips_captured_power`, `tests/unit/test_link_budget.py::test_receiver_heat_rejection_limit` | satisfied |
 | §10.4 Max power density and beam abort as explicit constraints | `receiver.max_power_density_W_m2`; `tests/unit/test_link_budget.py::test_power_density_beam_abort` | satisfied |
 | §10.4 Link unavailable on pointing, elevation, weather, occultation or receiver state | `src/helioswarm/system.py:120` `Unavailability` bitmask; `tests/integration/test_end_to_end.py::test_weather_pointing_and_power_density_conditions`, `tests/integration/test_end_to_end.py::test_baseline_has_access_occultation_and_consistent_reasons` | satisfied |
-| §10.4 Several transmitters: receiver limits, no double counting | single transmitter only | deferred (M7) |
+| §10.4 Several transmitters: receiver limits, no double counting | limits on the site sum (slots, input, heat, summed density interlock) in `src/helioswarm/scheduler.py`; beam exclusivity; `summary.json` double-counting check (independent recount of P_grid from the assignments and link powers, sum of per-satellite shares, beams = active satellites; network = Σ receivers as a consistency check only); emission-epoch aggregation bounded by the reception-time reconstruction (`summary.json` `reception_time`); `tests/unit/test_scheduler.py::test_receiver_power_limit_clips_the_sum_and_stops_further_beams`, `tests/unit/test_constellation_stage_b.py`, `tests/integration/test_constellation.py::test_summed_density_interlock_is_wired_through_the_run`, `::test_two_rings_with_technology_overrides_sum_the_individual_runs`, `::test_summed_power_density_interlock_is_enforced`, `::test_optimal_equals_brute_force_and_dominates_greedy`, `tests/integration/test_constellation.py::test_cli_constellation_run_outputs_and_determinism` | satisfied (M7) |
 | §10.4 Optical and microwave receivers as different technology cases | `receiver.technology` tied to mode (`src/helioswarm/config.py:120` `RECEIVER_TECHNOLOGY_FOR_MODE`); `tests/unit/test_link_budget.py::test_receiver_model_from_config_is_technology_specific`; configs state their separate assumptions | satisfied |
 | §10.5 End-to-end efficiency, beam capture, availability, capacity factor (denominator defined), outage statistics, delivered energy, power density | `src/helioswarm/metrics.py:580` `summarize_timeseries`, `src/helioswarm/system.py:400` `reference_link`; `tests/unit/test_metrics.py::test_summary_energy_availability_capacity_factor`, `tests/integration/test_end_to_end.py::test_reference_link_conditions_and_rated_power_independently` | satisfied |
 
@@ -234,8 +241,9 @@ review); §19 fresh-clone reproduction.
 | §11.1.7 Save P_grid(t), all intermediate stages, thermal feasibility, link diagnostics | `timeseries.parquet` | satisfied |
 | §11.1.8 One-page run report with the configuration and plots | `src/helioswarm/report.py:80` `report_markdown` (key parameters with provenance, idealised settings, metrics, §7.3 diagnostics, provenance, figures) | satisfied |
 | §11.1 Preserve units, energy accounting, time geometry and capture | e2e `tests/integration/test_end_to_end.py::test_unavailable_epochs_deliver_zero_and_energy_accounting`, `tests/integration/test_end_to_end.py::test_collector_area_scales_power_linearly` | satisfied |
-| §11.2–§11.3 Constellation scaling, scheduling, independent vs coherent | — | deferred (M7) |
-| §11.4 P_grid per receiver and network, active satellite/link counts, collector/radiator/aperture/mass totals, power per mass, scheduler reason | single-satellite parts satisfied (P_grid, statistics, availability, outages, `power_per_collector_area_W_m2`, unavailability breakdown for geometry/occultation/weather/pointing/thermal/receiver saturation); network totals, mass proxy and scheduler decisions need M7 | partial → deferred (M7) |
+| §11.2 Independent satellites with own technology; vectorised; one ring evenly phased then randomized; rings/inclinations/eccentricities; feasible link list; capacity/exclusivity/interlock/duty-cycle scheduling; deterministic tested scheduler | `src/helioswarm/config.py` `ConstellationConfig`/`RingConfig`; `src/helioswarm/constellation.py` `constellation_members`, `evaluate_links`; `src/helioswarm/propagate.py` `propagate_l1_stacked`; `src/helioswarm/scheduler.py`; tests `tests/integration/test_constellation.py::test_even_and_random_phases`, `::test_stacked_l1_equals_per_satellite_l1`, `::test_identical_even_satellites_with_unlimited_receiver_sum_the_individual_runs`, `::test_stacks_are_split_and_tolerances_scaled_by_one_over_sqrt_n`, `::test_duty_cycle_limit_is_wired_through_the_run_and_the_summary`, `::test_numpy_batch_beam_backend_equals_the_reference_on_two_rings`, `tests/unit/test_scheduler.py` (determinism, permutation, brute force, duty cycle incl. exact decimal floors); `scripts/validate_stacked_l1.py` (heterogeneous rings, one year); Slurm runs N = 1/10/100/1000, even vs random, greedy vs optimal (`docs/milestones/M7.md` D) | satisfied (M7) |
+| §11.3 Independent vs coherent: incoherent power sum only | `src/helioswarm/constellation.py` stage B; `tests/unit/test_scheduler.py::test_incoherent_sum_adds_powers_not_amplitudes`; `BeamResult.coherent_combining` always False | satisfied (M7) |
+| §11.4 P_grid per receiver and network, active satellite/link counts, collector/radiator/aperture/mass totals, power per mass, scheduler reason | `src/helioswarm/constellation_io.py` (`network.parquet`, `receivers.parquet`, `satellites.parquet`, `ConstellationSummary`: network and per-receiver statistics, availability, outages, counts, totals, mass proxy, power per area and mass, unavailability breakdown incl. `RECEIVER_CAPACITY`/`SCHEDULER_NOT_SELECTED`/`DUTY_CYCLE`, unconstrained baseline and capacity-loss fraction); `tests/integration/test_constellation.py::test_cli_constellation_run_outputs_and_determinism`, `::test_duty_cycle_limit_is_wired_through_the_run_and_the_summary` (breakdown vs independent recount), `tests/unit/test_constellation_stage_b.py::test_satellite_primary_reason_is_the_furthest_link_by_first_reason` | satisfied (M7) |
 
 ## §13 Verification and validation gates
 
@@ -252,7 +260,8 @@ review); §19 fresh-clone reproduction.
 | thermal | energy closure, radiative-equilibrium limits | `tests/unit/test_thermal.py::test_energy_ledger_closes`, `tests/unit/test_thermal.py::test_non_converting_plate_matches_radiative_equilibrium`, `tests/unit/test_thermal.py::test_zero_absorbed_power_gives_sink_temperature` | satisfied |
 | beam | Airy first null, total power, capture convergence, pointing monotonicity | `tests/unit/test_optical.py::test_first_null_radius_scaling`, `tests/unit/test_optical.py::test_airy_pattern_integrates_to_one`, `tests/unit/test_capture.py::test_offset_quadrature_converges`, `tests/unit/test_capture.py::test_expected_capture_non_increasing_with_sigma_airy_baseline` | satisfied |
 | link budget | passive stages never increase power; η ∈ [0,1] | `tests/unit/test_link_budget.py::test_random_budgets_satisfy_invariants`, `tests/unit/test_link_budget.py::test_invariant_violation_is_detected_on_construction` | satisfied |
-| scheduler, optimization | — | — | deferred (M7, M8) |
+| scheduler | no receiver over-capacity, no double allocation, deterministic | `tests/unit/test_scheduler.py::test_optimal_equals_brute_force_and_dominates_greedy`, `::test_permutation_of_input_order_gives_identical_assignment`, `::test_schedule_timeseries_is_deterministic_bitwise`, `::test_receiver_power_limit_clips_the_sum_and_stops_further_beams` | satisfied (M7) |
+| optimization | — | — | deferred (M8) |
 
 ### §13.2 Integration tests
 
@@ -261,7 +270,7 @@ review); §19 fresh-clone reproduction.
 | 1-AU baseline from config to saved time series and summary, no manual steps | `tests/integration/test_end_to_end.py::test_cli_run_outputs_plot_and_reproducibility`; fresh-clone reproduction (below) | satisfied |
 | Impossible beam → near-zero capture | `tests/integration/test_end_to_end.py::test_impossible_beam_gives_near_zero_capture` | satisfied |
 | Occulted/unavailable link → zero power | `tests/integration/test_end_to_end.py::test_unavailable_epochs_deliver_zero_and_energy_accounting` | satisfied |
-| Receiver capacity limit clips | `tests/integration/test_end_to_end.py::test_receiver_capacity_limit_clips` | satisfied |
+| Receiver capacity limit clips | single transmitter: `tests/integration/test_end_to_end.py::test_receiver_capacity_limit_clips`, `::test_site_capacity_overrides_apply_to_the_single_satellite_run`; several transmitters (M7): `tests/integration/test_constellation.py::test_capacity_limits_clip_and_schedule_incoming_power`, `::test_summed_density_interlock_is_wired_through_the_run`, `tests/unit/test_scheduler.py::test_receiver_power_limit_clips_the_sum_and_stops_further_beams`, `::test_summed_power_density_interlock_is_enforced` | satisfied |
 | Larger collector area → linearly more PV power | `tests/integration/test_end_to_end.py::test_collector_area_scales_power_linearly` | satisfied |
 | Smaller λ or larger D improves the diffraction scale | `tests/integration/test_end_to_end.py::test_smaller_wavelength_or_larger_aperture_improves_capture` | satisfied |
 | Larger pointing uncertainty cannot improve centred expected capture | `tests/integration/test_end_to_end.py::test_larger_pointing_sigma_cannot_improve_expected_capture` | satisfied |
@@ -318,7 +327,8 @@ review); §19 fresh-clone reproduction.
 | M4 | energy closure and limiting cases pass | `test_thermal.py`, `test_solar.py` | satisfied |
 | M5 | analytic diffraction and capture tests pass | `test_optical.py`, `test_capture.py`, `test_aperture.py` | satisfied |
 | M6 | one config produces P_grid(t), manifest, summary, plots | CLI run test; Slurm runs 60127166/60127172; fresh clone | satisfied |
-| M7–M9 | — | not started | deferred (M7–M9) |
+| M7 | no double counting; deterministic capacity-constrained results | `tests/unit/test_scheduler.py`, `tests/integration/test_constellation.py`; Slurm constellation runs with network metrics (`docs/milestones/M7.md` D) | satisfied (M7) |
+| M8–M9 | — | not started | deferred (M8–M9) |
 
 ## §17 Risks and agent behaviour rules
 
@@ -330,7 +340,8 @@ review); §19 fresh-clone reproduction.
 | Coherence assumed: independent powers | `coherent_combining=False` | satisfied |
 | Thermal losses omitted: energy balance, radiator feasibility, mass proxy | ledger, feasibility; radiator mass when `thermal.radiator_specific_mass_kg_m2` is set (`tests/unit/test_thermal.py::test_sized_radiator_runs_at_the_limit_and_reports_mass`) | satisfied |
 | Atmosphere over-simplified: scenario masks first | scenario + ITU-R | satisfied |
-| Receiver double counting / optimisation of a flawed model / economic overclaim | — | deferred (M7, M8, later) |
+| Receiver double counting: explicit scheduler and receiver power/thermal limits | `src/helioswarm/scheduler.py`; double-counting check in the constellation `summary.json` | satisfied (M7) |
+| Optimisation of a flawed model / economic overclaim | — | deferred (M8, later) |
 | Overengineering: one-satellite slice first | M6 slice before constellation | satisfied |
 | Inspect existing interfaces; no duplicate implementations | single owners (e.g. Ruze in `aperture.py`, on-board chain in `power_chain.py`); M6b reuses M4/M5 functions in `characterize.py` | satisfied |
 | Implementation note per milestone (files, equations, assumptions, tests, issues) | `docs/milestones/M0.md` … `M6b.md` (A–F) | satisfied |

@@ -289,10 +289,16 @@ PointStatus = Literal["ok", "failed"]
 
 def _point_complete(d: Path, manifest: str, summary: str, read_json: Callable[[Path], Any]) -> bool:
     """A point directory is complete when its manifest and summary exist and, if the time
-    series was saved, its report (written last) exists too."""
+    series was saved, its report (written last) exists too. A constellation run writes its
+    manifest last, so manifest + summary mark it complete."""
+    from helioswarm.constellation_io import is_constellation_summary
+
     if not ((d / manifest).is_file() and (d / summary).is_file()):
         return False
-    saved = bool(read_json(d / summary).get("timeseries_saved", True))
+    doc = read_json(d / summary)
+    if is_constellation_summary(doc):
+        return True
+    saved = bool(doc.get("timeseries_saved", True))
     return (not saved) or (d / "report.md").is_file()
 
 
@@ -341,14 +347,28 @@ def run_sweep_points(
             shutil.rmtree(point_dir)
         run_dir = prepare_run_dir(point_dir, overwrite=overwrite)
         try:
-            execute_run(
-                pt.config,
-                run_dir,
-                backend=backend,
-                write_timeseries=not summary_only,
-                make_figures=not summary_only,
-                command=["helioswarm", "sweep", str(plan.path), f"point={i}"],
-            )
+            command = ["helioswarm", "sweep", str(plan.path), f"point={i}"]
+            if pt.config.constellation is not None:
+                from helioswarm.constellation_io import execute_constellation_run
+
+                # Constellation points always save their network/receiver/satellite tables
+                # (the summary is computed from them); --summary-only skips the figures.
+                execute_constellation_run(
+                    pt.config,
+                    run_dir,
+                    backend=backend,
+                    make_figures=not summary_only,
+                    command=command,
+                )
+            else:
+                execute_run(
+                    pt.config,
+                    run_dir,
+                    backend=backend,
+                    write_timeseries=not summary_only,
+                    make_figures=not summary_only,
+                    command=command,
+                )
             status[i] = "ok"
         except Exception as exc:  # record every failure; never drop a point silently
             write_json(
@@ -410,6 +430,44 @@ SWEEP_SUMMARY_FLAG_COLUMNS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
 )
 """Boolean columns of ``sweep_summary.parquet`` (null when the point has no summary)."""
 
+CONSTELLATION_SWEEP_COLUMNS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
+    ("p_grid_mean_W", ("network", "p_grid_W", "time_mean")),
+    ("p_grid_median_W", ("network", "p_grid_W", "median")),
+    ("p_grid_p05_W", ("network", "p_grid_W", "p05")),
+    ("p_grid_p95_W", ("network", "p_grid_W", "p95")),
+    ("p_grid_peak_W", ("network", "p_grid_W", "peak")),
+    ("availability", ("network", "availability")),
+    ("delivered_energy_J", ("network", "delivered_energy_J")),
+    ("end_to_end_efficiency", ("end_to_end_efficiency",)),
+    ("pv_energy_J", ("stage_energy_J", "pv_electric_J")),
+    ("aperture_energy_J", ("stage_energy_J", "aperture_J")),
+    ("captured_energy_J", ("stage_energy_J", "captured_J")),
+    ("outage_count", ("network", "outages", "count")),
+    ("outage_longest_s", ("network", "outages", "longest_s")),
+    ("n_satellites", ("n_satellites",)),
+    ("active_satellites_mean", ("active_satellites", "time_mean")),
+    ("valid_links_mean", ("valid_links", "time_mean")),
+    ("collector_area_m2", ("totals", "collector_area_m2")),
+    ("radiator_area_required_m2", ("totals", "radiator_area_required_m2")),
+    ("transmitter_aperture_area_m2", ("totals", "transmitter_aperture_area_m2")),
+    ("mass_proxy_kg", ("totals", "mass_proxy_kg")),
+    ("power_per_collector_area_W_m2", ("power_per_collector_area_W_m2",)),
+    ("power_per_mass_W_kg", ("power_per_mass_W_kg",)),
+    ("unconstrained_energy_J", ("unconstrained", "energy_J")),
+    ("capacity_loss_fraction", ("unconstrained", "capacity_loss_fraction")),
+    (
+        "unconstrained_power_per_collector_area_W_m2",
+        ("unconstrained", "power_per_collector_area_W_m2"),
+    ),
+    (
+        "reception_accepted_energy_rel_diff",
+        ("reception_time", "accepted_energy_relative_difference"),
+    ),
+    ("reception_beam_slot_overrun_s", ("reception_time", "beam_slot_overrun_time_s")),
+)
+"""Columns of ``sweep_summary.parquet`` taken from a *constellation* point's summary.json
+(the single-satellite-only columns are null for such points, and vice versa)."""
+
 
 def _dig(doc: Any, path: tuple[str, ...]) -> Any:
     for key in path:
@@ -432,13 +490,17 @@ def collate_sweep(plan: SweepPlan, out: Path) -> Path:
     different nodes can collate concurrently; the last ``os.replace`` wins and every version is
     a complete table.
     """
+    from helioswarm.constellation_io import is_constellation_summary, read_constellation_summary
     from helioswarm.io import ERROR_FILE, MANIFEST_FILE, SUMMARY_FILE, read_json
     from helioswarm.metrics import read_summary
 
     rows: dict[str, list[Any]] = {"point": [], "status": [], "config_hash": [], "error": []}
     for key in plan.definition.parameters:
         rows[key] = []
-    for col, _ in (*SWEEP_SUMMARY_COLUMNS, *SWEEP_SUMMARY_FLAG_COLUMNS):
+    numeric = dict(SWEEP_SUMMARY_COLUMNS)
+    constellation_cols = dict(CONSTELLATION_SWEEP_COLUMNS)
+    all_numeric = list(numeric) + [c for c in constellation_cols if c not in numeric]
+    for col in (*all_numeric, *(c for c, _ in SWEEP_SUMMARY_FLAG_COLUMNS)):
         rows[col] = []
     for pt in plan.points:
         d = out / POINTS_DIR / pt.label
@@ -450,7 +512,10 @@ def collate_sweep(plan: SweepPlan, out: Path) -> Path:
             st = "failed"
         elif d.is_dir() and _point_complete(d, MANIFEST_FILE, SUMMARY_FILE, read_json):
             # Validated against the typed summary layout before any value is collated.
-            summary = read_summary(d / SUMMARY_FILE).to_json_dict()
+            if is_constellation_summary(read_json(d / SUMMARY_FILE)):
+                summary = read_constellation_summary(d / SUMMARY_FILE).to_json_dict()
+            else:
+                summary = read_summary(d / SUMMARY_FILE).to_json_dict()
             st = "ok"
         elif d.is_dir() and any(d.iterdir()):
             st = "incomplete"
@@ -462,8 +527,10 @@ def collate_sweep(plan: SweepPlan, out: Path) -> Path:
         rows["error"].append(error)
         for key, value in pt.values:
             rows[key].append(value)
-        for col, path in SWEEP_SUMMARY_COLUMNS:
-            v = _dig(summary, path) if summary is not None else None
+        paths = constellation_cols if is_constellation_summary(summary) else numeric
+        for col in all_numeric:
+            path = paths.get(col)
+            v = _dig(summary, path) if (summary is not None and path is not None) else None
             rows[col].append(None if v is None else float(v))
         for col, path in SWEEP_SUMMARY_FLAG_COLUMNS:
             v = _dig(summary, path) if summary is not None else None
@@ -482,6 +549,7 @@ def collate_sweep(plan: SweepPlan, out: Path) -> Path:
 
 
 __all__ = [
+    "CONSTELLATION_SWEEP_COLUMNS",
     "POINTS_DIR",
     "SWEEP_DEFINITION_FILE",
     "SWEEP_SCHEMA_VERSION",

@@ -56,7 +56,7 @@ import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Final, Literal, TypeVar
+from typing import Final, Literal, Protocol, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -68,7 +68,7 @@ from helioswarm.atmosphere import (
     atmospheric_transmission,
 )
 from helioswarm.beam import BeamResult, BeamSettings, beam_settings_from_config, evaluate_beam
-from helioswarm.config import RunConfig, approximations_in_force, config_hash
+from helioswarm.config import RunConfig, SiteConfig, approximations_in_force, config_hash
 from helioswarm.ephemeris import EphemerisProvider
 from helioswarm.frames import CartesianTrajectory
 from helioswarm.ground import EarthOrientation, GroundSite, SpiceEarthOrientation
@@ -77,7 +77,7 @@ from helioswarm.link_budget import (
     LinkBudgetResult,
     ReceiverModel,
     evaluate_link_budget,
-    receiver_model_from_config,
+    receiver_model_for_site,
 )
 from helioswarm.propagate import (
     L1_MODEL,
@@ -110,18 +110,42 @@ Float64Array = NDArray[np.float64]
 BoolArray = NDArray[np.bool_]
 UInt32Array = NDArray[np.uint32]
 
-Backend = Literal["numpy", "jax"]
-"""Numerical backend of the beam-capture kernel: ``numpy`` (M5 reference, per epoch) or ``jax``
-(batched kernel of :mod:`helioswarm.capture_batch`, Airy far field only)."""
+Backend = Literal["numpy", "numpy_batch", "jax"]
+"""Numerical backend of the beam-capture kernel: ``numpy`` (M5 reference, per epoch),
+``numpy_batch`` or ``jax`` (batched kernel of :mod:`helioswarm.capture_batch` on the CPU or
+compiled by JAX; Airy far field only)."""
+
+
+class BeamCapture(Protocol):
+    """The beam quantities the link budget needs at the epochs with access (shape (M,)):
+    :class:`~helioswarm.beam.BeamResult` satisfies it."""
+
+    @property
+    def capture_fraction(self) -> Float64Array:
+        """Expected capture fraction [1]."""
+        ...
+
+    @property
+    def peak_irradiance_per_W_m2(self) -> Float64Array:
+        """Peak irradiance per watt [m^-2]."""
+        ...
+
+    @property
+    def pointing_loss(self) -> Float64Array:
+        """Expected / perfect-pointing capture [1]."""
+        ...
+
 
 _T = TypeVar("_T")
 
 
 class Unavailability(enum.IntFlag):
-    """Per-epoch link condition bits (``reason_code``; PDF §10.4, §10.5).
+    """Per-epoch link condition bits (``reason_code``; PDF §10.4, §10.5, §11.4).
 
     Bits 0-9 are **blocking** (link unavailable, ``P_grid = 0``); bits 16-17 are **limiting**
-    flags (power reduced, link available).
+    flags (power reduced, link available). Bits 10-12 are set only by the constellation
+    scheduler (M7) on links that were feasible on their own but not scheduled; a
+    single-satellite run never sets them (they are not in :data:`BLOCKING_REASONS`).
     """
 
     NONE = 0
@@ -135,6 +159,9 @@ class Unavailability(enum.IntFlag):
     WEATHER = 1 << 7
     POINTING = 1 << 8
     POWER_DENSITY_ABORT = 1 << 9
+    DUTY_CYCLE = 1 << 10
+    RECEIVER_CAPACITY = 1 << 11
+    SCHEDULER_NOT_SELECTED = 1 << 12
     RECEIVER_SATURATION = 1 << 16
     PARTIAL_ECLIPSE = 1 << 17
 
@@ -378,13 +405,17 @@ def _evaluate_beam_backend(
 ) -> BeamResult:
     if backend == "numpy":
         return evaluate_beam(range_m, elevation_rad, settings, epochs_tdb_s=epochs_tdb_s)
-    if backend == "jax":
+    if backend in ("jax", "numpy_batch"):
         from helioswarm.capture_batch import evaluate_beam_batched
 
         return evaluate_beam_batched(
-            range_m, elevation_rad, settings, backend="jax", epochs_tdb_s=epochs_tdb_s
+            range_m,
+            elevation_rad,
+            settings,
+            backend="jax" if backend == "jax" else "numpy",
+            epochs_tdb_s=epochs_tdb_s,
         )
-    raise ValueError(f"unknown backend {backend!r}; use 'numpy' or 'jax'")
+    raise ValueError(f"unknown backend {backend!r}; use 'numpy', 'numpy_batch' or 'jax'")
 
 
 def _clear_sky(settings: AtmosphereSettings, config: RunConfig) -> AtmosphereSettings:
@@ -457,6 +488,121 @@ def reference_link(
         thermal_feasible=bool(pt.thermal.feasible[0]),
         power_density_abort=bool(link.power_density_abort[0]),
     )
+
+
+def atmosphere_at_access(
+    access: AccessResult, settings: AtmosphereSettings, site: SiteConfig
+) -> tuple[NDArray[np.int64], AtmosphereResult | None]:
+    """Atmospheric transmission (M5) at the epochs with geometric access to one site.
+
+    Returns:
+        ``(beam_epoch_index, atmosphere)``: grid indices with ``access.visible`` and the
+        transmission there (``None`` if there is no such epoch).
+
+    Raises:
+        RuntimeError: the atmosphere model is invalid at an epoch with access (the validator
+            prevents this: the minimum elevation is above the model floor).
+    """
+    vis_idx = np.flatnonzero(access.visible).astype(np.int64)
+    if not vis_idx.size:
+        return vis_idx, None
+    atm = atmospheric_transmission(access.elevation_rad[vis_idx], settings, site=site)
+    if not np.all(atm.in_validity):
+        raise RuntimeError(
+            "atmosphere model invalid at an epoch with access (the configuration validator "
+            "should have prevented this: min elevation below the model floor)"
+        )
+    return vis_idx, atm
+
+
+def site_link_budget(
+    config: RunConfig,
+    *,
+    access: AccessResult,
+    illumination: IlluminationResult,
+    power_thermal: PowerThermalResult,
+    models: PowerThermalModels,
+    receiver: ReceiverModel,
+    beam_epoch_index: NDArray[np.int64],
+    atmosphere: AtmosphereResult | None,
+    beam: BeamCapture | None,
+    atmosphere_settings: AtmosphereSettings,
+) -> tuple[UInt32Array, LinkBudgetResult, BoolArray]:
+    """Availability conditions and link budget of one satellite-to-site link on the grid.
+
+    Sets the :class:`Unavailability` bits (geometry and occultation from ``access``; eclipse
+    and partial eclipse from ``illumination``; thermal; weather; pointing) as documented in the
+    module docstring, evaluates the PDF §10.1/§10.4 budget
+    (:func:`~helioswarm.link_budget.evaluate_link_budget`) on the epochs with no blocking bit,
+    then adds the power-density abort and receiver-saturation bits. Shared by the
+    single-satellite run and every satellite-site pair of a constellation (M7), so both use
+    one implementation.
+
+    Args:
+        config: Configuration of the satellite (transmitter pointing condition).
+        access: Access geometry to the site.
+        illumination: Satellite illumination.
+        power_thermal: Solar/thermal result (``P_PV``, thermal verdict).
+        models: M4 model parameters (on-board efficiencies).
+        receiver: Receiver model of the site.
+        beam_epoch_index: Grid indices where ``atmosphere`` and ``beam`` were evaluated.
+        atmosphere: Atmosphere at those epochs, or ``None`` (no access).
+        beam: Beam capture at those epochs (:class:`BeamCapture`, e.g. a
+            :class:`~helioswarm.beam.BeamResult`), or ``None``.
+        atmosphere_settings: Atmosphere settings (hard optical outage).
+
+    Returns:
+        ``(reason_code, link, available)`` on the full grid.
+    """
+    n = len(access)
+    vis_idx = beam_epoch_index
+    code = np.zeros(n, dtype=np.uint32)
+
+    def setbit(mask: BoolArray, reason: Unavailability) -> None:
+        code[np.asarray(mask, dtype=bool)] |= np.uint32(int(reason))
+
+    setbit(access.below_min_elevation, Unavailability.BELOW_MIN_ELEVATION)
+    setbit(access.earth_blocked, Unavailability.EARTH_OCCULTATION)
+    setbit(access.sun_blocked, Unavailability.SUN_OCCULTATION)
+    setbit(access.moon_blocked, Unavailability.MOON_OCCULTATION)
+    setbit(access.sun_avoidance_violation, Unavailability.SUN_AVOIDANCE)
+    frac = illumination.illumination_fraction
+    setbit(frac <= 0.0, Unavailability.ECLIPSE)
+    setbit((frac > 0.0) & (frac < 1.0), Unavailability.PARTIAL_ECLIPSE)
+    setbit(~power_thermal.thermal.feasible, Unavailability.THERMAL)
+    if atmosphere_settings.hard_outage:
+        setbit(np.ones(n, dtype=bool), Unavailability.WEATHER)
+    eta_atm = np.full(n, np.nan)
+    eta_cap = np.full(n, np.nan)
+    peak = np.full(n, np.nan)
+    if beam is not None and atmosphere is not None:
+        eta_atm[vis_idx] = atmosphere.transmittance
+        weather_bad = np.zeros(n, dtype=bool)
+        weather_bad[vis_idx] = ~atmosphere.weather_available
+        setbit(weather_bad, Unavailability.WEATHER)
+        eta_cap[vis_idx] = beam.capture_fraction
+        peak[vis_idx] = beam.peak_irradiance_per_W_m2
+        min_pe = config.transmitter.min_pointing_efficiency
+        if min_pe is not None:
+            pe = beam.pointing_loss
+            bad = np.zeros(n, dtype=bool)
+            bad[vis_idx] = ~(np.nan_to_num(pe, nan=-1.0) >= min_pe)
+            setbit(bad, Unavailability.POINTING)
+
+    enabled = (code & np.uint32(BLOCKING_MASK)) == 0
+    link = evaluate_link_budget(
+        power_thermal.solar.pv_electric_W,
+        models.efficiencies,
+        receiver,
+        link_enabled=enabled,
+        eta_atmosphere=eta_atm,
+        eta_capture=eta_cap,
+        peak_irradiance_per_W_m2=peak,
+    )
+    setbit(link.power_density_abort, Unavailability.POWER_DENSITY_ABORT)
+    setbit(link.receiver_saturated | link.receiver_heat_limited, Unavailability.RECEIVER_SATURATION)
+    available = (code & np.uint32(BLOCKING_MASK)) == 0
+    return code, link, available
 
 
 def _orbit(
@@ -534,8 +680,8 @@ def run_single_satellite(
             f"{len(config.receiver.sites)}; several sites need receiver scheduling (M7) to "
             "avoid double counting"
         )
-    if backend not in ("numpy", "jax"):
-        raise ValueError(f"unknown backend {backend!r}; use 'numpy' or 'jax'")
+    if backend not in ("numpy", "numpy_batch", "jax"):
+        raise ValueError(f"unknown backend {backend!r}; use 'numpy', 'numpy_batch' or 'jax'")
     check_kernel_set(config, kernels)
     rng_state = rng.bit_generator.state
     timings: list[StageTiming] = []
@@ -573,23 +719,16 @@ def run_single_satellite(
     )
     summary = summarize_access(access, orbit_drift=drift)
 
-    vis_idx = np.flatnonzero(access.visible).astype(np.int64)
     atm_settings = atmosphere_settings_from_config(config)
     beam_settings = beam_settings_from_config(config)
-    atm: AtmosphereResult | None = None
+    vis_idx, atm = _timed(
+        "atmosphere",
+        timings,
+        lambda: atmosphere_at_access(access, atm_settings, site_cfg),
+    )
     beam: BeamResult | None = None
-    if vis_idx.size:
+    if atm is not None:
         el_v = access.elevation_rad[vis_idx]
-        atm = _timed(
-            "atmosphere",
-            timings,
-            lambda: atmospheric_transmission(el_v, atm_settings, site=site_cfg),
-        )
-        if not np.all(atm.in_validity):
-            raise RuntimeError(
-                "atmosphere model invalid at an epoch with access (the configuration validator "
-                "should have prevented this: min elevation below the model floor)"
-            )
         beam = _timed(
             "beam",
             timings,
@@ -602,58 +741,26 @@ def run_single_satellite(
             ),
         )
 
-    # ---- availability conditions --------------------------------------------------------
-    code = np.zeros(n, dtype=np.uint32)
-
-    def setbit(mask: BoolArray, reason: Unavailability) -> None:
-        code[np.asarray(mask, dtype=bool)] |= np.uint32(int(reason))
-
-    setbit(access.below_min_elevation, Unavailability.BELOW_MIN_ELEVATION)
-    setbit(access.earth_blocked, Unavailability.EARTH_OCCULTATION)
-    setbit(access.sun_blocked, Unavailability.SUN_OCCULTATION)
-    setbit(access.moon_blocked, Unavailability.MOON_OCCULTATION)
-    setbit(access.sun_avoidance_violation, Unavailability.SUN_AVOIDANCE)
-    frac = illum.illumination_fraction
-    setbit(frac <= 0.0, Unavailability.ECLIPSE)
-    setbit((frac > 0.0) & (frac < 1.0), Unavailability.PARTIAL_ECLIPSE)
-    setbit(~pt.thermal.feasible, Unavailability.THERMAL)
-    if atm_settings.hard_outage:
-        setbit(np.ones(n, dtype=bool), Unavailability.WEATHER)
-    eta_atm = np.full(n, np.nan)
-    eta_cap = np.full(n, np.nan)
-    peak = np.full(n, np.nan)
-    if beam is not None and atm is not None:
-        eta_atm[vis_idx] = atm.transmittance
-        weather_bad = np.zeros(n, dtype=bool)
-        weather_bad[vis_idx] = ~atm.weather_available
-        setbit(weather_bad, Unavailability.WEATHER)
-        eta_cap[vis_idx] = beam.capture_fraction
-        peak[vis_idx] = beam.peak_irradiance_per_W_m2
-        min_pe = config.transmitter.min_pointing_efficiency
-        if min_pe is not None:
-            pe = beam.pointing_loss
-            bad = np.zeros(n, dtype=bool)
-            bad[vis_idx] = ~(np.nan_to_num(pe, nan=-1.0) >= min_pe)
-            setbit(bad, Unavailability.POINTING)
-
-    enabled = (code & np.uint32(BLOCKING_MASK)) == 0
-    receiver = receiver_model_from_config(config.receiver)
-    link = _timed(
+    # The site's own capacity overrides (M7) apply to the single-satellite run too: one
+    # definition of the receiver for this run and for a one-satellite constellation. Beam slots
+    # (max_simultaneous_beams >= 1) cannot bind for one satellite (one beam).
+    receiver = receiver_model_for_site(config.receiver, site_cfg)
+    code, link, available = _timed(
         "link_budget",
         timings,
-        lambda: evaluate_link_budget(
-            pt.solar.pv_electric_W,
-            models.efficiencies,
-            receiver,
-            link_enabled=enabled,
-            eta_atmosphere=eta_atm,
-            eta_capture=eta_cap,
-            peak_irradiance_per_W_m2=peak,
+        lambda: site_link_budget(
+            config,
+            access=access,
+            illumination=illum,
+            power_thermal=pt,
+            models=models,
+            receiver=receiver,
+            beam_epoch_index=vis_idx,
+            atmosphere=atm,
+            beam=beam,
+            atmosphere_settings=atm_settings,
         ),
     )
-    setbit(link.power_density_abort, Unavailability.POWER_DENSITY_ABORT)
-    setbit(link.receiver_saturated | link.receiver_heat_limited, Unavailability.RECEIVER_SATURATION)
-    available = (code & np.uint32(BLOCKING_MASK)) == 0
 
     ref = _timed(
         "reference_link",
@@ -804,13 +911,16 @@ __all__ = [
     "LIMITING_FLAGS",
     "REFERENCE_DEFINITION",
     "Backend",
+    "BeamCapture",
     "ReferenceLink",
     "RunLogEntry",
     "StageTiming",
     "SystemRunResult",
     "Unavailability",
+    "atmosphere_at_access",
     "primary_reason",
     "reason_names",
     "reference_link",
     "run_single_satellite",
+    "site_link_budget",
 ]

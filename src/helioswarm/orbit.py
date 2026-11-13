@@ -756,6 +756,7 @@ def elements_from_config(
     *,
     epoch_tdb_s: float,
     mu_m3_s2: float = GM_SUN_M3_S2,
+    true_anomaly_rad: float | None = None,
 ) -> OrbitalElements:
     """Build :class:`OrbitalElements` from the validated ``orbit`` configuration section.
 
@@ -770,14 +771,36 @@ def elements_from_config(
             never converts time scales itself.
         mu_m3_s2: Central-body GM [m^3 s^-2]; defaults to GM_sun (DE440), the correct value
             for Sun-centred elements of a massless satellite.
+        true_anomaly_rad: The resolved true anomaly [rad]. Required when
+            ``orbit.phase_reference = 'earth_relative'`` (the configured angle is then an
+            Earth-relative ecliptic longitude offset that only the ephemeris can turn into a
+            true anomaly: :func:`helioswarm.propagate.resolve_orbit_phase`); must be ``None``
+            for ``absolute`` phases (``orbit.true_anomaly_deg`` is the true anomaly).
+
+    Raises:
+        ValueError: ``earth_relative`` without ``true_anomaly_rad``, or ``absolute`` with it.
     """
+    if orbit.phase_reference == "absolute":
+        if true_anomaly_rad is not None:
+            raise ValueError(
+                "orbit.phase_reference='absolute': true_anomaly_deg is the true anomaly; do not "
+                "pass a resolved true_anomaly_rad"
+            )
+        nu = orbit.true_anomaly_rad
+    else:
+        if true_anomaly_rad is None:
+            raise ValueError(
+                "orbit.phase_reference='earth_relative' needs the true anomaly resolved from the "
+                "ephemeris (helioswarm.propagate.resolve_orbit_phase)"
+            )
+        nu = float(true_anomaly_rad)
     return OrbitalElements(
         a_m=orbit.semimajor_axis_m,
         e=orbit.eccentricity,
         i_rad=orbit.inclination_rad,
         raan_rad=orbit.raan_rad,
         argp_rad=orbit.arg_periapsis_rad,
-        nu_rad=orbit.true_anomaly_rad,
+        nu_rad=nu,
         mu_m3_s2=mu_m3_s2,
         epoch_tdb_s=epoch_tdb_s,
         frame=orbit.elements_frame,

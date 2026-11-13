@@ -1,0 +1,18 @@
+# helioswarm sweep: constellation demo over satellite count, phase distribution and scheduler.
+#
+# Run (Slurm): see slurm/sweep_array.sbatch and docs/milestones/M7.md; locally
+#   helioswarm sweep configs/constellation_demo_sweep.yaml --out $HELIOSWARM_RUNS_DIR/constellation_demo_sweep
+# Every point is a full validated constellation run of configs/constellation_demo.yaml with the
+# values below substituted (provenance relabelled 'swept'):
+#   - n_satellites 1, 10, 100 (PDF §2 constellation sizes; 1000 is configs/constellation_demo_n1000.yaml);
+#   - phase_distribution even vs random (PDF §11.2 "compare against randomized phases"; random
+#     phases are drawn from the Generator seeded with project.seed);
+#   - scheduler policy greedy vs exact per-epoch optimum.
+sweep_schema_version: 1
+name: constellation_demo_sweep
+description: "Constellation demo: N x phase distribution x scheduler policy"
+base_config: constellation_demo.yaml
+parameters:
+  constellation.rings[0].n_satellites: [1, 10, 100]
+  constellation.rings[0].phase_distribution: ["even", "random"]
+  constellation.scheduler.policy: ["greedy_max_power", "optimal_assignment"]

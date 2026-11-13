@@ -414,11 +414,115 @@ def make_characterization_figures(out_dir: Path | str) -> tuple[Path, ...]:
     return tuple(paths)
 
 
+CONSTELLATION_FIGURE_FILES: Final[tuple[str, ...]] = (
+    "constellation_power.png",
+    "constellation_counts.png",
+    "constellation_unavailability.png",
+    "constellation_satellites.png",
+)
+"""Files written by :func:`make_constellation_figures` into ``figures/``."""
+
+
+def make_constellation_figures(run_dir: Path | str) -> tuple[Path, ...]:
+    """Figures of a constellation run, drawn only from its saved tables (PDF §13.4).
+
+    ``constellation_power.png`` (network and per-receiver ``P_grid(t)``),
+    ``constellation_counts.png`` (active satellites, valid and scheduled links),
+    ``constellation_unavailability.png`` (satellite-time fractions by primary reason) and
+    ``constellation_satellites.png`` (delivered energy per satellite versus its Earth-relative
+    ecliptic longitude at the element epoch).
+    """
+    import pyarrow.parquet as pq
+
+    from helioswarm.constellation_io import (
+        NETWORK_FILE,
+        REASON_NAMES,
+        RECEIVERS_FILE,
+        SATELLITES_FILE,
+        read_constellation_summary,
+    )
+    from helioswarm.io import CONFIG_FILE, SUMMARY_FILE
+
+    d = Path(run_dir)
+    net = pq.read_table(d / NETWORK_FILE)
+    rec = pq.read_table(d / RECEIVERS_FILE)
+    sats = pq.read_table(d / SATELLITES_FILE)
+    summary = read_constellation_summary(d / SUMMARY_FILE)
+    config = load_config(d / CONFIG_FILE)
+
+    def col(table: Any, name: str) -> np.ndarray[Any, Any]:
+        return np.asarray(table.column(name).to_numpy(zero_copy_only=False))
+
+    days = col(net, "elapsed_s") / 86400.0
+    label = (
+        f"{config.project.name} | config {summary.config_hash[:12]} | {summary.n_satellites} "
+        f"satellites, {summary.n_sites} sites, scheduler {summary.scheduler.policy} | step "
+        f"{config.time.output_step_s:g} s | from saved run data"
+    )
+    note = idealised_note(config) + "\nIndependent satellites: received powers add "
+    note += "incoherently (no coherent combining)."
+    out = d / "figures"
+    paths: list[Path] = []
+
+    fig = Figure(figsize=(11, 4.5))
+    ax = fig.subplots(1, 1)
+    n_s = summary.n_sites
+    p_site = col(rec, "grid_W").reshape(-1, n_s)
+    for j in range(n_s):
+        ax.plot(days, p_site[:, j], lw=0.6, label=f"site {summary.receivers[j].site_name}")
+    ax.plot(days, col(net, "grid_W"), lw=0.8, color="k", label="network")
+    ax.set_xlabel("days since start")
+    ax.set_ylabel("P_grid [W]")
+    ax.legend(fontsize=7)
+    fig.suptitle(label + "\n" + note, fontsize=6)
+    fig.tight_layout()
+    paths.append(_save(fig, out / CONSTELLATION_FIGURE_FILES[0]))
+
+    fig = Figure(figsize=(11, 4.5))
+    ax = fig.subplots(1, 1)
+    ax.plot(days, col(net, "valid_link_count"), lw=0.6, label="valid (feasible) links")
+    ax.plot(days, col(net, "satellites_with_valid_link"), lw=0.6, label="satellites with a link")
+    ax.plot(days, col(net, "active_satellite_count"), lw=0.8, label="active (scheduled)")
+    ax.set_xlabel("days since start")
+    ax.set_ylabel("count")
+    ax.legend(fontsize=7)
+    fig.suptitle(label, fontsize=6)
+    fig.tight_layout()
+    paths.append(_save(fig, out / CONSTELLATION_FIGURE_FILES[1]))
+
+    fig = Figure(figsize=(8, 4.5))
+    ax = fig.subplots(1, 1)
+    frac = summary.unavailability.satellite_time_fraction_primary
+    names = ["DELIVERING", *REASON_NAMES]
+    vals = [summary.unavailability.satellite_time_fraction_delivering] + [
+        frac[n] for n in REASON_NAMES
+    ]
+    ax.barh(names, vals, color="0.4")
+    ax.set_xlabel("fraction of satellite-time")
+    ax.tick_params(axis="y", labelsize=7)
+    fig.suptitle(label + "\nprimary reason per satellite-epoch", fontsize=6)
+    fig.tight_layout()
+    paths.append(_save(fig, out / CONSTELLATION_FIGURE_FILES[2]))
+
+    fig = Figure(figsize=(8, 4.5))
+    ax = fig.subplots(1, 1)
+    lon = col(sats, "earth_relative_longitude_deg")
+    ax.plot(lon, col(sats, "delivered_energy_J") / 3.6e9, "o", ms=3)
+    ax.set_xlabel("Earth-relative ecliptic longitude at the element epoch [deg]")
+    ax.set_ylabel("delivered energy (pro-rata share) [MWh]")
+    fig.suptitle(label, fontsize=6)
+    fig.tight_layout()
+    paths.append(_save(fig, out / CONSTELLATION_FIGURE_FILES[3]))
+    return tuple(paths)
+
+
 __all__ = [
     "CHARACTERIZATION_FIGURE_FILES",
+    "CONSTELLATION_FIGURE_FILES",
     "FIGURE_FILES",
     "UPPER_BOUND_NOTE",
     "idealised_note",
     "make_characterization_figures",
+    "make_constellation_figures",
     "make_figures",
 ]

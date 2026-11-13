@@ -204,6 +204,8 @@ def test_mutable_state_check_is_discriminating() -> None:
 
 
 def test_no_stubs_for_later_milestones() -> None:
-    for name in ("scheduler.py", "optimization.py"):
-        assert not (SRC / name).exists(), name
+    # M7 implemented the scheduler (src/helioswarm/scheduler.py); optimisation (M8) and the
+    # paper package (M9) must not exist as placeholders.
+    assert (SRC / "scheduler.py").exists()
+    assert not (SRC / "optimization.py").exists()
     assert not (REPO / "paper").exists()

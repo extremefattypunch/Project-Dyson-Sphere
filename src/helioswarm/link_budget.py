@@ -60,7 +60,7 @@ from typing import Final
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
-from helioswarm.config import ReceiverConfig, ReceiverTechnology
+from helioswarm.config import ReceiverConfig, ReceiverTechnology, SiteConfig
 from helioswarm.power_chain import OnboardEfficiencies, onboard_power_chain
 
 Float64Array = NDArray[np.float64]
@@ -136,6 +136,20 @@ def receiver_model_from_config(receiver: ReceiverConfig) -> ReceiverModel:
         grid_efficiency=receiver.grid_efficiency,
         max_input_power_W=receiver.max_input_power_W,
         max_heat_rejection_W=receiver.max_heat_rejection_W,
+        max_power_density_W_m2=receiver.max_power_density_W_m2,
+    )
+
+
+def receiver_model_for_site(receiver: ReceiverConfig, site: SiteConfig) -> ReceiverModel:
+    """:class:`ReceiverModel` of one receiver site: the ``receiver`` section with the site's
+    ``max_input_power_W`` / ``max_heat_rejection_W`` overrides (M7; equal to
+    :func:`receiver_model_from_config` for a site without overrides)."""
+    return ReceiverModel(
+        technology=receiver.technology,
+        conversion_efficiency=receiver.conversion_efficiency,
+        grid_efficiency=receiver.grid_efficiency,
+        max_input_power_W=receiver.site_max_input_power_W(site),
+        max_heat_rejection_W=receiver.site_max_heat_rejection_W(site),
         max_power_density_W_m2=receiver.max_power_density_W_m2,
     )
 
@@ -406,5 +420,6 @@ __all__ = [
     "ReceiverModel",
     "evaluate_link_budget",
     "link_budget_violations",
+    "receiver_model_for_site",
     "receiver_model_from_config",
 ]

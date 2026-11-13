@@ -88,6 +88,7 @@ uv run helioswarm plot runs/mvp                       # redraw figures/ + report
 uv run helioswarm sweep configs/optical_1au_sweep.yaml --out runs/optical_sweep   # 45 runs
 uv run helioswarm validate-models --report docs/validation_report.md              # ~1 min
 uv run helioswarm characterize configs/mvp_single_satellite.yaml --out runs/mvp_curves  # ~10 s
+uv run helioswarm run configs/constellation_demo.yaml --out runs/constellation_demo  # 10 satellites, ~3 min
 ```
 
 `helioswarm validate-config configs/*.yaml` checks every shipped file (run configurations and
@@ -136,7 +137,22 @@ sweeps). Without `--out`, `run` writes to `$HELIOSWARM_RUNS_DIR/<project.name>`.
   `--elevation-deg`; `capture_vs_pointing.parquet`, `capture_vs_wavefront.parquet`), with
   `characterization.json` and figures drawn from the saved tables.
 - `--backend jax` (with the `jax` or `gpu` extra) evaluates the Airy capture through the batched
-  JAX kernel; the default `numpy` is the reference.
+  JAX kernel, `--backend numpy_batch` through the same batched kernel on the CPU; the default
+  `numpy` is the reference.
+- **Constellations (M7).** A configuration with a `constellation` section (rings of
+  satellites with even or seeded-random phases, optionally Earth-relative
+  `orbit.phase_reference`, per-ring technology; several receiver sites with beam-slot,
+  input-power and heat limits; a deterministic `greedy_max_power` or exact
+  `optimal_assignment` scheduler; optional duty cycle and mass proxy) makes `run` a
+  constellation run: every satellite × site link is evaluated with the single-satellite chain,
+  the scheduler assigns at most one site per satellite under the summed receiver limits, and
+  received powers add incoherently. Outputs: `network.parquet` (network P_grid and stage
+  powers, active-satellite / valid-link / scheduled-link counts, reasons), `receivers.parquet`,
+  `satellites.parquet` (areas, mass proxy, delivered energy), optional `links/` per-link
+  detail (`--link-detail`, size-capped), `summary.json` (`ConstellationSummary`), figures.
+  Large constellations run as Slurm arrays of satellite chunks (`--chunk-index/--chunk-count
+  --candidates-dir`) plus one merge-and-schedule run (`--candidates-dir`); `sweep` accepts
+  constellation keys such as `constellation.rings[0].n_satellites`.
 
 Every `report.md` lists the run's *idealised* settings (lossless stages, inactive constraints,
 Sun-tracking collector, clear sky for the whole window) so that a result that is an upper bound
@@ -165,6 +181,15 @@ sbatch --export=ALL,COLLATE_ONLY=1 slurm/sweep_array.sbatch \
 sbatch slurm/validate_models.sbatch                                  # rewrites docs/validation_report.md
 sbatch slurm/profile.sbatch configs/mvp_single_satellite.yaml        # cProfile + stage timings
 sbatch slurm/gpu_bench.sbatch                                        # gpu_test, 1 GPU: CPU vs GPU kernel
+# constellation sweep (N = 1/10/100 x even/random x greedy/optimal) and the N = 1000 array + merge
+sbatch --array=0-4 -t 0-02:00 --mem=4G slurm/sweep_array.sbatch \
+       configs/constellation_demo_sweep.yaml $HELIOSWARM_RUNS_DIR/constellation_demo_sweep
+JID=$(sbatch --parsable --array=0-4 -p shared slurm/constellation_links_array.sbatch \
+      configs/constellation_demo_n1000.yaml $HELIOSWARM_RUNS_DIR/constellation_demo_n1000_links)
+sbatch -p shared --dependency=afterok:$JID slurm/constellation_merge.sbatch \
+      configs/constellation_demo_n1000.yaml $HELIOSWARM_RUNS_DIR/constellation_demo_n1000_links
+sbatch slurm/gpu_bench_constellation.sbatch configs/constellation_demo_n1000.yaml \
+      $HELIOSWARM_RUNS_DIR/constellation_demo_n1000_links             # gpu_test: N = 1000 capture batch
 seff <jobid>; jobstats <jobid>                                       # right-sizing check after each job
 ```
 
@@ -215,7 +240,7 @@ runs on the cluster environment (the one skip is the real-GPU test, run by
 | M5 Beam physics | Airy/Gaussian/Fresnel optics, microwave aperture, capture, pointing, atmosphere | done | 874 passed |
 | M6 End-to-end single satellite | link budget, system run, metrics, run outputs, CLI run/plot/sweep/validate-models, Slurm templates, optional JAX/GPU capture kernel | done | 972 passed, 1 skipped |
 | M6b Completeness audit | `docs/compliance_matrix.md`; typed summary, §7.3 diagnostics, manifest window/units, `characterize`, idealised-bound labels, microwave sweep, fresh-clone reproduction, review fixes | done | 1059 passed, 1 skipped |
-| M7 Constellation | multiple satellites, scheduling, receiver capacity | not started | — |
+| M7 Constellation | rings/phases (Earth-relative), stacked L1, link candidates per satellite × site, deterministic capacity-constrained scheduler (greedy + exact), incoherent network sums, network/receiver/satellite outputs, mass proxy, Slurm arrays, GPU benchmark | done | 1155 passed, 1 skipped |
 | M8 Optimisation/uncertainty | sweeps, constrained optimisation, sensitivity | not started | — |
 | M9 Paper package | frozen configs, figures, methods/validation notes | not started | — |
 
@@ -292,7 +317,7 @@ sweeps reproduce with the `sweep` commands in the Slurm section.
 - `docs/data_provenance.md`: kernels, external data and the provenance of parameter defaults.
 - `docs/validation_report.md`: tests, independent comparisons, tolerances and discrepancies.
 - `docs/milestones/`: per-milestone implementation notes (sections A–F of PDF §18).
-- `docs/compliance_matrix.md`: every PDF requirement in M0–M6 scope with its evidence and status
+- `docs/compliance_matrix.md`: every PDF requirement in M0–M7 scope with its evidence and status
   (M6b audit), including the deferred M7–M9 items and the fresh-clone reproduction.
 - `experiments/README.md`: the experiment log convention.
 

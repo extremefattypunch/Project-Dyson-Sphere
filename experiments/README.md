@@ -100,3 +100,25 @@ physics time series were unchanged (identical headline numbers).
 | Slurm | setup in a clean `env -i` shell (no Slurm: clone, `uv sync`, `fetch-kernels`, `validate-config`); compute job 60144119 (runs, plots, characterize, gates, full test suite) |
 | Result location | throwaway tree `/n/netscratch/hekstra_lab/Lab/ian_poon/m6b_fresh_clone/` (deleted after the check); outcome in `docs/compliance_matrix.md` and `docs/milestones/M6b.md` |
 | Interpretation | **Reproduced.** Locked install from an empty uv cache (63 s), kernels fetched and SHA-256/MD5-verified, all five shipped configs valid; the optical and microwave MVP runs reproduce E1/E2 to every printed digit (1751.11 W, availability 0.422085, capacity factor 0.297005, 5.52609e10 J; 0.314505 W); figures and reports regenerated from saved data; ruff, ruff format and the full suite (1052 passed, 1 skipped) passed. Two problems found and fixed: `validate-config configs/*.yaml` (documented in the README) took only one file; one-off mypy INTERNAL ERROR (not reproduced; per-checkout mypy cache as a precaution). The throwaway HOME received no files. Details: `docs/compliance_matrix.md`, "Fresh-clone reproduction". |
+
+### E8 (2026-11-13): constellation demo sweep — N, phase distribution, scheduler (M7)
+
+| Field | Content |
+|---|---|
+| Question | How do network power, availability and capacity use change with the number of satellites (1, 10, 100) on one 1 au ring, with even vs randomized Earth-relative phases over [30°, 330°), and with the greedy vs the exact per-epoch optimal scheduler, for three receiver sites with beam-slot and input-power limits? |
+| Config | `configs/constellation_demo_sweep.yaml` (base `configs/constellation_demo.yaml`; 12 points, hashes in `sweep_definition.yaml`) |
+| Code commit | `80d0715` + uncommitted M7 tree (dirty; src SHA-256 prefix `ed373b76`) |
+| Slurm | array 60272015 (tasks 0, 1, 3, 4 hit a NODE_FAIL on holy8a26601 after 52 min and were requeued automatically; the resumable sweep skipped the finished points) |
+| Result location | `$HELIOSWARM_RUNS_DIR/constellation_demo_sweep/` (`sweep_summary.parquet`, `points/p0000`…`p0011`) |
+| Interpretation | One satellite 30° ahead of the Earth delivers 20.7 kW mean (end-to-end 1.5e-3; with three sites 120° apart the network is never in outage, each site alone is available ~33 % of the time). Ten satellites deliver 44.2 kW (even) / 29.7 kW (random): adding farther satellites adds little because capture falls with range. At N = 100 the receivers are the bottleneck: 174 kW with ~15.4 of 20 beam slots busy on average and 84 % of satellite-time lost to `RECEIVER_CAPACITY`; even and random phases then give the same power (173.5 vs 173.2 kW). The exact optimum beats greedy by 0.4–0.9 % (never less at any epoch) (MILP needed in 126–360 epochs where the 200 kW site limit binds). Every summary passes the double-counting check. All scenario values are assumed (clear sky all year: a weather upper bound). |
+
+### E9 (2026-11-13): constellation demo with N = 1000 (array + merge) and GPU benchmark (M7)
+
+| Field | Content |
+|---|---|
+| Question | Does the constellation pipeline scale to 1000 satellites as a Slurm array, what does the capacity-limited network deliver, and does the GPU accelerate the satellite × site × time capture batch? |
+| Config | `configs/constellation_demo_n1000.yaml` (config_hash `8318afa00e68…`) |
+| Code commit | `80d0715` + uncommitted M7 tree (dirty; src SHA-256 prefix `ed373b76`) |
+| Slurm | link array 60272021 (5 × 200 satellites, shared), merge 60272040 (shared), GPU benchmark 60286071 (gpu_test; 60284257 ran out of host memory at 8 GB and was resubmitted with 24 GB) |
+| Result location | `$HELIOSWARM_RUNS_DIR/constellation_demo_n1000/`, link files `$HELIOSWARM_RUNS_DIR/constellation_demo_n1000_links/` (1.6 GB), benchmark `$HELIOSWARM_RUNS_DIR/gpu_bench/constellation_60286071.json` |
+| Interpretation | 284.5 kW network mean (peak 423 kW) from 1000 satellites (10 km² of collectors): 0.028 W per m² of collector, 0.017 W/kg of the assumed mass proxy (16.6 kt), end-to-end 2.1e-5 — ~70 times less per collector area than N = 1 (2.07 W/m²) because only ~17 satellites can be served at once (20 beam slots) and 98 % of satellite-time is `RECEIVER_CAPACITY`. The pipeline scaled linearly (≈ 20 CPU-s per satellite-year on Cascade Lake nodes; 5.6 CPU-h stage A, 61 s merge at 3.5 GB). The beam stage was 72 % of stage A; on the 10.5 M capture points the JAX kernel on an A100 MIG slice is 16× faster than the numpy batch and 27× faster than the per-point reference at 1e6 points (agreement 4e-16 and 6e-13), but a stage-A task is CPU-bound for the rest, so production stays on the CPU reference (see `docs/milestones/M7.md` D). |

@@ -86,11 +86,16 @@ from helioswarm.ephemeris import (
 from helioswarm.frames import (
     CartesianState,
     CartesianTrajectory,
+    rotate_vectors,
     transform_state,
     transform_trajectory,
 )
 from helioswarm.kernels import LoadedKernels
-from helioswarm.orbit import elements_from_config, elements_to_state, propagate_kepler
+from helioswarm.orbit import (
+    elements_from_config,
+    elements_to_state,
+    propagate_kepler,
+)
 from helioswarm.srp import SrpModel, srp_acceleration_m_s2
 from helioswarm.timescale import TimeGrid, time_grid_from_config, utc_to_tdb_s
 
@@ -645,6 +650,275 @@ def propagate_l1(
     )
 
 
+# ---------------------------------------------------------------------------------------------
+# Several independent test particles in one solve (M7 constellations)
+# ---------------------------------------------------------------------------------------------
+
+
+def max_stack_size(rtol: float) -> int:
+    """Largest number of satellites one stacked solve may hold at ``rtol`` (>= 1).
+
+    :func:`propagate_l1_stacked` divides every tolerance by ``sqrt(n)`` and the result must stay
+    >= :data:`~helioswarm.config.INTEGRATOR_RTOL_MIN`: ``n <= (rtol / rtol_min)^2``.
+    """
+    return max(1, math.floor((rtol / INTEGRATOR_RTOL_MIN) ** 2 * (1.0 + 1e-12)))
+
+
+@dataclass(frozen=True)
+class StackedL1Propagation:
+    """Result of :func:`propagate_l1_stacked`.
+
+    Attributes:
+        propagations: One :class:`L1Propagation` per input satellite, in input order. Each
+            carries its own initial state, trajectory and two-body energy drift; its
+            ``segments`` and ``nfev`` are those of the stack it was integrated in.
+        stack_index: Stack (solve) of each satellite.
+        stack_sizes: Number of satellites per stack.
+        tolerance_scale: ``1/sqrt(stack size)`` applied to rtol and atol of each stack.
+    """
+
+    propagations: tuple[L1Propagation, ...]
+    stack_index: tuple[int, ...]
+    stack_sizes: tuple[int, ...]
+    tolerance_scale: tuple[float, ...]
+
+
+def _make_stacked_heliocentric_rhs(
+    cache: HermiteEphemerisCache, mu_sun_eff: float, gm_others: Float64Array, n_sat: int
+) -> Callable[[float, Float64Array], Float64Array]:
+    """Right-hand side of :func:`heliocentric_l1_acceleration_m_s2` for ``n_sat`` independent
+    test particles stacked as ``y = (r_1, v_1, ..., r_n, v_n)`` (shape (6 n,)).
+
+    The particles do not interact (massless); every one sees the same bodies, so the cached
+    body positions are evaluated once per call."""
+    has_others = gm_others.size > 0
+
+    def rhs(t: float, y: Float64Array) -> Float64Array:
+        yy = y.reshape(n_sat, 6)
+        r = yy[:, :3]
+        out = np.empty((n_sat, 6), dtype=np.float64)
+        out[:, :3] = yy[:, 3:]
+        r2 = np.einsum("ij,ij->i", r, r)
+        acc = (-mu_sun_eff / (r2 * np.sqrt(r2)))[:, None] * r
+        if has_others:
+            p = cache.positions_at(t)
+            big_r = p[1:] - p[0]
+            d = big_r[None, :, :] - r[:, None, :]
+            d2 = np.einsum("nmk,nmk->nm", d, d)
+            acc = acc + np.einsum("nm,nmk->nk", gm_others / (d2 * np.sqrt(d2)), d)
+            rr2 = np.einsum("ij,ij->i", big_r, big_r)
+            acc = acc - ((gm_others / (rr2 * np.sqrt(rr2))) @ big_r)[None, :]
+        out[:, 3:] = acc
+        return out.reshape(-1)
+
+    return rhs
+
+
+def propagate_l1_stacked(
+    initials: tuple[SatelliteState, ...] | list[SatelliteState],
+    epochs_tdb_s: ArrayLike,
+    *,
+    ephemeris: EphemerisProvider,
+    settings: IntegratorSettings,
+    max_satellites_per_stack: int | None = None,
+) -> StackedL1Propagation:
+    """L1 propagation of several independent satellites with stacked state vectors (M7).
+
+    The satellites are massless test particles in the same prescribed-ephemeris field
+    (identical force model and initial epoch required), so their equations decouple and can
+    be integrated as one ``6 n`` system (heliocentric formulation, as :func:`propagate_l1`)
+    sharing one ephemeris cache and one step sequence (PDF §14.3 item 2).
+
+    Error control (a heuristic, validated empirically, not a guarantee): ``solve_ivp`` controls
+    one error norm over *all* ``6 n`` components. Every tolerance is divided by ``sqrt(n)`` so
+    that a norm that sums squared scaled errors over the components does not loosen as
+    satellites are added. For an RMS norm (e.g. RK45) this makes each accepted stacked step meet
+    every satellite's solo criterion. The integrator used here, DOP853, does **not** have that
+    property: its scipy error estimate is ``|h| E5 / sqrt((E5 + 0.01 E3) * 6 n)`` with
+    ``E5 = ||err5/scale||^2`` and ``E3 = ||err3/scale||^2`` summed over all components, which
+    is not separable by satellite, so a stacked norm <= 1 does not imply each satellite's own
+    norm <= 1 (a satellite with a large 3rd-order error estimate can lower the norm seen by
+    another). What holds is empirical agreement: stacked and solo trajectories agree to well
+    below the solo integration error, measured for heterogeneous rings over one year
+    (``scripts/validate_stacked_l1.py``, docs/milestones/M7.md) and tested over shorter spans.
+    Stacks hold at most :func:`max_stack_size` satellites so that ``rtol/sqrt(n)`` stays above
+    the validated floor; larger sets are split into several stacks. A stack of one satellite is
+    integrated by :func:`propagate_l1` itself (identical to a solo run).
+
+    Args:
+        initials: Initial states (same epoch, same force model).
+        epochs_tdb_s: Output epochs (as :func:`propagate_l1`).
+        ephemeris: Provider of body states and GMs.
+        settings: Solo integrator settings (scaled per stack as above).
+        max_satellites_per_stack: Optional smaller cap on the stack size.
+
+    Returns:
+        :class:`StackedL1Propagation`.
+
+    Raises:
+        ValueError: empty input, different epochs or force models, invalid epochs.
+        PropagationError: ``solve_ivp`` failed.
+    """
+    inits = tuple(initials)
+    if not inits:
+        raise ValueError("need at least one satellite")
+    t = np.atleast_1d(np.asarray(epochs_tdb_s, dtype=np.float64))
+    if t.ndim != 1 or t.size == 0 or not np.all(np.isfinite(t)):
+        raise ValueError("epochs_tdb_s must be a non-empty finite 1-D array")
+    if t.size > 1 and not np.all(np.diff(t) > 0.0):
+        raise ValueError("epochs_tdb_s must be strictly increasing")
+    t0 = inits[0].epoch_tdb_s
+    fm = inits[0].force_model
+    for s in inits[1:]:
+        if s.epoch_tdb_s != t0:
+            raise ValueError("stacked satellites must share the initial epoch")
+        if s.force_model != fm:
+            raise ValueError("stacked satellites must share the force model")
+    cap = max_stack_size(settings.rtol)
+    if max_satellites_per_stack is not None:
+        if max_satellites_per_stack < 1:
+            raise ValueError("max_satellites_per_stack must be >= 1")
+        cap = min(cap, max_satellites_per_stack)
+    others = tuple(b for b in fm.bodies if b != "SUN")
+    order: tuple[BodyName, ...] = ("SUN", *others)
+    gm_sun = ephemeris.gm_m3_s2("SUN")
+    gm_others = np.array([ephemeris.gm_m3_s2(b) for b in others], dtype=np.float64)
+    srp_k = fm.srp.strength_m3_s2 if fm.srp is not None else 0.0
+    mu_eff = gm_sun - srp_k
+    lo = min(float(t[0]), t0)
+    hi = max(float(t[-1]), t0)
+    cache = HermiteEphemerisCache.build(ephemeris, order, lo, hi, settings.ephemeris_cache_step_s)
+    midpoint_err = cache.max_midpoint_errors_m(ephemeris)
+    sun0 = ephemeris.state("SUN", t0)
+    sun = ephemeris.states("SUN", t)
+    at_start = t == t0
+
+    props: list[L1Propagation] = []
+    stack_of: list[int] = []
+    sizes: list[int] = []
+    scales: list[float] = []
+    for k, start in enumerate(range(0, len(inits), cap)):
+        group = inits[start : start + cap]
+        n = len(group)
+        scale = 1.0 / math.sqrt(n)
+        sizes.append(n)
+        scales.append(scale)
+        if n == 1:
+            # A stack of one is the solo problem: integrate it with propagate_l1 itself (same
+            # equations, bit-identical to a single-satellite run).
+            props.append(propagate_l1(group[0], t, ephemeris=ephemeris, settings=settings))
+            stack_of.append(k)
+            continue
+        # max_stack_size keeps rtol * scale >= the floor up to round-off (1e-12 * 0.1 is
+        # 9.999...e-14 in binary); clamp that round-off only.
+        rtol_eff = max(settings.rtol * scale, INTEGRATOR_RTOL_MIN) if n > 1 else settings.rtol
+        stack_settings = replace(
+            settings,
+            rtol=rtol_eff,
+            atol_position_m=settings.atol_position_m * scale,
+            atol_velocity_m_s=settings.atol_velocity_m_s * scale,
+        )
+        rhs = _make_stacked_heliocentric_rhs(cache, mu_eff, gm_others, n)
+        y0 = np.concatenate(
+            [
+                np.concatenate([s.position_m - sun0.position_m, s.velocity_m_s - sun0.velocity_m_s])
+                for s in group
+            ]
+        )
+        atol = np.tile(
+            np.array(
+                [stack_settings.atol_position_m] * 3 + [stack_settings.atol_velocity_m_s] * 3,
+                dtype=np.float64,
+            ),
+            n,
+        )
+        out = np.empty((t.size, 6 * n), dtype=np.float64)
+        out[at_start] = y0
+        segments: list[IntegrationSegment] = []
+        for direction in ("forward", "backward"):
+            mask = t > t0 if direction == "forward" else t < t0
+            if not np.any(mask):
+                continue
+            t_eval = t[mask] if direction == "forward" else t[mask][::-1]
+            t_end = float(t_eval[-1])
+            sol = solve_ivp(
+                rhs,
+                (t0, t_end),
+                y0,
+                method=settings.method,
+                t_eval=t_eval,
+                rtol=stack_settings.rtol,
+                atol=atol,
+                max_step=settings.max_step_s,
+            )
+            segments.append(
+                IntegrationSegment(
+                    direction=direction,
+                    t_start_tdb_s=t0,
+                    t_end_tdb_s=t_end,
+                    n_output=int(sol.t.size),
+                    nfev=int(sol.nfev),
+                    success=bool(sol.success),
+                    message=str(sol.message),
+                )
+            )
+            if not sol.success or sol.t.size != t_eval.size:
+                raise PropagationError(
+                    f"stacked L1 {direction} integration ({n} satellites) from {t0} to {t_end} "
+                    f"TDB s failed after {sol.nfev} evaluations: {sol.message}"
+                )
+            out[mask] = sol.y.T if direction == "forward" else sol.y.T[::-1]
+        for j, init in enumerate(group):
+            helio = out[:, 6 * j : 6 * j + 6]
+            ssb_pos = helio[:, :3] + sun.position_m
+            ssb_vel = helio[:, 3:] + sun.velocity_m_s
+            ssb_pos[at_start] = init.position_m
+            ssb_vel[at_start] = init.velocity_m_s
+            traj = CartesianTrajectory(
+                epochs_tdb_s=t, position_m=ssb_pos, velocity_m_s=ssb_vel, frame="J2000", origin=SSB
+            )
+            e0 = float(
+                _two_body_energy(
+                    init.position_m - sun0.position_m,
+                    init.velocity_m_s - sun0.velocity_m_s,
+                    mu_eff,
+                )
+            )
+            e = _two_body_energy(helio[:, :3], helio[:, 3:], mu_eff)
+            diag = L1Diagnostics(
+                formulation="heliocentric",
+                segments=tuple(segments),
+                nfev=sum(sg.nfev for sg in segments),
+                success=all(sg.success for sg in segments),
+                gm_m3_s2=(
+                    ("SUN", gm_sun),
+                    *((b, float(g)) for b, g in zip(others, gm_others, strict=True)),
+                ),
+                sun_two_body_energy_rel_drift=float(np.max(np.abs(e - e0)) / abs(e0)),
+                cache_step_s=cache.step_s,
+                cache_span_tdb_s=(cache.t0_tdb_s, cache.end_tdb_s),
+                cache_midpoint_error_m=tuple(
+                    (b, float(err)) for b, err in zip(order, midpoint_err, strict=True)
+                ),
+            )
+            props.append(
+                L1Propagation(
+                    trajectory=traj,
+                    initial=init,
+                    settings=stack_settings,
+                    diagnostics=diag,
+                    source_kernel_ids=ephemeris.source_kernel_ids,
+                )
+            )
+            stack_of.append(k)
+    return StackedL1Propagation(
+        propagations=tuple(props),
+        stack_index=tuple(stack_of),
+        stack_sizes=tuple(sizes),
+        tolerance_scale=tuple(scales),
+    )
+
+
 def _two_body_energy(rel_pos: Float64Array, rel_vel: Float64Array, mu_eff: float) -> Float64Array:
     r = np.sqrt(np.sum(rel_pos * rel_pos, axis=-1))
     return np.asarray(0.5 * np.sum(rel_vel * rel_vel, axis=-1) - mu_eff / r)
@@ -786,14 +1060,19 @@ def satellite_initial_state(
     ``mu = GM_sun`` of the provider -> Cartesian state (:func:`helioswarm.orbit.elements_to_state`);
     (2) rotate ECLIPJ2000 -> J2000 (``R_x(-eps_0)``); (3) add the Sun's J2000/SSB state at the
     same epoch. With SRP enabled the elements remain *gravitational* osculating elements
-    (mu = GM_sun, not GM_sun - k_srp).
+    (mu = GM_sun, not GM_sun - k_srp). An ``earth_relative`` phase is first resolved to a true
+    anomaly with :func:`resolve_orbit_phase` (the Earth's geometric heliocentric ecliptic
+    longitude at the element epoch).
 
     The collector normal (PDF p.4 ``SatelliteState`` "attitude/normal vector") is
     ``n = -r_helio/|r_helio|`` (towards the Sun's centre, geometric direction at the same epoch)
     for ``sun_tracking`` and the configured J2000 unit vector for ``fixed_normal``.
     """
     elements = elements_from_config(
-        orbit, epoch_tdb_s=epoch_tdb_s, mu_m3_s2=ephemeris.gm_m3_s2("SUN")
+        orbit,
+        epoch_tdb_s=epoch_tdb_s,
+        mu_m3_s2=ephemeris.gm_m3_s2("SUN"),
+        true_anomaly_rad=_resolved_nu(orbit, epoch_tdb_s, ephemeris),
     )
     helio_ecl = elements_to_state(elements)
     helio_j2000 = transform_state(helio_ecl, "J2000")
@@ -816,6 +1095,135 @@ def satellite_initial_state(
         attitude=attitude,
         collector_normal_unit=normal,
     )
+
+
+# ---------------------------------------------------------------------------------------------
+# Orbit phase reference (absolute true anomaly or Earth-relative ecliptic longitude; M7)
+# ---------------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class OrbitPhase:
+    """Resolved phase of a configured orbit at its element epoch.
+
+    Attributes:
+        phase_reference: ``absolute`` or ``earth_relative`` (``orbit.phase_reference``).
+        configured_angle_rad: ``orbit.true_anomaly_deg`` in radians (the true anomaly, or the
+            Earth-relative ecliptic longitude offset) [rad].
+        true_anomaly_rad: True anomaly of the osculating elements, in [0, 2 pi) [rad].
+        ecliptic_longitude_rad: Heliocentric ECLIPJ2000 longitude of the satellite at the
+            epoch, in [0, 2 pi) [rad].
+        earth_ecliptic_longitude_rad: Geometric heliocentric ECLIPJ2000 longitude of the Earth
+            (NAIF 399) at the epoch, in [0, 2 pi) [rad]; ``None`` for ``absolute`` phases (not
+            needed, not computed).
+        epoch_tdb_s: Element epoch [TDB s].
+    """
+
+    phase_reference: str
+    configured_angle_rad: float
+    true_anomaly_rad: float
+    ecliptic_longitude_rad: float
+    earth_ecliptic_longitude_rad: float | None
+    epoch_tdb_s: float
+
+
+def _wrap(angle_rad: float) -> float:
+    out = math.fmod(angle_rad, 2.0 * math.pi)
+    if out < 0.0:
+        out += 2.0 * math.pi
+    return 0.0 if out >= 2.0 * math.pi else out
+
+
+def earth_ecliptic_longitude_rad(epoch_tdb_s: float, ephemeris: EphemerisProvider) -> float:
+    """Geometric heliocentric ecliptic longitude of the Earth [rad], in [0, 2 pi).
+
+    ``r = r_earth(t) - r_sun(t)`` (both J2000 / SSB at the same TDB epoch, no light time),
+    rotated to ECLIPJ2000 (``R_x(eps_0)``, :func:`helioswarm.frames.rotate_vectors`),
+    ``lambda = atan2(y, x)``. The Earth is NAIF 399 (the planet, not the Earth-Moon barycentre).
+    """
+    earth = ephemeris.state("EARTH", epoch_tdb_s)
+    sun = ephemeris.state("SUN", epoch_tdb_s)
+    rel = np.asarray(earth.position_m, dtype=np.float64) - np.asarray(
+        sun.position_m, dtype=np.float64
+    )
+    ecl = rotate_vectors(rel.reshape(1, 3), "J2000", "ECLIPJ2000")[0]
+    return _wrap(math.atan2(float(ecl[1]), float(ecl[0])))
+
+
+def argument_of_latitude_for_longitude_rad(
+    ecliptic_longitude_rad: float, *, inclination_rad: float, raan_rad: float
+) -> float:
+    """Argument of latitude ``u`` at which an orbit reaches a given ecliptic longitude [rad].
+
+    The position direction is ``cos u P + sin u Q`` with ``P = (cos Omega, sin Omega, 0)`` and
+    ``Q = (-sin Omega cos i, cos Omega cos i, sin i)`` (:mod:`helioswarm.orbit`), so in the
+    frame rotated by ``Omega`` about the ecliptic pole its ecliptic components are
+    ``(cos u, sin u cos i)`` and ``tan(lambda - Omega) = cos i tan u``. With
+    ``Delta = lambda - Omega``: ``u = atan2(sin Delta sgn(cos i), cos Delta |cos i|)`` (the
+    quadrant of ``u`` is fixed because ``cos u`` and ``cos Delta`` share their sign). Undefined
+    for polar orbits (``cos i = 0``; rejected by the configuration schema).
+
+    Raises:
+        ValueError: ``|cos i|`` below
+            :data:`~helioswarm.config.EARTH_RELATIVE_MIN_ABS_COS_INCLINATION`.
+    """
+    from helioswarm.config import EARTH_RELATIVE_MIN_ABS_COS_INCLINATION
+
+    ci = math.cos(inclination_rad)
+    if abs(ci) < EARTH_RELATIVE_MIN_ABS_COS_INCLINATION:
+        raise ValueError("an ecliptic longitude does not determine the phase of a polar orbit")
+    delta = ecliptic_longitude_rad - raan_rad
+    return _wrap(math.atan2(math.sin(delta) * math.copysign(1.0, ci), math.cos(delta) * abs(ci)))
+
+
+def resolve_orbit_phase(
+    orbit: OrbitConfig, *, epoch_tdb_s: float, ephemeris: EphemerisProvider
+) -> OrbitPhase:
+    """Resolve ``orbit.true_anomaly_deg`` under ``orbit.phase_reference`` (M7).
+
+    * ``absolute``: the configured angle *is* the true anomaly ``nu``.
+    * ``earth_relative``: the configured angle ``phi`` is the offset of the satellite's
+      heliocentric ECLIPJ2000 longitude from the Earth's (:func:`earth_ecliptic_longitude_rad`)
+      at the element epoch, positive ahead of the Earth in its (prograde) orbital motion:
+      ``lambda_sat = lambda_earth + phi``; then ``u`` from
+      :func:`argument_of_latitude_for_longitude_rad` and ``nu = u - omega`` (mod 2 pi).
+
+    The ecliptic longitude of the satellite is returned for both references (from
+    ``u = omega + nu``: ``lambda = Omega + atan2(sin u cos i, cos u)``).
+    """
+    i, raan, argp = orbit.inclination_rad, orbit.raan_rad, orbit.arg_periapsis_rad
+    angle = orbit.true_anomaly_rad
+    lam_earth: float | None = None
+    if orbit.phase_reference == "absolute":
+        nu = _wrap(angle)
+    elif orbit.phase_reference == "earth_relative":
+        lam_earth = earth_ecliptic_longitude_rad(epoch_tdb_s, ephemeris)
+        u = argument_of_latitude_for_longitude_rad(
+            lam_earth + angle, inclination_rad=i, raan_rad=raan
+        )
+        nu = _wrap(u - argp)
+    else:  # pragma: no cover - schema Literal
+        raise ValueError(f"unknown phase_reference {orbit.phase_reference!r}")
+    u_sat = argp + nu
+    lam = _wrap(raan + math.atan2(math.sin(u_sat) * math.cos(i), math.cos(u_sat)))
+    return OrbitPhase(
+        phase_reference=orbit.phase_reference,
+        configured_angle_rad=angle,
+        true_anomaly_rad=nu,
+        ecliptic_longitude_rad=lam,
+        earth_ecliptic_longitude_rad=lam_earth,
+        epoch_tdb_s=float(epoch_tdb_s),
+    )
+
+
+def _resolved_nu(
+    orbit: OrbitConfig, epoch_tdb_s: float, ephemeris: EphemerisProvider
+) -> float | None:
+    """True anomaly to pass to :func:`~helioswarm.orbit.elements_from_config` (``None`` for
+    ``absolute`` phases: the configured value is used unchanged, bit for bit)."""
+    if orbit.phase_reference == "absolute":
+        return None
+    return resolve_orbit_phase(orbit, epoch_tdb_s=epoch_tdb_s, ephemeris=ephemeris).true_anomaly_rad
 
 
 def l0_reference_trajectory(
@@ -844,7 +1252,10 @@ def l0_reference_trajectory(
         J2000 / SSB trajectory [m, m s^-1].
     """
     elements = elements_from_config(
-        orbit, epoch_tdb_s=initial_epoch_tdb_s, mu_m3_s2=ephemeris.gm_m3_s2("SUN")
+        orbit,
+        epoch_tdb_s=initial_epoch_tdb_s,
+        mu_m3_s2=ephemeris.gm_m3_s2("SUN"),
+        true_anomaly_rad=_resolved_nu(orbit, initial_epoch_tdb_s, ephemeris),
     )
     helio = propagate_kepler(elements, epochs_tdb_s).trajectory
     return shift_trajectory_origin(transform_trajectory(helio, "J2000"), SSB, ephemeris)
@@ -943,10 +1354,14 @@ __all__ = [
     "L1Diagnostics",
     "L1Propagation",
     "L1RunAssessment",
+    "OrbitPhase",
     "PropagationError",
     "SatelliteState",
+    "StackedL1Propagation",
+    "argument_of_latitude_for_longitude_rad",
     "assess_l1_run",
     "check_kernel_set",
+    "earth_ecliptic_longitude_rad",
     "effective_gm_m3_s2",
     "force_model_from_config",
     "heliocentric_l1_acceleration_m_s2",
@@ -954,8 +1369,11 @@ __all__ = [
     "integrator_settings_from_config",
     "l0_reference_trajectory",
     "l1_acceleration_m_s2",
+    "max_stack_size",
     "point_mass_acceleration_m_s2",
     "propagate_l1",
     "propagate_l1_from_config",
+    "propagate_l1_stacked",
+    "resolve_orbit_phase",
     "satellite_initial_state",
 ]

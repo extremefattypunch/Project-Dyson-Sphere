@@ -8,6 +8,7 @@ tolerance, a changed serialisation) fails it.
 from __future__ import annotations
 
 import copy
+import hashlib
 import itertools
 import json
 import math
@@ -224,7 +225,9 @@ def test_integrator_step_rejected_with_two_body_model(mvp_data: dict[str, Any]) 
 @pytest.mark.parametrize(
     ("name", "value"),
     [
-        ("integrator_rtol", 1e-12),  # even when equal to the default: it is explicitly set
+        # M7: a value equal to the schema default is accepted (it is the default; a resolved
+        # dump writes it explicitly and must load again), any other value is rejected.
+        ("integrator_rtol", 1e-11),
         ("integrator_atol_position_m", 1e-2),
         ("integrator_atol_velocity_m_s", 1e-8),
         ("ephemeris_cache_step_s", 1800.0),
@@ -440,11 +443,30 @@ def test_receiver_heat_rejection_is_optional_and_settable(mvp_data: dict[str, An
 # transmitter.min_pointing_efficiency (None = not enforced; the pointing availability condition
 # of PDF §10.4); removing exactly that key reproduces ad186cc3...5b62 (checked when re-pinning).
 # schema_version is unchanged.
-MVP_CONFIG_HASH = "3db50d831d9546c79850b95e1857f8cab67d1a4385ade096e9e6cbe1a70eef7e"
+# M7 (3db50d83...ef7e -> a3fafc4d...23af) added the defaulted fields orbit.phase_reference
+# ('absolute' = the previous meaning of true_anomaly_deg), receiver.max_simultaneous_beams,
+# receiver.sites[*].max_simultaneous_beams / max_input_power_W / max_heat_rejection_W (None =
+# receiver value) and the optional constellation section (None = single satellite); removing
+# exactly those keys reproduces 3db50d83...ef7e (test_m7_repin_removing_new_keys_restores_m6_hash).
+MVP_CONFIG_HASH = "a3fafc4decf6ca483342010b4206bd8affa3dfe65e8369d0e94c7075f00823af"
+M6_MVP_CONFIG_HASH = "3db50d831d9546c79850b95e1857f8cab67d1a4385ade096e9e6cbe1a70eef7e"
 
 
 def test_mvp_config_hash_is_pinned() -> None:
     assert config_hash(load_config(MVP_CONFIG)) == MVP_CONFIG_HASH
+
+
+def test_m7_repin_removing_new_keys_restores_m6_hash() -> None:
+    """The M7 re-pin only adds defaulted keys: deleting exactly them gives the M6 digest."""
+    d = resolved_dict(load_config(MVP_CONFIG))
+    assert d["orbit"].pop("phase_reference") == "absolute"
+    assert d["receiver"].pop("max_simultaneous_beams") is None
+    for site in d["receiver"]["sites"]:
+        for key in ("max_simultaneous_beams", "max_input_power_W", "max_heat_rejection_W"):
+            assert site.pop(key) is None
+    assert d.pop("constellation") is None
+    text = json.dumps(d, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
+    assert hashlib.sha256(text.encode("ascii")).hexdigest() == M6_MVP_CONFIG_HASH
 
 
 def test_canonical_json_format_is_pinned() -> None:
@@ -594,3 +616,28 @@ def test_itu_r_without_the_itur_extra_fails_early(
     monkeypatch.setattr(importlib.util, "find_spec", real_find_spec)
     if real_find_spec("itur") is not None:  # the extra is installed in the gate environment
         assert parse_config(data).models.atmosphere == "itu_r"
+
+
+def test_resolved_dump_of_an_l0_config_without_planets_loads_again(
+    mvp_data: dict[str, Any],
+) -> None:
+    """M7 fix: the resolved dump writes every field explicitly (perturbing_bodies and the L1
+    integrator settings at their defaults); loading it must reproduce the configuration
+    (dump_resolved_yaml contract) instead of tripping the "set but ignored" rules."""
+    import yaml
+
+    from helioswarm.config import dump_resolved_yaml
+
+    set_path(mvp_data, "orbit.model", "two_body_kepler")
+    set_path(mvp_data, "orbit.include_planetary_perturbations", False)
+    set_path(mvp_data, "orbit.include_solar_radiation_pressure", False)
+    del_path(mvp_data, "orbit.cr")
+    del_path(mvp_data, "orbit.area_to_mass_m2_kg")
+    del_path(mvp_data, "time.integrator_step_s")
+    cfg = parse_config(mvp_data)
+    again = parse_config(yaml.safe_load(dump_resolved_yaml(cfg)))
+    assert config_hash(again) == config_hash(cfg)
+    # explicit default-valued fields are accepted, non-default ones still rejected
+    set_path(mvp_data, "time.integrator_rtol", 1e-12)
+    set_path(mvp_data, "orbit.perturbing_bodies", list(cfg.orbit.perturbing_bodies))
+    assert config_hash(parse_config(mvp_data)) == config_hash(cfg)

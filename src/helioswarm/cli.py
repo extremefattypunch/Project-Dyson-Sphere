@@ -10,16 +10,24 @@ follow one convention: 0 success, 1 invalid input or failure, 2 command-line usa
     ``sweep_schema_version`` key; every grid point is validated as a full configuration and
     nothing runs. Exit code 0 if every file is valid, 1 if any is invalid or unreadable.
 
-``helioswarm run CONFIG [--out DIR] [--overwrite] [--backend numpy|jax] [--kernel-dir DIR]``
-    End-to-end single-satellite run into a run directory (``helioswarm.io``). Exit code 0 on
-    success, 1 on an invalid configuration, an existing run directory without ``--overwrite``,
-    a kernel problem or a model-validity error.
+``helioswarm run CONFIG [--out DIR] [--overwrite] [--backend numpy|numpy_batch|jax]
+[--kernel-dir DIR] [--chunk-index I --chunk-count N --candidates-dir D] [--candidates-dir D]
+[--link-detail] [--link-detail-max-gb G]``
+    End-to-end run into a run directory. A configuration without a ``constellation`` section is
+    a single-satellite run (``helioswarm.io``); with one, a constellation run
+    (``helioswarm.constellation_io``): either in one process, or as Slurm array tasks that each
+    write the link file of a contiguous block of satellites (``--chunk-index/--chunk-count``
+    with ``--candidates-dir``) followed by one merge-and-schedule run (``--candidates-dir``
+    alone). ``--link-detail`` also writes the per-link detail (size estimate checked against
+    ``--link-detail-max-gb``). Exit code 0 on success, 1 on an invalid configuration, an
+    existing run directory without ``--overwrite``, a kernel problem or a model-validity error.
 
 ``helioswarm plot RUN_DIR``
-    Redraw ``figures/`` and ``report.md`` from the saved files only. Exit code 0 / 1.
+    Redraw ``figures/`` and ``report.md`` (single satellite) or the constellation figures from
+    the saved files only. Exit code 0 / 1.
 
 ``helioswarm sweep SWEEP_CONFIG --out DIR [--summary-only] [--array-index I --array-count N]
-[--collate-only] [--overwrite] [--backend numpy|jax]``
+[--collate-only] [--overwrite] [--backend numpy|numpy_batch|jax]``
     Deterministic Cartesian sweep (``helioswarm.sweep``). Exit code 0 if every point of this
     task is ok, 1 if any failed or on an error.
 
@@ -45,6 +53,7 @@ follow one convention: 0 success, 1 invalid input or failure, 2 command-line usa
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -120,13 +129,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     backend_help = (
-        "beam-capture backend: numpy (M5 per-epoch reference, default) or jax (batched kernel, "
-        "airy_far_field only; needs the jax or gpu extra)"
+        "beam-capture backend: numpy (M5 per-epoch reference, default), numpy_batch (batched "
+        "kernel on the CPU) or jax (batched kernel compiled by JAX; needs the jax or gpu "
+        "extra); the batched kernel is airy_far_field only"
     )
+    backends = ("numpy", "numpy_batch", "jax")
     run = sub.add_parser(
         "run",
         help="run one configuration end to end",
-        description="End-to-end single-satellite run. Exit status: 0 ok, 1 error, 2 usage error.",
+        description="End-to-end run: single satellite, or a constellation when the "
+        "configuration has a constellation section. Exit status: 0 ok, 1 error, 2 usage error.",
     )
     run.add_argument("config", metavar="CONFIG", help="path to the YAML configuration")
     run.add_argument(
@@ -136,8 +148,34 @@ def _build_parser() -> argparse.ArgumentParser:
         help="run directory (default: $HELIOSWARM_RUNS_DIR/<project.name>, else runs/<name>)",
     )
     run.add_argument("--overwrite", action="store_true", help="replace an existing run directory")
-    run.add_argument("--backend", choices=("numpy", "jax"), default="numpy", help=backend_help)
+    run.add_argument(
+        "--backend", choices=backends, default=None, help=backend_help + " (default numpy)"
+    )
     run.add_argument("--kernel-dir", metavar="DIR", default=None, help="SPICE kernel directory")
+    run.add_argument(
+        "--chunk-index",
+        type=int,
+        default=None,
+        help="constellation stage A only: this array task's block of satellites",
+    )
+    run.add_argument("--chunk-count", type=int, default=None, help="number of array tasks")
+    run.add_argument(
+        "--candidates-dir",
+        metavar="DIR",
+        default=None,
+        help="constellation link files: written by --chunk-index tasks, merged otherwise",
+    )
+    run.add_argument(
+        "--link-detail",
+        action="store_true",
+        help="constellation: also write the per-link detail (links/*.parquet)",
+    )
+    run.add_argument(
+        "--link-detail-max-gb",
+        type=float,
+        default=None,
+        help="cap on the uncompressed per-link detail estimate [GB = 1e9 bytes] (default 4)",
+    )
 
     plot = sub.add_parser(
         "plot",
@@ -167,7 +205,7 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="only rebuild sweep_summary.parquet from the point directories",
     )
-    sweep.add_argument("--backend", choices=("numpy", "jax"), default="numpy", help=backend_help)
+    sweep.add_argument("--backend", choices=backends, default="numpy", help=backend_help)
 
     val = sub.add_parser(
         "validate-models",
@@ -248,13 +286,27 @@ def _cmd_run(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
     except ConfigError as exc:
         err.write(f"ERROR: {exc.format()}\n")
         return EXIT_INVALID
+    if config.constellation is not None:
+        return _run_constellation(args, config, out, err)
+    if (
+        args.chunk_index is not None
+        or args.chunk_count is not None
+        or args.candidates_dir is not None
+        or args.link_detail
+        or args.link_detail_max_gb is not None
+    ):
+        err.write(
+            "ERROR: --chunk-index/--chunk-count/--candidates-dir/--link-detail/"
+            "--link-detail-max-gb apply to constellation configurations only\n"
+        )
+        return EXIT_INVALID
     try:
         run_dir = prepare_run_dir(resolve_run_dir(config, args.out), overwrite=args.overwrite)
         res = execute_run(
             config,
             run_dir,
             kernel_set=KernelSet.from_manifest(None, args.kernel_dir),
-            backend=args.backend,
+            backend=args.backend or "numpy",
             command=["helioswarm", *sys.argv[1:]],
         )
     except (
@@ -287,11 +339,125 @@ def _cmd_run(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
     return EXIT_OK
 
 
+def _run_constellation(
+    args: argparse.Namespace, config: RunConfig, out: TextIO, err: TextIO
+) -> int:
+    from helioswarm.aperture import BeamModelValidityError
+    from helioswarm.constellation_io import (
+        BYTES_PER_GB,
+        LinkDetailTooLargeError,
+        execute_constellation_run,
+        execute_link_chunk,
+    )
+    from helioswarm.io import RunDirectoryError, prepare_run_dir, resolve_run_dir
+    from helioswarm.system import Backend
+
+    chunked = args.chunk_index is not None or args.chunk_count is not None
+    if chunked and (args.chunk_index is None or args.chunk_count is None):
+        err.write("ERROR: --chunk-index and --chunk-count must be given together\n")
+        return EXIT_INVALID
+    if chunked and args.candidates_dir is None:
+        err.write("ERROR: --chunk-index needs --candidates-dir (where the link file goes)\n")
+        return EXIT_INVALID
+    # Options that the selected mode would otherwise ignore are refused.
+    if chunked:
+        ignored = [
+            name
+            for name, given in (
+                ("--out", args.out is not None),
+                ("--overwrite", args.overwrite),
+                ("--link-detail", args.link_detail),
+                ("--link-detail-max-gb", args.link_detail_max_gb is not None),
+            )
+            if given
+        ]
+        if ignored:
+            err.write(
+                f"ERROR: {', '.join(ignored)} do(es) not apply to a stage-A array task "
+                "(--chunk-index/--chunk-count writes only its link file to --candidates-dir)\n"
+            )
+            return EXIT_INVALID
+    elif args.candidates_dir is not None and args.backend is not None:
+        err.write(
+            "ERROR: --backend does not apply to a merge (--candidates-dir without --chunk-index):"
+            " the beam backend is the one the array tasks used, recorded in their link files\n"
+        )
+        return EXIT_INVALID
+    if args.link_detail_max_gb is not None and not args.link_detail:
+        err.write("ERROR: --link-detail-max-gb needs --link-detail\n")
+        return EXIT_INVALID
+    max_gb = 4.0 if args.link_detail_max_gb is None else float(args.link_detail_max_gb)
+    if not (math.isfinite(max_gb) and max_gb > 0.0):
+        err.write("ERROR: --link-detail-max-gb must be a finite number > 0\n")
+        return EXIT_INVALID
+    backend: Backend = args.backend or "numpy"
+    command = ["helioswarm", *sys.argv[1:]]
+    try:
+        ks = KernelSet.from_manifest(None, args.kernel_dir)
+        if chunked:
+            path = execute_link_chunk(
+                config,
+                Path(args.candidates_dir),
+                chunk_index=args.chunk_index,
+                chunk_count=args.chunk_count,
+                kernel_set=ks,
+                backend=backend,
+            )
+            out.write(f"OK: link file written to {path}\n")
+            return EXIT_OK
+        run_dir = prepare_run_dir(resolve_run_dir(config, args.out), overwrite=args.overwrite)
+        res = execute_constellation_run(
+            config,
+            run_dir,
+            kernel_set=ks,
+            backend=backend,
+            candidates_dir=None if args.candidates_dir is None else Path(args.candidates_dir),
+            link_detail=args.link_detail,
+            link_detail_max_bytes=int(max_gb * BYTES_PER_GB),
+            command=command,
+        )
+    except (
+        RunDirectoryError,
+        KernelError,
+        BeamModelValidityError,
+        LinkDetailTooLargeError,
+        OSError,
+        ValueError,
+        NotImplementedError,
+        ImportError,
+        RuntimeError,
+    ) as exc:
+        err.write(f"ERROR: {type(exc).__name__}: {exc}\n")
+        return EXIT_INVALID
+    s = res.summary
+    mean = s.network.p_grid_W.time_mean
+    act = s.active_satellites.time_mean
+    out.write(
+        f"OK: constellation run written to {res.run_dir}\n"
+        f"  {s.n_satellites} satellites, {s.n_sites} sites, scheduler {s.scheduler.policy}\n"
+        f"  network P_grid mean {'n/a' if mean is None else f'{mean:.6g}'} W, peak "
+        f"{s.network.p_grid_W.peak:.6g} W, availability {s.network.availability:.6g}\n"
+        f"  active satellites (time mean) "
+        f"{'n/a' if act is None else f'{act:.4g}'}"
+        f", delivered energy {s.network.delivered_energy_J:.6g} J\n"
+    )
+    return EXIT_OK
+
+
 def _cmd_plot(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
-    from helioswarm.plotting import make_figures
+    from helioswarm.constellation_io import NETWORK_FILE
+    from helioswarm.plotting import make_constellation_figures, make_figures
     from helioswarm.report import write_report
 
     run_dir = Path(args.run_dir)
+    if (run_dir / NETWORK_FILE).is_file():
+        try:
+            paths = make_constellation_figures(run_dir)
+        except (OSError, KeyError, ValueError, ConfigError) as exc:
+            err.write(f"ERROR: cannot plot {run_dir}: {exc}\n")
+            return EXIT_INVALID
+        out.write(f"OK: {len(paths)} constellation figures regenerated in {run_dir}\n")
+        return EXIT_OK
     try:
         paths = make_figures(run_dir)
         report = write_report(run_dir)

@@ -244,6 +244,27 @@ def test_receiver_capacity_limit_clips(kernel_set: KernelSet, base: SystemRunRes
     np.testing.assert_array_equal(res.available, base.available)  # clipping is not an outage
 
 
+def test_site_capacity_overrides_apply_to_the_single_satellite_run(
+    kernel_set: KernelSet, base: SystemRunResult
+) -> None:
+    """receiver.sites[0].max_input_power_W / max_heat_rejection_W (M7 per-site overrides) bind
+    in the single-satellite run exactly like the receiver-level limits: accepted = the limit on
+    the saturated epochs (input limit L; heat limit Q/(1 - eta_rx) with eta_rx = 0.4), never
+    above it. Before the fix the overrides were accepted by the schema and silently ignored."""
+    limit = 0.5 * float(np.max(base.link.captured_W))
+    res = _run(kernel_set, _cfg(**{"receiver.sites[0].max_input_power_W": limit}))
+    sat = res.link.receiver_saturated
+    assert sat.any()
+    assert np.all(res.link.accepted_W[sat] == limit)
+    assert np.all(res.link.accepted_W <= limit)
+    q = limit * (1.0 - 0.4)
+    res = _run(kernel_set, _cfg(**{"receiver.sites[0].max_heat_rejection_W": q}))
+    capped = res.link.accepted_W < res.link.captured_W
+    assert capped.any()
+    np.testing.assert_allclose(res.link.accepted_W[capped], q / (1.0 - 0.4), rtol=1e-15)
+    assert np.all(res.link.accepted_W <= q / (1.0 - 0.4) * (1 + 1e-15))
+
+
 def test_collector_area_scales_power_linearly(kernel_set: KernelSet, base: SystemRunResult) -> None:
     res = _run(kernel_set, _cfg(**{"collector.area_m2": 20000.0}))
     np.testing.assert_allclose(

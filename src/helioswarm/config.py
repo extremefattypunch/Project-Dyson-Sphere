@@ -33,6 +33,7 @@ import sys
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from fractions import Fraction
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Final, Literal, Self, cast, get_args, get_origin
@@ -85,6 +86,17 @@ rain-attenuation method applies up to 55 GHz, and the P.676 Annex 2 gaseous appr
 1 GHz (domains as implemented and documented by the ``itur`` package, version 0.4.0)."""
 
 ReceiverOrientation = Literal["horizontal", "tracking"]
+PhaseReference = Literal["absolute", "earth_relative"]
+"""Meaning of an orbit's phase angle (``orbit.true_anomaly_deg``, ring phases): ``absolute`` = the
+true anomaly of the osculating elements; ``earth_relative`` = the offset of the satellite's
+heliocentric ecliptic (ECLIPJ2000) longitude from the Earth's at the element epoch, positive
+ahead of the Earth in its orbital motion (resolved with the ephemeris at run time,
+:func:`helioswarm.propagate.resolve_orbit_phase`)."""
+
+EARTH_RELATIVE_MIN_ABS_COS_INCLINATION: Final[float] = 1.0e-12
+"""``earth_relative`` phases need ``|cos i|`` above this: for a polar orbit (i = 90 deg) the
+ecliptic longitude of the satellite takes only the two values Omega and Omega + 180 deg, so a
+longitude offset does not determine the true anomaly."""
 AtmosphereModel = Literal["none", "scenario", "itu_r"]
 
 PerturbingBody = Literal[
@@ -524,9 +536,21 @@ class OrbitConfig(_Section):
     true_anomaly_deg: float = _field(
         unit="deg",
         provenance="assumed",
-        description="True anomaly at initial_epoch_utc.",
+        description="Phase angle at initial_epoch_utc: the true anomaly when "
+        "phase_reference='absolute'; with phase_reference='earth_relative' the offset of the "
+        "satellite's heliocentric ecliptic (ECLIPJ2000) longitude from the Earth's at that epoch, "
+        "positive ahead of the Earth (resolved to a true anomaly with the ephemeris at run time).",
         ge=0.0,
         lt=360.0,
+    )
+    phase_reference: PhaseReference = _field(
+        "absolute",
+        unit="-",
+        provenance="assumed",
+        kind="model_choice",
+        description="Reference of true_anomaly_deg: 'absolute' (true anomaly of the elements) or "
+        "'earth_relative' (heliocentric ecliptic longitude offset from the Earth (NAIF 399, "
+        "geometric Sun-centred position) at initial_epoch_utc, positive ahead of the Earth).",
     )
     include_planetary_perturbations: bool = _field(
         False,
@@ -606,7 +630,20 @@ class OrbitConfig(_Section):
                     "orbit.model='two_body_kepler' has no non-gravitational forces; it "
                     "contradicts orbit.include_solar_radiation_pressure=true"
                 )
-        bodies_explicit = "perturbing_bodies" in self.model_fields_set
+        if (
+            self.phase_reference == "earth_relative"
+            and abs(math.cos(self.inclination_rad)) < EARTH_RELATIVE_MIN_ABS_COS_INCLINATION
+        ):
+            issues.append(
+                f"orbit.phase_reference='earth_relative' is undefined for a polar orbit "
+                f"(orbit.inclination_deg={self.inclination_deg}): the ecliptic longitude of a "
+                "polar orbit takes only the values raan and raan + 180 deg"
+            )
+        # An explicit list equal to the default is the default (a resolved dump writes every
+        # field explicitly and must load again); any other explicit list would be ignored.
+        bodies_explicit = "perturbing_bodies" in self.model_fields_set and tuple(
+            self.perturbing_bodies
+        ) != tuple(DEFAULT_PERTURBING_BODIES)
         if not self.include_planetary_perturbations and bodies_explicit:
             issues.append(
                 "orbit.perturbing_bodies is set but include_planetary_perturbations=false "
@@ -1021,6 +1058,31 @@ class SiteConfig(_Section):
         ge=-1000.0,
         le=9000.0,
     )
+    max_simultaneous_beams: int | None = _field(
+        None,
+        unit="-",
+        provenance="assumed",
+        description="Beam slots of this site: the most beams (satellites) it accepts at one "
+        "epoch (PDF §10.4/§11.2 receiver capacity; enforced by the constellation scheduler). "
+        "None = receiver.max_simultaneous_beams.",
+        ge=1,
+    )
+    max_input_power_W: float | None = _field(
+        None,
+        unit="W",
+        provenance="assumed",
+        description="Override of receiver.max_input_power_W for this site: bound on the SUM of "
+        "the captured beam powers of all beams incident on it. None = receiver value.",
+        gt=0.0,
+    )
+    max_heat_rejection_W: float | None = _field(
+        None,
+        unit="W",
+        provenance="assumed",
+        description="Override of receiver.max_heat_rejection_W for this site (bound on the "
+        "receiver waste heat of the summed accepted power). None = receiver value.",
+        gt=0.0,
+    )
 
     @property
     def latitude_rad(self) -> float:
@@ -1051,6 +1113,12 @@ class ReceiverConfig(_Section):
       electricity is assumed absorbed as heat), i.e. ``P_accepted <= Q_max / (1 -
       conversion_efficiency)`` (M6: enforced as a clip, flagged as receiver saturation).
     * ``max_power_density_W_m2`` bounds the peak incident beam power density.
+
+    Several transmitters (constellation runs, PDF §10.4 "enforce receiver power limits and
+    prevent double-counting the same receiver capacity"): every limit applies to the *sum* over
+    the beams incident on one site (independent, incoherent beams: intensities and powers add,
+    fields are never added). ``max_simultaneous_beams`` bounds the number of beams per site;
+    each site may override the beam, input-power and heat limits (``SiteConfig``).
     """
 
     sites: tuple[SiteConfig, ...] = _field(
@@ -1132,6 +1200,15 @@ class ReceiverConfig(_Section):
         "still reported).",
         gt=0.0,
     )
+    max_simultaneous_beams: int | None = _field(
+        None,
+        unit="-",
+        provenance="assumed",
+        description="Beam slots per site: the most beams (satellites) one receiver site accepts "
+        "at one epoch (constellation scheduler). None = unlimited. A single-satellite run "
+        "never has more than one beam.",
+        ge=1,
+    )
     orientation: ReceiverOrientation = _field(
         "horizontal",
         unit="-",
@@ -1165,6 +1242,23 @@ class ReceiverConfig(_Section):
     def area_m2(self) -> float:
         """Receiver aperture area pi * radius_m^2 [m^2]."""
         return math.pi * self.radius_m**2
+
+    def site_max_input_power_W(self, site: SiteConfig) -> float:
+        """Input-power limit of ``site`` (its override, else ``max_input_power_W``) [W]."""
+        return self.max_input_power_W if site.max_input_power_W is None else site.max_input_power_W
+
+    def site_max_heat_rejection_W(self, site: SiteConfig) -> float | None:
+        """Heat-rejection limit of ``site`` (its override, else the receiver value) [W]."""
+        if site.max_heat_rejection_W is not None:
+            return site.max_heat_rejection_W
+        return self.max_heat_rejection_W
+
+    def site_max_beams(self, site: SiteConfig) -> int | None:
+        """Beam slots of ``site`` (its override, else ``max_simultaneous_beams``; None =
+        unlimited)."""
+        if site.max_simultaneous_beams is not None:
+            return site.max_simultaneous_beams
+        return self.max_simultaneous_beams
 
 
 class ThermalConfig(_Section):
@@ -1537,6 +1631,316 @@ class ConstantsConfig(_Section):
 
 
 # ---------------------------------------------------------------------------------------------
+# Constellation (M7; PDF §11.2-11.4, §10.4)
+# ---------------------------------------------------------------------------------------------
+
+PhaseDistribution = Literal["even", "random"]
+SchedulerPolicy = Literal["greedy_max_power", "optimal_assignment"]
+
+RING_ELEMENT_FIELDS: Final[tuple[str, ...]] = (
+    "semimajor_axis_au",
+    "eccentricity",
+    "inclination_deg",
+    "raan_deg",
+    "arg_periapsis_deg",
+)
+"""Orbital elements a ring may set (``None`` inherits the value of the ``orbit`` section)."""
+
+RING_TECHNOLOGY_FIELDS: Final[Mapping[str, tuple[str, str]]] = MappingProxyType(
+    {
+        "collector_area_m2": ("collector", "area_m2"),
+        "transmitter_aperture_diameter_m": ("transmitter", "aperture_diameter_m"),
+        "transmitter_electrical_to_beam_efficiency": (
+            "transmitter",
+            "electrical_to_beam_efficiency",
+        ),
+        "transmitter_pointing_sigma_rad": ("transmitter", "pointing_sigma_rad"),
+    }
+)
+"""Per-ring technology override -> (section, field) of the satellite configuration it replaces."""
+
+
+class RingTechnologyConfig(_Section):
+    """Per-ring technology overrides (``None`` = the value of the base configuration).
+
+    Each set value replaces one field of the satellite's configuration
+    (:data:`RING_TECHNOLOGY_FIELDS`); the resulting satellite configuration is validated with
+    the same schema rules as any run configuration.
+    """
+
+    collector_area_m2: float | None = _field(
+        None,
+        unit="m^2",
+        provenance="assumed",
+        description="Replaces collector.area_m2 for the satellites of this ring.",
+        gt=0.0,
+    )
+    transmitter_aperture_diameter_m: float | None = _field(
+        None,
+        unit="m",
+        provenance="assumed",
+        description="Replaces transmitter.aperture_diameter_m for this ring.",
+        gt=0.0,
+    )
+    transmitter_electrical_to_beam_efficiency: float | None = _field(
+        None,
+        unit="1",
+        provenance="assumed",
+        description="Replaces transmitter.electrical_to_beam_efficiency for this ring.",
+        gt=0.0,
+        le=1.0,
+    )
+    transmitter_pointing_sigma_rad: float | None = _field(
+        None,
+        unit="rad",
+        provenance="assumed",
+        description="Replaces transmitter.pointing_sigma_rad for this ring.",
+        ge=0.0,
+    )
+
+
+class RingConfig(_Section):
+    """One orbital ring of identical, independently orbiting satellites (PDF §11.2).
+
+    The ring's orbital elements default to those of the ``orbit`` section (``None`` = inherit);
+    the force model, orbit model and element epoch always come from ``orbit``. Satellite ``k``
+    (``k = 0 .. n_satellites-1``) gets the phase angle ``phi_k = phase_offset_deg + span k / n``
+    (``even``) or ``phase_offset_deg + U_k``, ``U_k ~ uniform[0, span)`` drawn from the run's
+    Generator seeded with ``project.seed`` (``random``), ``span = phase_span_deg`` (default
+    360), reduced mod 360 and interpreted according to
+    ``phase_reference`` exactly like ``orbit.true_anomaly_deg``. Even spacing is in true anomaly
+    (absolute) or ecliptic longitude (earth_relative): equal spacing in time only for circular
+    orbits.
+    """
+
+    name: str = _field(
+        unit="-",
+        provenance="assumed",
+        kind="metadata",
+        description="Unique ring name.",
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+        max_length=64,
+    )
+    n_satellites: int = _field(
+        unit="-",
+        provenance="assumed",
+        description="Number of satellites on the ring.",
+        ge=1,
+        le=100_000,
+    )
+    semimajor_axis_au: float | None = _field(
+        None,
+        unit="au",
+        provenance="assumed",
+        description="Semimajor axis (None = orbit.semimajor_axis_au).",
+        gt=0.0,
+        le=100.0,
+    )
+    eccentricity: float | None = _field(
+        None,
+        unit="1",
+        provenance="assumed",
+        description="Eccentricity (None = orbit.eccentricity).",
+        ge=0.0,
+        lt=1.0,
+    )
+    inclination_deg: float | None = _field(
+        None,
+        unit="deg",
+        provenance="assumed",
+        description="Inclination to the ecliptic of J2000 (None = orbit.inclination_deg).",
+        ge=0.0,
+        le=180.0,
+    )
+    raan_deg: float | None = _field(
+        None,
+        unit="deg",
+        provenance="assumed",
+        description="Longitude of the ascending node (None = orbit.raan_deg).",
+        ge=0.0,
+        lt=360.0,
+    )
+    arg_periapsis_deg: float | None = _field(
+        None,
+        unit="deg",
+        provenance="assumed",
+        description="Argument of periapsis (None = orbit.arg_periapsis_deg).",
+        ge=0.0,
+        lt=360.0,
+    )
+    phase_distribution: PhaseDistribution = _field(
+        "even",
+        unit="-",
+        provenance="assumed",
+        kind="model_choice",
+        description="'even' (phi_k = offset + span k/n) or 'random' (offset + uniform[0, span) "
+        "from the Generator seeded with project.seed).",
+    )
+    phase_offset_deg: float | None = _field(
+        None,
+        unit="deg",
+        provenance="assumed",
+        description="Phase of satellite 0 (None = orbit.true_anomaly_deg), interpreted with "
+        "phase_reference.",
+        ge=0.0,
+        lt=360.0,
+    )
+    phase_span_deg: float = _field(
+        360.0,
+        unit="deg",
+        provenance="assumed",
+        description="Arc the phases are spread over: phi_k = offset + span k/n ('even') or "
+        "offset + U_k, U_k ~ uniform[0, span) ('random'). 360 = the whole ring; a smaller arc "
+        "keeps the satellites out of a sector (e.g. near the Earth).",
+        gt=0.0,
+        le=360.0,
+    )
+    phase_reference: PhaseReference | None = _field(
+        None,
+        unit="-",
+        provenance="assumed",
+        kind="model_choice",
+        description="'absolute' or 'earth_relative' (orbit.phase_reference semantics; None = "
+        "orbit.phase_reference).",
+    )
+    technology: RingTechnologyConfig = Field(default_factory=RingTechnologyConfig)
+
+
+class SchedulerConfig(_Section):
+    """Deterministic, capacity-constrained link scheduler (PDF §11.2, §13.1 scheduler row).
+
+    At every epoch the feasible satellite-to-site links are assigned subject to beam
+    exclusivity (one target per satellite), the beam slots of each site, the summed
+    accepted-power and heat limits of each site (excess clipped and reported) and the
+    power-density interlock on the sum of the incident beams' peak irradiances (incoherent
+    sum), and the optional transmitter duty cycle. Retargeting is instantaneous: a satellite
+    may serve a different site at the next epoch with no slew or acquisition time (named
+    approximation; the number of retargeting events is reported).
+    """
+
+    policy: SchedulerPolicy = _field(
+        "greedy_max_power",
+        unit="-",
+        provenance="assumed",
+        kind="model_choice",
+        description="'greedy_max_power': links in order (captured power desc, satellite index, "
+        "site index), each taken if its satellite is free and its site has capacity; "
+        "'optimal_assignment': per-epoch maximum of the delivered power (exact MILP / "
+        "assignment, scipy.optimize).",
+    )
+    duty_cycle_max: float | None = _field(
+        None,
+        unit="1",
+        provenance="assumed",
+        description="Transmitter duty-cycle limit: a satellite transmits at most "
+        "floor(duty_cycle_max * N_w) of any N_w = floor(duty_cycle_window_s / output_step_s) "
+        "consecutive output epochs (causal: enforced epoch by epoch). None = no limit.",
+        gt=0.0,
+        le=1.0,
+    )
+    duty_cycle_window_s: float | None = _field(
+        None,
+        unit="s",
+        provenance="assumed",
+        description="Length of the sliding duty-cycle window (required with duty_cycle_max).",
+        gt=0.0,
+    )
+    retarget_model: Literal["instantaneous"] = _field(
+        "instantaneous",
+        unit="-",
+        provenance="assumed",
+        kind="model_choice",
+        description="Slew/retarget time between targets: 'instantaneous' (ignored; named "
+        "approximation, retarget events counted). No finite-time model is implemented.",
+    )
+
+    @model_validator(mode="after")
+    def _check_duty(self) -> Self:
+        if (self.duty_cycle_max is None) != (self.duty_cycle_window_s is None):
+            raise ValueError(
+                "constellation.scheduler.duty_cycle_max and duty_cycle_window_s must be set "
+                "together"
+            )
+        return self
+
+
+class MassProxyConfig(_Section):
+    """Assumed specific masses of the deployed-mass proxy (PDF §11.4 "mass proxy").
+
+    ``m_sat = bus_mass_kg + collector_areal_mass_kg_m2 A_col + s_rad A_rad
+    + transmitter_areal_mass_kg_m2 pi D^2 / 4``, with the radiator areal mass
+    ``s_rad = thermal.radiator_specific_mass_kg_m2`` (the existing M4 field; required when a
+    mass proxy is configured, so one physical parameter has one field) and ``A_rad`` the
+    physical radiator area ``thermal.radiator_area_m2`` if configured, else the largest
+    required radiator area of the satellite over the run (M4 sizing at the operating point).
+    A *proxy*, not a mass budget: no structure, propellant, attitude control or margins beyond
+    what the numbers stand for. No default: every value is a scenario assumption stated in the
+    configuration.
+    """
+
+    collector_areal_mass_kg_m2: float = _field(
+        unit="kg m^-2",
+        provenance="assumed",
+        description="Mass per collector area (PV blanket and its support).",
+        gt=0.0,
+    )
+    transmitter_areal_mass_kg_m2: float = _field(
+        unit="kg m^-2",
+        provenance="assumed",
+        description="Mass per transmitter aperture area pi D^2/4.",
+        gt=0.0,
+    )
+    bus_mass_kg: float = _field(
+        unit="kg",
+        provenance="assumed",
+        description="Fixed bus mass per satellite.",
+        ge=0.0,
+    )
+
+
+class ConstellationConfig(_Section):
+    """Constellation of independent satellites on one or more rings (PDF §11.2-11.4).
+
+    The base ``orbit``, ``collector``, ``transmitter`` and ``thermal`` sections define every
+    satellite; each ring sets its elements, phases and technology overrides. Every satellite
+    is an independent test particle and an independent transmitter: received powers of
+    different satellites add (incoherent, PDF §11.3); no coherent combining is modelled.
+    """
+
+    rings: tuple[RingConfig, ...] = _field(
+        unit="-",
+        provenance="assumed",
+        kind="metadata",
+        description="Rings (at least one; unique names).",
+        min_length=1,
+        strict=False,
+    )
+    scheduler: SchedulerConfig = Field(default_factory=SchedulerConfig)
+    mass_proxy: MassProxyConfig | None = _field(
+        None,
+        unit="-",
+        provenance="assumed",
+        kind="model_choice",
+        description="Assumed specific masses of the mass proxy (None = no mass proxy and no "
+        "power per mass).",
+    )
+
+    @field_validator("rings")
+    @classmethod
+    def _unique_rings(cls, rings: tuple[RingConfig, ...]) -> tuple[RingConfig, ...]:
+        names = [r.name for r in rings]
+        dupes = sorted({n for n in names if names.count(n) > 1})
+        if dupes:
+            raise ValueError(f"constellation.rings names must be unique; duplicated: {dupes}")
+        return rings
+
+    @property
+    def n_satellites(self) -> int:
+        """Total number of satellites."""
+        return sum(r.n_satellites for r in self.rings)
+
+
+# ---------------------------------------------------------------------------------------------
 # Root model
 # ---------------------------------------------------------------------------------------------
 
@@ -1563,6 +1967,14 @@ class RunConfig(_Section):
     atmosphere: AtmosphereConfig = Field(default_factory=AtmosphereConfig)
     models: ModelsConfig
     constants: ConstantsConfig = Field(default_factory=ConstantsConfig)
+    constellation: ConstellationConfig | None = _field(
+        None,
+        unit="-",
+        provenance="assumed",
+        kind="model_choice",
+        description="Constellation definition (M7). None = single-satellite run of the orbit "
+        "section (exactly one receiver site).",
+    )
     provenance_overrides: dict[str, Provenance] = _field(
         default_factory=dict,
         unit="-",
@@ -1691,7 +2103,12 @@ class RunConfig(_Section):
                 "ephemeris_cache_step_s",
             )
             for name in l1_only:
-                explicit = name in self.time.model_fields_set
+                # An explicit value equal to the schema default is the default (a resolved dump
+                # writes every field and must load again, M7); any other value is ignored.
+                default = TimeConfig.model_fields[name].default
+                explicit = (
+                    name in self.time.model_fields_set and getattr(self.time, name) != default
+                )
                 if (name == "integrator_step_s" and self.time.integrator_step_s is not None) or (
                     name != "integrator_step_s" and explicit
                 ):
@@ -1700,6 +2117,8 @@ class RunConfig(_Section):
                         "and ignores it; remove it or use "
                         "'prescribed_ephemeris_perturbed_test_particle'"
                     )
+        if self.constellation is not None:
+            issues.extend(_constellation_issues(self))
         if self.provenance_overrides:
             known = set(leaf_paths(self))
             for key in self.provenance_overrides:
@@ -1712,6 +2131,120 @@ class RunConfig(_Section):
                     )
         _raise_if(issues)
         return self
+
+
+def _satellite_mapping(
+    config: RunConfig, ring_index: int, phase_angle_deg: float
+) -> dict[str, Any]:
+    """Mapping of the single-satellite configuration of one ring satellite (see
+    :func:`satellite_config`)."""
+    if config.constellation is None:
+        raise ValueError("configuration has no constellation section")
+    ring = config.constellation.rings[ring_index]
+    # exclude_unset: keep "explicitly set" exactly as in the source configuration (validators
+    # such as orbit.perturbing_bodies distinguish set from defaulted fields).
+    data = config.model_dump(mode="json", exclude_unset=True)
+    data.pop("constellation", None)
+    orbit = data["orbit"]
+    for name in RING_ELEMENT_FIELDS:
+        value = getattr(ring, name)
+        if value is not None:
+            orbit[name] = value
+    phase = float(phase_angle_deg) % 360.0
+    orbit["true_anomaly_deg"] = 0.0 if phase >= 360.0 else phase
+    if ring.phase_reference is not None:
+        orbit["phase_reference"] = ring.phase_reference
+    for name, (section, key) in RING_TECHNOLOGY_FIELDS.items():
+        value = getattr(ring.technology, name)
+        if value is not None:
+            data.setdefault(section, {})[key] = value
+    data["provenance_overrides"] = {
+        k: v for k, v in config.provenance_overrides.items() if not k.startswith("constellation")
+    }
+    return data
+
+
+def duty_cycle_epochs(duty_cycle_max: float, window_s: float, step_s: float) -> tuple[int, int]:
+    """Duty-cycle window and allowance in output epochs: ``N_w = floor(window_s / step_s)`` and
+    ``m = floor(duty_cycle_max * N_w)``.
+
+    Both floors are taken in exact rational arithmetic on the shortest decimal representation of
+    each value (``Fraction(repr(x))``, i.e. the number as written in the configuration), so that
+    exact decimal products are not rounded down by binary floating point
+    (``0.29 * 100 = 28.999999999999996`` in IEEE 754 would give 28 transmitting epochs, not 29).
+
+    Args:
+        duty_cycle_max: Allowed transmitting fraction (0, 1].
+        window_s: Sliding window length [s] (> 0).
+        step_s: Output step [s] (> 0).
+
+    Returns:
+        ``(N_w, m)``.
+    """
+    if not (duty_cycle_max > 0.0 and window_s > 0.0 and step_s > 0.0):
+        raise ValueError("duty_cycle_max, window_s and step_s must be > 0")
+    n_w = math.floor(Fraction(repr(float(window_s))) / Fraction(repr(float(step_s))))
+    m = math.floor(Fraction(repr(float(duty_cycle_max))) * n_w)
+    return int(n_w), int(m)
+
+
+def ring_phase_offset_deg(config: RunConfig, ring_index: int) -> float:
+    """Phase of satellite 0 of a ring: ``phase_offset_deg`` or ``orbit.true_anomaly_deg`` [deg]."""
+    if config.constellation is None:
+        raise ValueError("configuration has no constellation section")
+    ring = config.constellation.rings[ring_index]
+    return config.orbit.true_anomaly_deg if ring.phase_offset_deg is None else ring.phase_offset_deg
+
+
+def satellite_config(config: RunConfig, ring_index: int, phase_angle_deg: float) -> RunConfig:
+    """Single-satellite :class:`RunConfig` of one satellite of ring ``ring_index``.
+
+    The base configuration without its ``constellation`` section, with the ring's elements
+    (where set), ``orbit.true_anomaly_deg = phase_angle_deg mod 360`` and
+    ``orbit.phase_reference`` of the ring (where set), and the ring's technology overrides;
+    provenance overrides of constellation keys are dropped. Validated with the full schema, so a
+    ring override that breaks any rule fails exactly as it would in a single-satellite file.
+
+    Raises:
+        ConfigError: the satellite configuration is invalid.
+    """
+    data = _satellite_mapping(config, ring_index, phase_angle_deg)
+    ring = config.constellation.rings[ring_index] if config.constellation else None
+    return parse_config(data, source=f"constellation ring {ring.name if ring else ring_index}")
+
+
+def _constellation_issues(config: RunConfig) -> list[str]:
+    """Cross-section checks of the constellation section (rings validated as satellites)."""
+    assert config.constellation is not None
+    c = config.constellation
+    issues: list[str] = []
+    for i, ring in enumerate(c.rings):
+        data = _satellite_mapping(config, i, ring_phase_offset_deg(config, i))
+        try:
+            RunConfig.model_validate(data)
+        except ValidationError as exc:
+            for issue in issues_from_validation_error(exc):
+                issues.append(
+                    f"constellation.rings[{i}] ('{ring.name}') gives an invalid satellite "
+                    f"configuration: {issue.format()}"
+                )
+    if c.mass_proxy is not None and config.thermal.radiator_specific_mass_kg_m2 is None:
+        issues.append(
+            "constellation.mass_proxy needs thermal.radiator_specific_mass_kg_m2 (the radiator "
+            "areal mass of the proxy)"
+        )
+    sch = c.scheduler
+    if sch.duty_cycle_max is not None and sch.duty_cycle_window_s is not None:
+        n_window, n_on = duty_cycle_epochs(
+            sch.duty_cycle_max, sch.duty_cycle_window_s, config.time.output_step_s
+        )
+        if n_window < 1 or n_on < 1:
+            issues.append(
+                "constellation.scheduler: duty_cycle_max * floor(duty_cycle_window_s / "
+                f"time.output_step_s) = {sch.duty_cycle_max} * {n_window} allows no transmitting "
+                "epoch per window (need >= 1)"
+            )
+    return issues
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1761,8 +2294,14 @@ def field_meta(model_cls: type[BaseModel], name: str) -> FieldMeta:
 
 
 def _section_type(annotation: Any) -> type[_Section] | None:
+    """Section class of a field annotation (``Section`` or ``Section | None``), else None."""
     if isinstance(annotation, type) and issubclass(annotation, _Section):
         return annotation
+    args = get_args(annotation)
+    if args and type(None) in args:
+        rest = [a for a in args if a is not type(None)]
+        if len(rest) == 1 and isinstance(rest[0], type) and issubclass(rest[0], _Section):
+            return rest[0]
     return None
 
 
@@ -1781,7 +2320,7 @@ def _iter_leaves(model: _Section, prefix: str) -> Iterator[tuple[str, Any, Field
         path = f"{prefix}{name}"
         value = getattr(model, name)
         annotation = info.annotation
-        if _section_type(annotation) is not None:
+        if _section_type(annotation) is not None and value is not None:
             yield from _iter_leaves(value, f"{path}.")
         elif _tuple_item_section(annotation) is not None:
             for i, item in enumerate(value):
@@ -1998,6 +2537,10 @@ def approximations_in_force(config: RunConfig) -> tuple[NamedApproximation, ...]
       (``1/cos(theta)`` only for ``eps = 0``) and omits the non-radial component
       ``2 eps P A cos^2(theta) sin(theta)`` along the plate normal.
     * ``models.light_time = false``: instantaneous geometry (site at the emission epoch).
+    * a constellation with more than one satellite (and light time on): the scheduler sums and
+      limits the beams of one *emission* epoch at each receiver, although their light times
+      differ (emission-epoch aggregation; bounded on every run by the reception-time
+      reconstruction, M7 review).
     """
     out: list[NamedApproximation] = []
     o = config.orbit
@@ -2029,6 +2572,22 @@ def approximations_in_force(config: RunConfig) -> tuple[NamedApproximation, ...]
                 "time range/c the site moves |v_site| range/c (per au of range ~1.5e4 km from "
                 "the Earth's orbital motion and up to ~230 km from its rotation)",
                 comparison_path="rerun with models.light_time = true (the default)",
+            )
+        )
+    c = config.constellation
+    if c is not None and c.n_satellites > 1 and config.models.light_time:
+        out.append(
+            NamedApproximation(
+                path="constellation",
+                value=f"{c.n_satellites} satellites",
+                approximation="emission-epoch aggregation: beams scheduled at the same emission "
+                "epoch are summed, clipped and limited (beam slots, input/heat limit, density "
+                "interlock) together at each receiver although they arrive up to the spread of "
+                "their light times (range/c) apart; P_grid per receiver is reported on the "
+                "emission grid",
+                comparison_path="the reception-time reconstruction written by every run "
+                "(receivers.parquet rx_slot_* columns, summary.json reception_time: beams, "
+                "density and accepted energy in reception time)",
             )
         )
     return tuple(out)
@@ -2261,6 +2820,7 @@ def write_resolved_yaml(config: RunConfig, path: str | Path) -> Path:
 
 __all__ = [
     "DEFAULT_PERTURBING_BODIES",
+    "EARTH_RELATIVE_MIN_ABS_COS_INCLINATION",
     "EPHEMERIS_CACHE_STEP_MAX_S",
     "INTEGRATOR_RTOL_MAX",
     "INTEGRATOR_RTOL_MIN",
@@ -2268,23 +2828,33 @@ __all__ = [
     "MICROWAVE_WAVELENGTH_RANGE_M",
     "OPTICAL_BEAM_MODELS",
     "OPTICAL_WAVELENGTH_RANGE_M",
+    "RING_ELEMENT_FIELDS",
+    "RING_TECHNOLOGY_FIELDS",
     "SCHEMA_VERSION",
     "AtmosphereConfig",
     "CollectorConfig",
     "ConfigError",
     "ConfigIssue",
     "ConstantsConfig",
+    "ConstellationConfig",
     "FieldMeta",
     "FramesConfig",
     "IdealisedSetting",
+    "MassProxyConfig",
     "ModelsConfig",
     "NamedApproximation",
     "OrbitConfig",
     "PerturbingBody",
+    "PhaseDistribution",
+    "PhaseReference",
     "ProjectConfig",
     "ProvenanceRow",
     "ReceiverConfig",
+    "RingConfig",
+    "RingTechnologyConfig",
     "RunConfig",
+    "SchedulerConfig",
+    "SchedulerPolicy",
     "SiteConfig",
     "ThermalConfig",
     "TimeConfig",
@@ -2294,6 +2864,7 @@ __all__ = [
     "canonical_utc",
     "config_hash",
     "dump_resolved_yaml",
+    "duty_cycle_epochs",
     "field_meta",
     "idealised_settings",
     "leaf_paths",
@@ -2302,5 +2873,7 @@ __all__ = [
     "provenance_table",
     "read_yaml",
     "resolved_dict",
+    "ring_phase_offset_deg",
+    "satellite_config",
     "write_resolved_yaml",
 ]

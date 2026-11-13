@@ -12,7 +12,9 @@ the manifest, so ``summary.json`` and the time-series content are reproducible b
 
 from __future__ import annotations
 
+import hashlib
 import importlib.metadata
+import json
 import os
 import platform
 import socket
@@ -21,11 +23,75 @@ import sys
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, Protocol
 
 from helioswarm import __version__
-from helioswarm.config import SCHEMA_VERSION, approximations_in_force
-from helioswarm.system import SystemRunResult
+from helioswarm.config import SCHEMA_VERSION, RunConfig, approximations_in_force
+from helioswarm.kernels import KernelProvenance
+from helioswarm.system import StageTiming
+from helioswarm.timescale import TimeGrid
+
+
+class ManifestSource(Protocol):
+    """What :func:`build_manifest` reads from a finished run (single-satellite
+    :class:`~helioswarm.system.SystemRunResult` or constellation
+    :class:`~helioswarm.constellation.ConstellationRunResult`)."""
+
+    @property
+    def config(self) -> RunConfig:
+        """The validated configuration."""
+        ...
+
+    @property
+    def config_hash(self) -> str:
+        """Configuration hash."""
+        ...
+
+    @property
+    def rng_state_unchanged(self) -> bool:
+        """Whether the run's Generator was left untouched."""
+        ...
+
+    @property
+    def backend(self) -> str:
+        """Beam-capture backend."""
+        ...
+
+    @property
+    def kernel_provenance(self) -> tuple[KernelProvenance, ...]:
+        """Verified kernel files."""
+        ...
+
+    @property
+    def source_ids(self) -> tuple[str, ...]:
+        """Ephemeris / Earth-orientation data ids."""
+        ...
+
+    @property
+    def itu_r_versions(self) -> tuple[str, ...]:
+        """ITU-R recommendations used, or empty."""
+        ...
+
+    @property
+    def itu_r_polarization_tilt_deg(self) -> float | None:
+        """Rain polarisation tilt [deg], or None."""
+        ...
+
+    @property
+    def grid(self) -> TimeGrid:
+        """Output time grid."""
+        ...
+
+    @property
+    def window_end_utc(self) -> str | None:
+        """UTC label of the last epoch, or None."""
+        ...
+
+    @property
+    def timings(self) -> tuple[StageTiming, ...]:
+        """Wall time per stage."""
+        ...
+
 
 MANIFEST_SCHEMA: Final[str] = "helioswarm-run-manifest/2"
 """Version tag of the manifest.json layout."""
@@ -117,6 +183,44 @@ def package_versions(names: tuple[str, ...] = RECORDED_PACKAGES) -> dict[str, st
         except importlib.metadata.PackageNotFoundError:
             out[name] = None
     return out
+
+
+def source_tree_sha256(root: Path | None = None) -> str:
+    """SHA-256 of the package source: every ``*.py`` under ``root`` (default: this package) in
+    sorted relative-path order, each contributing its relative POSIX path, a NUL byte, its
+    content and a NUL byte. Identifies the code that ran even in a dirty checkout."""
+    base = root if root is not None else Path(__file__).resolve().parent
+    h = hashlib.sha256()
+    for f in sorted(base.rglob("*.py"), key=lambda q: q.relative_to(base).as_posix()):
+        h.update(f.relative_to(base).as_posix().encode())
+        h.update(b"\0")
+        h.update(f.read_bytes())
+        h.update(b"\0")
+    return h.hexdigest()
+
+
+def code_provenance() -> dict[str, Any]:
+    """Code provenance of this process: git commit and dirty flag, source-tree SHA-256
+    (:func:`source_tree_sha256`), package version, Python version and the recorded
+    distribution versions. Written into constellation stage-A link files (M7) so a merge can
+    refuse chunks produced by different code."""
+    g = git_info()
+    return {
+        "git_commit": g.commit,
+        "git_dirty": g.dirty,
+        "source_sha256": source_tree_sha256(),
+        "helioswarm_version": __version__,
+        "python_version": sys.version.split()[0],
+        "packages": package_versions(),
+    }
+
+
+def provenance_digest(provenance: dict[str, Any] | None) -> str | None:
+    """Canonical SHA-256 of a :func:`code_provenance` mapping (``None`` for ``None``)."""
+    if provenance is None:
+        return None
+    blob = json.dumps(provenance, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(blob).hexdigest()
 
 
 def cpu_model() -> str | None:
@@ -219,6 +323,10 @@ class RunManifest:
         wall_clock_end_utc: Run end (UTC).
         stage_wall_s: Wall time per stage [s].
         outputs: Output file -> SHA-256 (``timeseries_content_sha256`` is the content hash).
+        stage_a_code_provenance: Constellation runs merged from array-task link files: the
+            :func:`code_provenance` recorded by the tasks (identical in every file, checked at
+            the merge; ``None`` for files written before it was recorded, or for runs that
+            did stage A in this process, whose provenance is the manifest's own).
     """
 
     manifest_schema: str
@@ -251,6 +359,7 @@ class RunManifest:
     wall_clock_end_utc: str
     stage_wall_s: dict[str, float]
     outputs: dict[str, str]
+    stage_a_code_provenance: dict[str, Any] | None = None
 
     def to_json_dict(self) -> dict[str, Any]:
         """JSON-ready mapping of the manifest."""
@@ -258,7 +367,7 @@ class RunManifest:
 
 
 def build_manifest(
-    result: SystemRunResult,
+    result: ManifestSource,
     *,
     wall_clock_start_utc: str,
     wall_clock_end_utc: str,
@@ -306,6 +415,7 @@ def build_manifest(
         wall_clock_end_utc=wall_clock_end_utc,
         stage_wall_s={t.stage: t.wall_s for t in result.timings},
         outputs=dict(outputs),
+        stage_a_code_provenance=getattr(result, "stage_a_code_provenance", None),
     )
 
 
@@ -316,13 +426,17 @@ __all__ = [
     "TIME_SCALE_NOTE",
     "UNITS_NOTE",
     "GitInfo",
+    "ManifestSource",
     "RunManifest",
     "SimulationWindow",
     "build_manifest",
+    "code_provenance",
     "cpu_model",
     "git_info",
     "gpu_devices",
     "package_versions",
+    "provenance_digest",
     "slurm_info",
+    "source_tree_sha256",
     "utc_now_iso",
 ]
