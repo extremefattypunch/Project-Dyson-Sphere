@@ -48,6 +48,32 @@ follow one convention: 0 success, 1 invalid input or failure, 2 command-line usa
     directory (``$HELIOSWARM_KERNEL_DIR`` or ``data/kernels/``) if missing, and verify size,
     SHA-256 and NAIF MD5 of every file. Idempotent. Exit code 0 when every kernel is present and
     verified, 1 on a checksum mismatch, a missing manifest or a download error.
+
+``helioswarm compare COMPARISON --runs-dir DIR --out DIR``
+    Harmonised heliocentric vs GEO comparison (``helioswarm.compare``; M7b) from the saved
+    sweep runs named in the comparison file: checks that each technology group differs only in
+    orbit/geometry keys and writes the comparison tables, the harmonised-assumption table, a
+    figure and a manifest. Nothing is simulated. Exit code 0 when every point is present and
+    complete (or recorded as failed), 1 on an error or missing/incomplete points.
+
+``helioswarm weather download ERA5_CONFIG [--site NAME ...|--site-index I] [--dry-run]
+[--weather-dir DIR]``
+    Build the CDS requests of an ERA5 download configuration (``configs/weather/*.yaml``) and
+    download every file not yet cached and verified, each with a provenance JSON
+    (:mod:`helioswarm.era5`; M8a). Exit code 0 when every file is present and verified, 1 on an
+    error.
+
+``helioswarm weather climatology CONFIG --out DIR [--threshold C ...] [--first-year Y]
+[--last-year Y] [--interpolation nearest|bilinear] [--weather-dir DIR] [--overwrite]``
+    Clear-sky statistics by month and hour, year-to-year spread and joint (all sites cloudy)
+    statistics from the cached ERA5 files (:mod:`helioswarm.weather`). Exit code 0 / 1.
+
+``helioswarm economics RUN_OR_SWEEP_DIR --config ECON_CONFIG [--config ...] [--out DIR]
+[--overwrite]``
+    Parameterised LCOE/NPV scenario ranges and Monte Carlo intervals from saved run summaries,
+    no re-simulation (:mod:`helioswarm.economics`; PDF §12.5). Sweep points without a saved run
+    are listed as not costed (failed / incomplete / missing). Exit code 0 ok (failed points
+    listed), 1 on an error or missing/incomplete points.
 """
 
 from __future__ import annotations
@@ -292,6 +318,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="directory holding one sweep output directory per case (named after the sweep)",
     )
     cmp_.add_argument("--out", metavar="DIR", required=True, help="output directory")
+    _add_m8a_parsers(sub)
     return parser
 
 
@@ -783,6 +810,190 @@ def _cmd_characterize(args: argparse.Namespace, out: TextIO, err: TextIO) -> int
     return EXIT_OK
 
 
+# ---------------------------------------------------------------------------------------------
+# M8a: ERA5 site weather (``weather``) and parameterised economics (``economics``)
+# ---------------------------------------------------------------------------------------------
+
+
+def _add_m8a_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    weather = sub.add_parser(
+        "weather",
+        help="ERA5 site weather: download, climatology",
+        description="ERA5 hourly single-level data at receiver sites (helioswarm.era5, "
+        "helioswarm.weather). Exit status: 0 ok, 1 error, 2 usage error.",
+    )
+    wsub = weather.add_subparsers(dest="weather_command", metavar="ACTION", required=True)
+    dl = wsub.add_parser(
+        "download",
+        help="download (idempotently) the ERA5 files of a download configuration",
+        description="Build the CDS requests of an ERA5 download configuration "
+        "(configs/weather/*.yaml) and download every file not yet cached and verified into "
+        "the weather directory, each with a provenance JSON. Needs the 'weather' extra and a "
+        "CDS account (~/.cdsapirc).",
+    )
+    dl.add_argument("config", metavar="CONFIG", help="ERA5 download configuration (YAML)")
+    dl.add_argument("--site", action="append", default=None, help="only this site (repeatable)")
+    dl.add_argument(
+        "--site-index",
+        type=int,
+        default=None,
+        help="only the site with this 0-based index in the configuration (Slurm array task)",
+    )
+    dl.add_argument("--dry-run", action="store_true", help="list the requests; download nothing")
+    dl.add_argument(
+        "--weather-dir",
+        metavar="DIR",
+        default=None,
+        help="weather directory (default: $HELIOSWARM_WEATHER_DIR, else data/weather/)",
+    )
+    clim = wsub.add_parser(
+        "climatology",
+        help="per-site clear-sky statistics from the cached ERA5 files",
+        description="Clear fraction by month and hour (UTC and local solar), year-to-year "
+        "spread and joint (all sites cloudy) statistics of the sites of an ERA5 download "
+        "configuration or run configuration; writes climatology.json and Parquet tables.",
+    )
+    clim.add_argument("config", metavar="CONFIG", help="ERA5 download or run configuration")
+    clim.add_argument("--out", metavar="DIR", required=True, help="output directory")
+    clim.add_argument(
+        "--threshold",
+        type=float,
+        nargs="+",
+        default=None,
+        help="cloud-cover thresholds (default: the run config's, else 0.1 0.3 0.5)",
+    )
+    clim.add_argument("--first-year", type=int, default=None, help="first year (default: config)")
+    clim.add_argument("--last-year", type=int, default=None, help="last year (default: config)")
+    clim.add_argument(
+        "--interpolation", choices=("nearest", "bilinear"), default="nearest", help="site value"
+    )
+    clim.add_argument("--weather-dir", metavar="DIR", default=None, help="weather directory")
+    clim.add_argument("--overwrite", action="store_true", help="replace an existing output")
+
+    econ = sub.add_parser(
+        "economics",
+        help="LCOE/NPV scenario ranges from saved run summaries (no re-simulation)",
+        description="Parameterised lifecycle-cost model (helioswarm.economics; PDF §12.5): "
+        "reads summary.json of a run directory (or every point of a sweep directory), "
+        "applies an economics configuration (configs/economics/*.yaml) and writes "
+        "economics.json and economics.md. Sweep points without a saved run are listed as "
+        "not costed (failed / incomplete / missing). Not a core physical result. Exit "
+        "status: 0 ok (failed points listed), 1 error or missing/incomplete points.",
+    )
+    econ.add_argument("run_dir", metavar="RUN_OR_SWEEP_DIR", help="run or sweep directory")
+    econ.add_argument(
+        "--config",
+        metavar="ECON_CONFIG",
+        action="append",
+        required=True,
+        help="economics configuration (repeat for several scenarios)",
+    )
+    econ.add_argument(
+        "--out",
+        metavar="DIR",
+        default=None,
+        help="output directory (default: RUN_OR_SWEEP_DIR/economics)",
+    )
+    econ.add_argument("--overwrite", action="store_true", help="replace an existing output")
+
+
+def _cmd_weather(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
+    from helioswarm.era5 import (
+        Era5Error,
+        build_requests,
+        download_requests,
+        load_download_config,
+        weather_dir,
+    )
+
+    if args.weather_command == "download":
+        try:
+            cfg = load_download_config(args.config)
+            if args.site_index is not None:
+                if not 0 <= args.site_index < len(cfg.sites):
+                    err.write(f"ERROR: --site-index {args.site_index} out of range\n")
+                    return EXIT_INVALID
+                names = {cfg.sites[args.site_index].name}
+            elif args.site:
+                names = set(args.site)
+                unknown = names - {s.name for s in cfg.sites}
+                if unknown:
+                    err.write(f"ERROR: unknown site(s) {sorted(unknown)}\n")
+                    return EXIT_INVALID
+            else:
+                names = {s.name for s in cfg.sites}
+            cfg = cfg.model_copy(update={"sites": tuple(s for s in cfg.sites if s.name in names)})
+            requests = build_requests(cfg)
+            directory = weather_dir(args.weather_dir)
+            out.write(f"{len(requests)} request(s) for site(s) {sorted(names)} -> {directory}\n")
+            if args.dry_run:
+                for r in requests:
+                    out.write(f"  {r.relative_path}  area {list(r.area)}\n")
+                return EXIT_OK
+
+            def log(msg: str) -> None:
+                out.write(msg + "\n")
+                out.flush()
+
+            outcomes = download_requests(requests, directory, log=log)
+        except (Era5Error, OSError) as exc:
+            err.write(f"ERROR: {exc}\n")
+            return EXIT_INVALID
+        n_new = sum(1 for o in outcomes if o.action == "downloaded")
+        size = sum(o.file_size_bytes for o in outcomes)
+        out.write(f"OK: {len(outcomes)} file(s) verified ({n_new} downloaded), {size} B\n")
+        return EXIT_OK
+    if args.weather_command == "climatology":
+        from helioswarm.weather import WeatherError, climatology_command
+
+        try:
+            path = climatology_command(
+                args.config,
+                Path(args.out),
+                thresholds=args.threshold,
+                first_year=args.first_year,
+                last_year=args.last_year,
+                interpolation=args.interpolation,
+                directory=weather_dir(args.weather_dir),
+                overwrite=args.overwrite,
+            )
+        except (Era5Error, WeatherError, ConfigError, OSError) as exc:
+            err.write(f"ERROR: {exc}\n")
+            return EXIT_INVALID
+        out.write(f"climatology written to {path}\n")
+        return EXIT_OK
+    err.write(f"ERROR: unknown weather action {args.weather_command!r}\n")
+    return EXIT_USAGE
+
+
+def _cmd_economics(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
+    from helioswarm.economics import EconomicsError, economics_command
+
+    try:
+        res = economics_command(
+            Path(args.run_dir),
+            [Path(c) for c in args.config],
+            out_dir=None if args.out is None else Path(args.out),
+            overwrite=args.overwrite,
+        )
+    except (EconomicsError, OSError) as exc:
+        err.write(f"ERROR: {exc}\n")
+        return EXIT_INVALID
+    out.write(f"economics written to {res.path} ({res.n_costed} run(s) costed)\n")
+    for u in res.uncosted:
+        err.write(
+            f"WARNING: point {u.point} not costed: {u.status}"
+            + ("" if u.error is None else f" ({u.error})")
+            + "\n"
+        )
+    if any(u.status != "failed" for u in res.uncosted):
+        # As ``helioswarm compare``: failed points are a result (listed); missing/incomplete
+        # ones mean the sweep has not finished.
+        err.write("WARNING: sweep points missing or incomplete (not run yet?)\n")
+        return EXIT_INVALID
+    return EXIT_OK
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point of the ``helioswarm`` console script; returns the process exit code."""
     parser = _build_parser()
@@ -804,6 +1015,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_characterize(args, sys.stdout, sys.stderr)
     if command == "compare":
         return _cmd_compare(args, sys.stdout, sys.stderr)
+    if command == "weather":
+        return _cmd_weather(args, sys.stdout, sys.stderr)
+    if command == "economics":
+        return _cmd_economics(args, sys.stdout, sys.stderr)
     parser.error(f"unknown command {command!r}")  # argparse already rejects unknown commands
 
 

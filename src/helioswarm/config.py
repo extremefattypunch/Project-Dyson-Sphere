@@ -100,6 +100,7 @@ EARTH_RELATIVE_MIN_ABS_COS_INCLINATION: Final[float] = 1.0e-12
 ecliptic longitude of the satellite takes only the two values Omega and Omega + 180 deg, so a
 longitude offset does not determine the true anomaly."""
 AtmosphereModel = Literal["none", "scenario", "itu_r"]
+WeatherSource = Literal["scenario", "era5"]
 
 PerturbingBody = Literal[
     "MERCURY BARYCENTER",
@@ -1822,6 +1823,18 @@ class ModelsConfig(_Section):
         le=1.0e-2,
     )
 
+    weather_source: WeatherSource = _field(
+        "scenario",
+        unit="-",
+        provenance="assumed",
+        kind="model_choice",
+        description="Source of the weather availability (M8a): 'scenario' = the deterministic "
+        "models.weather_scenario over the whole window (default; pre-M8a behaviour); 'era5' = "
+        "hourly ERA5 total cloud cover at each receiver site (weather section; optical only, "
+        "needs atmosphere='scenario' with weather_scenario='clear', whose clear-sky factors "
+        "apply at the clear hours).",
+    )
+
     @model_validator(mode="after")
     def _check_beam_table(self) -> Self:
         issues: list[str] = []
@@ -1843,6 +1856,141 @@ class ModelsConfig(_Section):
         return self
 
 
+# ---------------------------------------------------------------------------------------------
+# M8a: site weather from ERA5 (models.weather_source = "era5")
+# ---------------------------------------------------------------------------------------------
+
+
+class WeatherConfig(_Section):
+    """ERA5 site-weather availability (M8a; PDF §10.2 "later, use site-specific cloud ...
+    data to estimate operational availability. Cloud obstruction can be a hard outage for a
+    ground optical receiver").
+
+    At each receiver site and arrival epoch the hourly ERA5 total cloud cover ``tcc`` (fraction
+    of the ~0.25 deg model grid box covered by cloud, NOT a line-of-sight probability) of the
+    mapped historical hour decides a hard optical outage: ``threshold``: outage iff
+    ``tcc > cloud_cover_threshold``; ``bernoulli``: clear with probability ``1 - tcc`` (one
+    seeded draw per site and historical hour, independent between hours). Simulated UTC
+    epochs map to the same calendar month/day/hour of a historical year (``year_mapping``).
+    """
+
+    era5_dataset: Literal[
+        "reanalysis-era5-single-levels-timeseries", "reanalysis-era5-single-levels"
+    ] = _field(
+        "reanalysis-era5-single-levels-timeseries",
+        unit="-",
+        provenance="assumed",
+        kind="model_choice",
+        description="CDS collection of the cached files: the ERA5 time-series product (DOI "
+        "10.24381/1cf1ad76, default) or the gridded single-levels product (DOI "
+        "10.24381/cds.adbb2d47); the same ERA5 analyses (helioswarm.era5).",
+    )
+    era5_first_year: int = _field(
+        2014,
+        unit="-",
+        provenance="assumed",
+        kind="model_choice",
+        description="First calendar year of the cached ERA5 record used.",
+        ge=1940,
+        le=2100,
+    )
+    era5_last_year: int = _field(
+        2023,
+        unit="-",
+        provenance="assumed",
+        kind="model_choice",
+        description="Last calendar year of the cached ERA5 record used.",
+        ge=1940,
+        le=2100,
+    )
+    interpolation: Literal["nearest", "bilinear"] = _field(
+        "nearest",
+        unit="-",
+        provenance="assumed",
+        kind="model_choice",
+        description="Site value from the 0.25 deg grid: nearest node, or bilinear between the "
+        "four enclosing nodes.",
+    )
+    neighbourhood_nodes: int = _field(
+        1,
+        unit="1",
+        provenance="assumed",
+        kind="numerical",
+        description="Half-width k of the downloaded (2k+1)^2 node box (identifies the cached "
+        "files; configs/weather/*.yaml neighbourhood_nodes).",
+        ge=1,
+        le=4,
+    )
+    outage_model: Literal["threshold", "bernoulli"] = _field(
+        "threshold",
+        unit="-",
+        provenance="assumed",
+        kind="model_choice",
+        description="'threshold': hard outage iff tcc > cloud_cover_threshold; 'bernoulli': "
+        "clear line of sight with probability 1 - tcc (seeded draw per site-hour).",
+    )
+    cloud_cover_threshold: float | None = _field(
+        None,
+        unit="1",
+        provenance="assumed",
+        description="Outage threshold on the grid-box cloud fraction (threshold model only; "
+        "required there, rejected for bernoulli). An assumption: tcc is an area fraction, not "
+        "the cloudiness of the receiver's line of sight.",
+        ge=0.0,
+        le=1.0,
+    )
+    year_mapping: Literal["fixed", "sampled"] = _field(
+        "fixed",
+        unit="-",
+        provenance="assumed",
+        kind="model_choice",
+        description="'fixed': the first simulated UTC calendar year maps to historical_year, "
+        "later ones to the following years (cyclic within the record); 'sampled': each "
+        "simulated calendar year maps to a year drawn uniformly from the record (seeded).",
+    )
+    historical_year: int | None = _field(
+        None,
+        unit="-",
+        provenance="assumed",
+        kind="model_choice",
+        description="Historical year of the first simulated year ('fixed' only; required "
+        "there, rejected for 'sampled').",
+        ge=1940,
+        le=2100,
+    )
+
+    @model_validator(mode="after")
+    def _check_weather(self) -> Self:
+        issues: list[str] = []
+        if self.era5_last_year < self.era5_first_year:
+            issues.append(
+                f"weather.era5_last_year={self.era5_last_year} < era5_first_year="
+                f"{self.era5_first_year}"
+            )
+        if self.outage_model == "threshold" and self.cloud_cover_threshold is None:
+            issues.append("weather.outage_model='threshold' needs weather.cloud_cover_threshold")
+        if self.outage_model == "bernoulli" and self.cloud_cover_threshold is not None:
+            issues.append(
+                "weather.cloud_cover_threshold is set but weather.outage_model='bernoulli' "
+                "ignores it; remove it"
+            )
+        if self.year_mapping == "fixed":
+            if self.historical_year is None:
+                issues.append("weather.year_mapping='fixed' needs weather.historical_year")
+            elif not self.era5_first_year <= self.historical_year <= self.era5_last_year:
+                issues.append(
+                    f"weather.historical_year={self.historical_year} is outside "
+                    f"[{self.era5_first_year}, {self.era5_last_year}]"
+                )
+        elif self.historical_year is not None:
+            issues.append(
+                "weather.historical_year is set but weather.year_mapping='sampled' ignores it; "
+                "remove it"
+            )
+        _raise_if(issues)
+        return self
+
+
 BEAM_TABLE_FIELDS: Final[tuple[str, ...]] = (
     "beam_table_max_nodes",
     "beam_table_check_epochs",
@@ -1851,6 +1999,39 @@ BEAM_TABLE_FIELDS: Final[tuple[str, ...]] = (
     "beam_table_relative_tolerance",
 )
 """``models`` fields that only the ``chebyshev_table`` beam evaluation reads."""
+
+
+def _weather_issues(config: RunConfig) -> list[str]:
+    """Cross-section rules of ``models.weather_source`` and the ``weather`` section (M8a)."""
+    issues: list[str] = []
+    m = config.models
+    if m.weather_source == "scenario":
+        if config.weather is not None:
+            issues.append(
+                "the weather section is set but models.weather_source='scenario' ignores it; "
+                "set models.weather_source='era5' or remove the section"
+            )
+        return issues
+    if config.weather is None:
+        issues.append("models.weather_source='era5' needs the weather section")
+    if config.transmitter.mode != "optical":
+        issues.append(
+            "models.weather_source='era5' (cloud cover as a hard optical outage) requires "
+            f"transmitter.mode='optical' (got '{config.transmitter.mode}'); the microwave "
+            "path uses the ITU-R cloud/rain statistics (models.atmosphere='itu_r')"
+        )
+    if m.atmosphere != "scenario" or m.weather_scenario != "clear":
+        issues.append(
+            "models.weather_source='era5' requires models.atmosphere='scenario' and "
+            "models.weather_scenario='clear' (the clear-sky factors apply at clear hours; "
+            f"got atmosphere='{m.atmosphere}', weather_scenario='{m.weather_scenario}')"
+        )
+    if importlib.util.find_spec("xarray") is None:
+        issues.append(
+            "models.weather_source='era5' needs the optional 'weather' extra (xarray, h5netcdf), "
+            "which is not installed (uv sync --extra weather)"
+        )
+    return issues
 
 
 class ConstantsConfig(_Section):
@@ -2212,6 +2393,14 @@ class RunConfig(_Section):
         description="Constellation definition (M7). None = single-satellite run of the orbit "
         "section (exactly one receiver site).",
     )
+    weather: WeatherConfig | None = _field(
+        None,
+        unit="-",
+        provenance="assumed",
+        kind="model_choice",
+        description="ERA5 site-weather settings (M8a); required by and only allowed with "
+        "models.weather_source='era5'.",
+    )
     provenance_overrides: dict[str, Provenance] = _field(
         default_factory=dict,
         unit="-",
@@ -2356,6 +2545,7 @@ class RunConfig(_Section):
                     )
         if self.constellation is not None:
             issues.extend(_constellation_issues(self))
+        issues.extend(_weather_issues(self))
         if self.provenance_overrides:
             known = set(leaf_paths(self))
             for key in self.provenance_overrides:
@@ -2639,8 +2829,11 @@ def idealised_settings(config: RunConfig) -> tuple[IdealisedSetting, ...]:
       avoidance;
     * weather and atmosphere: no atmosphere at all, or the deterministic scenario model with
       the ``clear`` scenario (one weather state for the whole window, so never a cloud outage:
-      availability is a weather upper bound, PDF §10.2/§17), and a configured scenario whose
-      zenith factor is lossless (optical transmittance 1, microwave attenuation 0 dB).
+      availability is a weather upper bound, PDF §10.2/§17; not listed with
+      ``models.weather_source = 'era5'``, whose ERA5 cloud cover sets hard outages and the
+      clear scenario only the clear-hour factors), and a configured scenario whose zenith
+      factor is lossless (optical transmittance 1, microwave attenuation 0 dB; with ERA5 the
+      clear-hour factor).
 
     Not listed: ``models.light_time = false`` (an approximation of either sign, reported by
     :func:`approximations_in_force`), a finite ``receiver.max_input_power_W`` (whether it binds
@@ -2714,7 +2907,9 @@ def idealised_settings(config: RunConfig) -> tuple[IdealisedSetting, ...]:
         add("models.atmosphere", "none", "no atmospheric attenuation and no weather outage")
     elif m.atmosphere == "scenario":
         scenario = m.weather_scenario
-        if scenario == "clear":
+        # With ERA5 site weather (M8a) the clear scenario only sets the clear-sky factors; the
+        # cloudy hours are hard outages, so the sky is not permanently clear.
+        if scenario == "clear" and m.weather_source != "era5":
             add(
                 "models.weather_scenario",
                 "clear",
@@ -2843,6 +3038,28 @@ def approximations_in_force(config: RunConfig) -> tuple[NamedApproximation, ...]
                 "time range/c the site moves |v_site| range/c (per au of range ~1.5e4 km from "
                 "the Earth's orbital motion and up to ~230 km from its rotation)",
                 comparison_path="rerun with models.light_time = true (the default)",
+            )
+        )
+    w = config.weather
+    if config.models.weather_source == "era5" and w is not None:
+        out.append(
+            NamedApproximation(
+                path="models.weather_source",
+                value="era5",
+                approximation="ERA5 total cloud cover (fraction of a ~0.25 deg model grid box, "
+                f"hourly) used as the optical line-of-sight state ({w.outage_model}"
+                + (
+                    f", outage iff tcc > {w.cloud_cover_threshold}"
+                    if w.outage_model == "threshold"
+                    else ", clear with probability 1 - tcc, independent hourly draws"
+                )
+                + "); cloud optical depth, cloud geometry along the slant path and sub-hour "
+                "variability are not modelled; historical weather of a mapped year stands in "
+                "for the simulated year",
+                comparison_path="helioswarm weather climatology (threshold and Bernoulli clear "
+                "fractions per site); rerun with another threshold / outage_model / "
+                "historical_year, or with models.weather_source = 'scenario' (clear upper "
+                "bound)",
             )
         )
     c = config.constellation
@@ -3177,11 +3394,27 @@ def resolved_dict(config: RunConfig) -> dict[str, Any]:
     return data
 
 
+def _hash_input(config: RunConfig) -> dict[str, Any]:
+    """:func:`resolved_dict` without the M8a keys while they are off.
+
+    ``models.weather_source = 'scenario'`` and an absent ``weather`` section are omitted, so
+    every configuration that does not use the M8a weather model keeps its pre-M8a hash (they
+    select exactly the pre-M8a behaviour). Any other value is hashed.
+    """
+    data = resolved_dict(config)
+    if data["models"].get("weather_source") == "scenario":
+        del data["models"]["weather_source"]
+    if data.get("weather", 0) is None:
+        del data["weather"]
+    return data
+
+
 def canonical_json(config: RunConfig) -> str:
-    """Canonical JSON of the resolved config: sorted keys, no whitespace, ASCII, shortest
-    round-trip float repr. This is the input of :func:`config_hash`."""
+    """Canonical JSON of the resolved config (M8a weather keys omitted while off,
+    :func:`_hash_input`): sorted keys, no whitespace, ASCII, shortest round-trip float repr.
+    This is the input of :func:`config_hash`."""
     return json.dumps(
-        resolved_dict(config),
+        _hash_input(config),
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=True,
@@ -3261,6 +3494,8 @@ __all__ = [
     "ThermalConfig",
     "TimeConfig",
     "TransmitterConfig",
+    "WeatherConfig",
+    "WeatherSource",
     "approximations_in_force",
     "canonical_json",
     "canonical_utc",

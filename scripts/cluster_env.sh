@@ -7,7 +7,7 @@
 #   - interpreter + project venv on holylabs (software tier; never in /n/home05),
 #   - regenerable caches, SPICE kernels and run outputs on netscratch (90-day purge).
 # Outside the cluster none of this is needed: `uv sync --locked --extra dev --extra xcheck
-# --extra itur --extra jax` (as in the README; not --all-extras, which pulls ~4.4 GB of CUDA
+# --extra itur --extra jax --extra weather` (as in the README; not --all-extras, which pulls ~4.4 GB of CUDA
 # wheels) creates a local .venv and helioswarm falls back to the repo-relative data/kernels/
 # and runs/ directories.
 
@@ -24,6 +24,9 @@ export PRE_COMMIT_HOME=/n/netscratch/hekstra_lab/Lab/ian_poon/cache/pre-commit
 
 export HELIOSWARM_KERNEL_DIR=/n/netscratch/hekstra_lab/Lab/ian_poon/helioswarm/kernels
 export HELIOSWARM_RUNS_DIR=/n/netscratch/hekstra_lab/Lab/ian_poon/helioswarm/runs
+# ERA5 weather files + provenance JSON (M8a; `helioswarm weather download`). Regenerable from the
+# CDS (provenance records each request), so netscratch is the right tier.
+export HELIOSWARM_WEATHER_DIR=/n/netscratch/hekstra_lab/Lab/ian_poon/helioswarm/weather
 export MPLCONFIGDIR=/n/netscratch/hekstra_lab/Lab/ian_poon/cache/matplotlib
 
 # Tool caches that would otherwise be written inside the repository (i.e. under /n/home05).

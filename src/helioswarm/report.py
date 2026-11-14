@@ -65,6 +65,11 @@ KEY_PARAMETERS: Final[tuple[str, ...]] = (
     "models.beam_evaluation",
     "models.atmosphere",
     "models.weather_scenario",
+    "models.weather_source",
+    "weather.outage_model",
+    "weather.cloud_cover_threshold",
+    "weather.year_mapping",
+    "weather.historical_year",
     "constants.solar_constant_1au_W_m2",
 )
 """Configuration leaves listed in the report."""

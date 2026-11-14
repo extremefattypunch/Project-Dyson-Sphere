@@ -1,0 +1,132 @@
+# M8a variant: configs/constellation_demo.yaml with three receiver sites chosen from the ERA5
+# climatology (see receiver.sites) and CLEAR SKY all year (the weather upper bound of
+# configs/constellation_demo_era5_clear_sites.yaml); satellites and capacities as the demo.
+#
+# helioswarm run configuration: CONSTELLATION DEMO (M7; PDF §11.2-11.4), 10 satellite(s).
+#
+# One circular ring at 1 au in the ecliptic, satellites evenly phased in Earth-relative
+# ecliptic longitude over [30, 330) deg from the Earth, the optical MVP technology of
+# configs/mvp_single_satellite.yaml for every satellite, three receiver sites with capacity
+# limits, and the deterministic greedy scheduler. Every value is a scenario input
+# ('assumed'); none is a design recommendation. One year at the day-incommensurate step
+# 3896 s (8100 steps; the hourly step aliases the diurnal access, docs/milestones/M6.md).
+# configs/constellation_demo_sweep.yaml varies N (1, 10, 100), the phase distribution and the
+# scheduler policy; configs/constellation_demo_n1000.yaml is the N = 1000 case (Slurm array).
+
+schema_version: 1
+
+project:
+  name: "constellation_demo_clear_sites"
+  seed: 20261113
+  output_dir: "runs/constellation_demo"
+
+time:
+  start_utc: "2030-01-01T00:00:00"
+  duration_days: 365.25
+  output_step_s: 3896   # day-incommensurate (8 x 487 s)
+  integrator_step_s: 300
+
+frames:
+  inertial: "J2000"
+  origin: "SOLAR SYSTEM BARYCENTER"
+  earth_fixed: "IAU_EARTH"
+
+orbit:
+  model: "prescribed_ephemeris_perturbed_test_particle"
+  initial_epoch_utc: "2030-01-01T00:00:00"
+  semimajor_axis_au: 1.0
+  eccentricity: 0.0
+  inclination_deg: 0.0
+  raan_deg: 0.0
+  arg_periapsis_deg: 0.0
+  true_anomaly_deg: 30.0
+  phase_reference: "earth_relative"   # angles are heliocentric ecliptic longitude offsets from the Earth, + = ahead
+  include_planetary_perturbations: true
+  include_solar_radiation_pressure: true
+  cr: 1.3
+  area_to_mass_m2_kg: 0.02
+
+collector:
+  area_m2: 10000
+  pv_efficiency_reference: 0.30
+  reference_temperature_K: 300
+  temperature_coefficient_per_K: -0.0004
+  absorptivity: 0.90
+  incidence_mode: "sun_tracking"
+
+transmitter:
+  mode: "optical"
+  wavelength_m: 1.0e-6
+  aperture_diameter_m: 10.0
+  electrical_to_beam_efficiency: 0.50
+  pointing_sigma_rad: 1.0e-9
+  aperture_illumination: "uniform_circular"
+
+receiver:
+  # Example sites chosen FROM THE ERA5 DATA (M8a climatology, 2014-2023, tcc <= 0.5): the
+  # highest clear fraction of the downloaded candidates in each longitude sector -- Americas:
+  # atacama 0.847 (vs sonora_arizona 0.693, site_lon120w 0.522); Africa / Middle East: aswan
+  # 0.889 (vs rub_al_khali 0.847, namibia_highland 0.813, site_lon000 0.793); Asia /
+  # Australia: site_lon120e (Pilbara, Western Australia) 0.737 (vs south_australia 0.722,
+  # ladakh 0.588). Longitude gaps 103, 87 and 170 deg (no clear candidate in the Pacific:
+  # hawaii_summit's grid box 0.525). Scenario locations only (no site survey); receiver
+  # capacities as in constellation_demo.yaml, by position.
+  sites:
+    - name: "atacama"
+      latitude_deg: -24.6
+      longitude_deg: -70.4
+      altitude_m: 0.0
+    - name: "aswan"
+      latitude_deg: 23.9
+      longitude_deg: 32.9
+      altitude_m: 0.0
+    - name: "pilbara"
+      latitude_deg: -23.4
+      longitude_deg: 120.0
+      altitude_m: 0.0
+      max_simultaneous_beams: 4
+      max_input_power_W: 2.0e5
+  technology: "laser_photovoltaic"
+  radius_m: 1000
+  min_elevation_deg: 10
+  conversion_efficiency: 0.40
+  grid_efficiency: 0.97
+  max_input_power_W: 1.0e12
+  max_simultaneous_beams: 8
+
+thermal:
+  emissivity: 0.90
+  radiator_temperature_limit_K: 450
+  radiating_sides: 2
+  radiator_view_factor: 1.0
+  radiator_specific_mass_kg_m2: 5.0   # assumed; radiator term of the constellation mass proxy
+
+models:
+  beam: "airy_far_field"
+  atmosphere: "scenario"
+  weather_scenario: "clear"
+  light_time: true
+  sun_occultation: true
+
+constellation:
+  rings:
+    - name: "ring_1au"
+      n_satellites: 10
+      phase_distribution: "even"
+      phase_offset_deg: 30.0
+      # Phases spread over the 300 deg arc [30, 330) deg from the Earth: no satellite within
+      # 30 deg of the Earth. This is an ASSUMED SCENARIO CHOICE, not a model-validity limit:
+      # the Earth's pull is in the L1 force model, and the far-field (Fraunhofer) condition
+      # N_F = D^2/(lambda R) <= 0.5 needs only R >= 2e8 m (~0.0013 au) for D = 10 m and
+      # lambda = 1 um, while the excluded arc starts at a chord of 0.52 au. The choice shapes
+      # the results (the near-Earth slots deliver the most; docs/milestones/M7.md).
+      phase_span_deg: 300.0
+  scheduler:
+    policy: "greedy_max_power"
+  # Assumed specific masses of the deployed-mass proxy (scenario values, NOT sourced; a proxy,
+  # not a mass budget; M8 varies them in the sensitivity study).
+  mass_proxy:
+    collector_areal_mass_kg_m2: 1.0   # radiator: thermal.radiator_specific_mass_kg_m2
+    transmitter_areal_mass_kg_m2: 50.0
+    bus_mass_kg: 500.0
+

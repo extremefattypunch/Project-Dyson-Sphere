@@ -1,0 +1,58 @@
+# ERA5 download configuration (M8a; helioswarm.era5.Era5DownloadConfig).
+#
+#   helioswarm weather download configs/weather/era5_sites.yaml            # all sites
+#   sbatch slurm/era5_download.sbatch configs/weather/era5_sites.yaml   # Slurm job
+#
+# Product: ERA5 hourly time-series data on single levels (CDS collection
+# reanalysis-era5-single-levels-timeseries), licence CC-BY-4.0. Files and their provenance JSON
+# go to $HELIOSWARM_WEATHER_DIR/era5/<dataset>/<grid node>/.
+#
+# Variable: total cloud cover only (tcc, the fraction of the model grid box covered by cloud,
+# 0-1). It is the input of the optical availability model (models.weather_source = era5). The
+# low/medium/high cloud covers and the water-vapour / cloud-liquid-water columns are accepted by
+# the builder but not downloaded here: the microwave path keeps the ITU-R P.618/P.676/P.840
+# statistics (docs/model_assumptions.md, M8a).
+#
+# Period 2014-2023: ten complete recent calendar years of final ERA5 (no preliminary ERA5T data,
+# which lags real time by ~5 days and can be revised); ten years give a first estimate of the
+# year-to-year spread of cloud statistics at modest download volume. It is shorter than the
+# 30-year WMO climatological standard normal (documented limitation).
+#
+# Sites: the receiver sites of the shipped run configurations (so every configured site has
+# data) plus CANDIDATE example sites in several longitude sectors (Americas, Pacific,
+# Africa/Middle East, Asia, Australia) chosen as arid or high-altitude locations. Whether a
+# candidate is actually clear more often is determined FROM THE DOWNLOADED DATA (helioswarm
+# weather climatology); no climate property of a candidate is assumed here.
+
+era5_schema_version: 1
+# The ERA5 time-series product (DOI 10.24381/1cf1ad76): the same ERA5 analyses as the gridded
+# reanalysis-era5-single-levels (DOI 10.24381/cds.adbb2d47; identical tcc values checked for 2014
+# at two 3 x 3 boxes, docs/milestones/M8a.md), but a whole decade of a 3 x 3 box is one request
+# (~1 min) instead of one request per year (~10+ min each in the CDS queue).
+dataset: reanalysis-era5-single-levels-timeseries
+product_type: reanalysis
+variables: [total_cloud_cover]
+first_year: 2014
+last_year: 2023
+neighbourhood_nodes: 1   # 3 x 3 nodes around the nearest 0.25 deg node (nearest or bilinear)
+max_request_cost: 121000 # single-levels only: CDS costing limit (measured 2026-11-13)
+
+sites:
+  # --- receiver sites of the shipped configurations ------------------------------------------
+  - {name: example_site, latitude_deg: 0.0, longitude_deg: 0.0,
+     origin: "configs/mvp_single_satellite*.yaml receiver.sites[0]"}
+  - {name: site_lon000, latitude_deg: 23.4, longitude_deg: 0.0,
+     origin: "configs/constellation_demo*.yaml receiver.sites[0]"}
+  - {name: site_lon120e, latitude_deg: -23.4, longitude_deg: 120.0,
+     origin: "configs/constellation_demo*.yaml receiver.sites[1]"}
+  - {name: site_lon120w, latitude_deg: 33.0, longitude_deg: -120.0,
+     origin: "configs/constellation_demo*.yaml receiver.sites[2]"}
+  # --- candidate example sites (arid or high-altitude; evaluated from the data) -------------------
+  - {name: atacama, latitude_deg: -24.6, longitude_deg: -70.4, origin: candidate}
+  - {name: sonora_arizona, latitude_deg: 32.0, longitude_deg: -111.6, origin: candidate}
+  - {name: hawaii_summit, latitude_deg: 19.8, longitude_deg: -155.5, origin: candidate}
+  - {name: aswan, latitude_deg: 23.9, longitude_deg: 32.9, origin: candidate}
+  - {name: namibia_highland, latitude_deg: -23.3, longitude_deg: 16.5, origin: candidate}
+  - {name: rub_al_khali, latitude_deg: 21.0, longitude_deg: 50.0, origin: candidate}
+  - {name: ladakh, latitude_deg: 32.8, longitude_deg: 79.0, origin: candidate}
+  - {name: south_australia, latitude_deg: -29.0, longitude_deg: 134.75, origin: candidate}

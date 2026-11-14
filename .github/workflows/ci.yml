@@ -25,7 +25,7 @@ jobs:
       # Every extra except `gpu` (4.4 GB of NVIDIA CUDA wheels, only for the GPU benchmark job);
       # the `jax` extra installs the CPU jaxlib so the JAX backend is tested against numpy.
       - name: Install locked environment
-        run: uv sync --locked --extra dev --extra xcheck --extra itur --extra jax
+        run: uv sync --locked --extra dev --extra xcheck --extra itur --extra jax --extra weather
       # SPICE kernels (~33 MB, public NAIF data) are cached keyed on the manifest, so a change of
       # any URL or checksum in data/kernels/kernels.json re-fetches; fetch_kernels verifies size,
       # SHA-256 and NAIF MD5 of cached and downloaded files alike.

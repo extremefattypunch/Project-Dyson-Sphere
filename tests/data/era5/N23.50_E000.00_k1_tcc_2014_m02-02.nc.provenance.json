@@ -1,0 +1,124 @@
+{
+  "area_NWSE_deg": [
+    23.75,
+    -0.25,
+    23.25,
+    0.25
+  ],
+  "attribution": "Generated using Copernicus Climate Change Service information 2026. Neither the European Commission nor ECMWF is responsible for any use that may be made of the Copernicus information or data it contains.",
+  "cds_request_id": "8f9e1a26-493a-4a5e-a499-7526a39ca212",
+  "cdsapi_version": "0.7.7",
+  "citation": "Copernicus Climate Change Service (C3S) Climate Data Store (CDS) (2018): ERA5 hourly data on single levels from 1940 to present. DOI: 10.24381/cds.adbb2d47 (DataCite record: creator C3S, publication year 2018). Reference paper: Hersbach, H. et al. (2020), The ERA5 global reanalysis, Q. J. R. Meteorol. Soc. 146(730), 1999-2049, doi:10.1002/qj.3803.",
+  "dataset": "reanalysis-era5-single-levels",
+  "dataset_doi": "10.24381/cds.adbb2d47",
+  "dataset_title": "ERA5 hourly data on single levels from 1940 to present",
+  "ecmwf_datastores_client_version": "0.6.0",
+  "file_name": "N23.50_E000.00_k1_tcc_2014_m02-02.nc",
+  "file_sha256": "774c1c15174b1a45a32055227c36b30598b2c2f552a306dbd9a999a95351bd82",
+  "file_size_bytes": 74157,
+  "grid_step_deg": 0.25,
+  "licence_spdx": "CC-BY-4.0",
+  "licence_url": "https://creativecommons.org/licenses/by/4.0/legalcode",
+  "n_hours": 672,
+  "neighbourhood_nodes": 1,
+  "node_key": "N23.50_E000.00",
+  "node_latitude_deg": 23.5,
+  "node_longitude_deg": 0.0,
+  "period_end_utc": "2014-02-28T23:00:00Z",
+  "period_start_utc": "2014-02-01T00:00:00Z",
+  "product_type": "reanalysis",
+  "provenance_schema_version": 1,
+  "request": {
+    "area": [
+      23.75,
+      -0.25,
+      23.25,
+      0.25
+    ],
+    "data_format": "netcdf",
+    "day": [
+      "01",
+      "02",
+      "03",
+      "04",
+      "05",
+      "06",
+      "07",
+      "08",
+      "09",
+      "10",
+      "11",
+      "12",
+      "13",
+      "14",
+      "15",
+      "16",
+      "17",
+      "18",
+      "19",
+      "20",
+      "21",
+      "22",
+      "23",
+      "24",
+      "25",
+      "26",
+      "27",
+      "28",
+      "29",
+      "30",
+      "31"
+    ],
+    "download_format": "unarchived",
+    "month": [
+      "02"
+    ],
+    "product_type": [
+      "reanalysis"
+    ],
+    "time": [
+      "00:00",
+      "01:00",
+      "02:00",
+      "03:00",
+      "04:00",
+      "05:00",
+      "06:00",
+      "07:00",
+      "08:00",
+      "09:00",
+      "10:00",
+      "11:00",
+      "12:00",
+      "13:00",
+      "14:00",
+      "15:00",
+      "16:00",
+      "17:00",
+      "18:00",
+      "19:00",
+      "20:00",
+      "21:00",
+      "22:00",
+      "23:00"
+    ],
+    "variable": [
+      "total_cloud_cover"
+    ],
+    "year": [
+      "2014"
+    ]
+  },
+  "request_sha256": "59396c73b9898b18e60a8a27767ecf6af6d3a0b2092e70bcb5fe4348e977dc72",
+  "retrieved_utc": "2026-11-13T20:32:19Z",
+  "site_names": [
+    "site_lon000"
+  ],
+  "temporal_resolution": "1 h (instantaneous analyses at hh:00 UTC)",
+  "variable_short_names": [
+    "tcc"
+  ],
+  "variables": [
+    "total_cloud_cover"
+  ]
+}

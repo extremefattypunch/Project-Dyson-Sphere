@@ -32,7 +32,9 @@ Operating policies (documented in docs/model_assumptions.md, M6):
   eclipse only reduces ``P_PV`` and is flagged ``PARTIAL_ECLIPSE``.
 * **Pointing**: ``transmitter.min_pointing_efficiency`` (optional) -> ``POINTING`` where
   ``BeamResult.pointing_loss`` (expected / perfect-pointing capture) is below it (or undefined).
-* **Weather**: a hard optical outage of the scenario (zenith transmittance 0) -> ``WEATHER``.
+* **Weather**: a hard optical outage of the scenario (zenith transmittance 0) -> ``WEATHER``;
+  with ``models.weather_source = 'era5'`` (M8a, :mod:`helioswarm.weather`) the hourly ERA5
+  cloud-cover outage of the site at the arrival epoch -> ``WEATHER``.
 * **Power density**: beam abort (:mod:`helioswarm.link_budget`) -> ``POWER_DENSITY_ABORT``.
 * **Receiver saturation**: the receiver input (or heat) limit clips ``P_captured`` ->
   ``RECEIVER_SATURATION`` (limiting flag; the link delivers the clipped power).
@@ -56,7 +58,7 @@ import math
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Final, Literal, Protocol, TypeVar
+from typing import TYPE_CHECKING, Final, Literal, Protocol, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -110,6 +112,9 @@ from helioswarm.visibility import (
     satellite_illumination,
     summarize_access,
 )
+
+if TYPE_CHECKING:
+    from helioswarm.weather import WeatherProvider
 
 Float64Array = NDArray[np.float64]
 BoolArray = NDArray[np.bool_]
@@ -340,6 +345,7 @@ class SystemRunResult:
             manifest's simulation window only, never used in arithmetic).
         beam_table: Diagnostics of the Chebyshev beam table (``models.beam_evaluation =
             'chebyshev_table'``, M7b), else ``None``.
+        weather: ERA5 weather provider (``models.weather_source = 'era5'``), else ``None``.
     """
 
     config: RunConfig
@@ -371,6 +377,7 @@ class SystemRunResult:
     log: tuple[RunLogEntry, ...] = field(repr=False)
     window_end_utc: str | None = None
     beam_table: BeamTableDiagnostics | None = None
+    weather: WeatherProvider | None = None
 
     def __post_init__(self) -> None:
         n = len(self.grid)
@@ -499,9 +506,15 @@ def reference_link(
 
 
 def atmosphere_at_access(
-    access: AccessResult, settings: AtmosphereSettings, site: SiteConfig
+    access: AccessResult,
+    settings: AtmosphereSettings,
+    site: SiteConfig,
+    weather: WeatherProvider | None = None,
 ) -> tuple[NDArray[np.int64], AtmosphereResult | None]:
     """Atmospheric transmission (M5) at the epochs with geometric access to one site.
+
+    With an ERA5 ``weather`` provider (M8a) the site's hourly cloud outage at the arrival
+    epochs (UTC, :meth:`helioswarm.weather.WeatherProvider.apply`) is applied on top.
 
     Returns:
         ``(beam_epoch_index, atmosphere)``: grid indices with ``access.visible`` and the
@@ -520,6 +533,8 @@ def atmosphere_at_access(
             "atmosphere model invalid at an epoch with access (the configuration validator "
             "should have prevented this: min elevation below the model floor)"
         )
+    if weather is not None:
+        atm = weather.apply(atm, site.name, access.t_arrival_tdb_s[vis_idx])
     return vis_idx, atm
 
 
@@ -688,6 +703,7 @@ def run_single_satellite(
     rng: np.random.Generator,
     earth_orientation: EarthOrientation | None = None,
     backend: Backend = "numpy",
+    weather: WeatherProvider | None = None,
 ) -> SystemRunResult:
     """End-to-end run of one satellite and one receiver (module docstring).
 
@@ -700,6 +716,9 @@ def run_single_satellite(
             stochastic step; the result records that it was not drawn from.
         earth_orientation: Earth-fixed -> J2000 model (default: SPICE ``IAU_EARTH``).
         backend: Beam-capture backend (``numpy`` reference or ``jax``).
+        weather: ERA5 weather provider for ``models.weather_source = 'era5'``; built from the
+            configuration and ``$HELIOSWARM_WEATHER_DIR`` with
+            :func:`helioswarm.weather.weather_generator` (its own seeded stream) when omitted.
 
     Returns:
         :class:`SystemRunResult`.
@@ -756,10 +775,14 @@ def run_single_satellite(
 
     atm_settings = atmosphere_settings_from_config(config)
     beam_settings = beam_settings_from_config(config)
+    if weather is None and config.models.weather_source == "era5":
+        weather = _timed("weather", timings, lambda: load_run_weather(config, kernels, grid))
+    if weather is not None:
+        log.append(RunLogEntry("INFO", "weather", describe_weather(weather)))
     vis_idx, atm = _timed(
         "atmosphere",
         timings,
-        lambda: atmosphere_at_access(access, atm_settings, site_cfg),
+        lambda: atmosphere_at_access(access, atm_settings, site_cfg, weather),
     )
     beam: BeamResult | None = None
     table_diag: BeamTableDiagnostics | None = None
@@ -963,6 +986,38 @@ def run_single_satellite(
         log=tuple(log),
         window_end_utc=tdb_s_to_utc(float(grid.epochs_tdb_s[-1]), kernels, decimals=3),
         beam_table=table_diag,
+        weather=weather,
+    )
+
+
+def load_run_weather(config: RunConfig, kernels: LoadedKernels, grid: TimeGrid) -> WeatherProvider:
+    """ERA5 weather of a run (M8a): sites of ``config``, files from ``$HELIOSWARM_WEATHER_DIR``,
+    the dedicated weather Generator seeded from ``project.seed``, UTC table over the grid."""
+    from helioswarm.weather import build_weather, weather_generator
+
+    w = build_weather(
+        config,
+        kernels,
+        tdb_window_s=(float(grid.epochs_tdb_s[0]), float(grid.epochs_tdb_s[-1])),
+        rng=weather_generator(config.project.seed),
+    )
+    if w is None:  # pragma: no cover - only called for weather_source = era5
+        raise ValueError("models.weather_source is not 'era5'")
+    return w
+
+
+def describe_weather(weather: WeatherProvider) -> str:
+    """One run-log line describing the ERA5 weather in use."""
+    s = weather.settings
+    sites = ", ".join(
+        f"{n} ({w.node_key}, record clear fraction {1.0 - float(np.mean(w.outage)):.3f})"
+        for n, w in weather.sites.items()
+    )
+    return (
+        f"ERA5 weather: {s.outage_model}"
+        + (f" tcc > {s.cloud_cover_threshold}" if s.cloud_cover_threshold is not None else "")
+        + f", {s.year_mapping} year mapping {dict(weather.year_mapping)}, {s.interpolation}; "
+        + sites
     )
 
 
@@ -986,6 +1041,8 @@ __all__ = [
     "SystemRunResult",
     "Unavailability",
     "atmosphere_at_access",
+    "describe_weather",
+    "load_run_weather",
     "primary_reason",
     "reason_names",
     "reference_link",

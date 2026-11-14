@@ -1134,6 +1134,12 @@ def write_constellation_run(
     )
     files[SUMMARY_FILE] = file_sha256(write_json(run_dir / SUMMARY_FILE, summary.to_json_dict()))
     files[LOG_FILE] = file_sha256(write_constellation_log(run_dir / LOG_FILE, result))
+    if result.weather_provenance is not None:
+        from helioswarm.weather import WEATHER_FILE
+
+        files[WEATHER_FILE] = file_sha256(
+            write_json(run_dir / WEATHER_FILE, result.weather_provenance)
+        )
     figures: tuple[Path, ...] = ()
     if make_figures:
         from helioswarm.plotting import make_constellation_figures
@@ -1319,9 +1325,11 @@ def execute_constellation_run(
     """Constellation run into a prepared ``run_dir``: stage A in this process (or merged from
     the link files of ``candidates_dir``), stage B, outputs."""
     import time as _time
+    from dataclasses import replace
 
     from helioswarm.ephemeris import SpiceEphemeris
     from helioswarm.manifest import utc_now_iso
+    from helioswarm.system import load_run_weather
     from helioswarm.timescale import tdb_s_to_utc, time_grid_from_config
 
     start = utc_now_iso()
@@ -1332,6 +1340,11 @@ def execute_constellation_run(
     ks = kernel_set if kernel_set is not None else KernelSet.from_manifest()
     with ks.loaded(verify=True) as kernels:
         t0 = _time.perf_counter()
+        weather = (
+            load_run_weather(config, kernels, time_grid_from_config(config.time, kernels))
+            if config.models.weather_source == "era5"
+            else None
+        )
         if candidates_dir is None:
             links = evaluate_links(
                 config,
@@ -1339,6 +1352,7 @@ def execute_constellation_run(
                 ephemeris=SpiceEphemeris(kernels),
                 kernels=kernels,
                 backend=backend,
+                weather=weather,
             )
             merged_log: tuple[RunLogEntry, ...] = ()
         else:
@@ -1367,6 +1381,8 @@ def execute_constellation_run(
         extra_log=config_log(config) + merged_log,
         extra_timings=(StageTiming(stage="stage_a_total", wall_s=t_links),),
     )
+    if weather is not None:
+        result = replace(result, weather_provenance=weather.provenance())
     return write_constellation_run(
         result,
         run_dir,

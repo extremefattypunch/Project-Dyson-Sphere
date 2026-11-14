@@ -165,7 +165,62 @@ M7b adds no data set to the runs. Provenance of what it uses or produces:
 | Bounded flux-limit sensitivity (M7b review) | `configs/comparison/sensitivity/geo_optical_flux_limited.yaml` and its sweep: `receiver.max_power_density_W_m2 = 1.0e4 W/m²` is an **assumed, illustrative** value (about 7 solar constants, chosen between the GEO peaks of the 30 m and 10 m apertures), **not** a sourced laser-PV, eye- or skin-safety limit; the project still has no sourced laser-PV flux limit. Outputs `$HELIOSWARM_RUNS_DIR/comparison/cmp_geo_optical_flux_limited/`. |
 | GEO Earth albedo/IR bound (M7b review) | Global-mean Bond albedo 0.3 and outgoing long-wave 240 W m⁻² (Trenberth, Fasullo & Kiehl 2009, BAMS 90, 311, as in M4), used only for the documented order-of-magnitude bound in `docs/model_assumptions.md` M7b; not used by any computation. |
 | Comparison outputs | One sweep directory per case under `$HELIOSWARM_RUNS_DIR/comparison/` (netscratch, 90-day purge; regenerable with `slurm/comparison_submit.sh`, which encodes the measured sizing; the cited runs were regenerated after the review from one source tree, recorded as `source_sha256` in every run manifest, `docs/milestones/M7b.md` "Review outcomes") and the `helioswarm compare` report (`comparison_points.*`, `comparison_baseline.*`, `harmonised_assumptions.*`, `comparison.png`, `comparison_manifest.json` with the SHA-256 of every summary read). Copies of the report tables are in `docs/milestones/M7b.md`. |
-| NASA 2024 SBSP report (**context only**) | E. Rodgers, E. Gertsen, J. Sotudeh, C. Mullins, A. Hernandez, H. N. Le, P. Smith, N. Joseph, *Space-Based Solar Power*, NASA Office of Technology, Policy, and Strategy, Report ID 20230018600, 11 January 2024; https://www.nasa.gov/wp-content/uploads/2024/01/otps-sbsp-report-final-tagged-approved-1-8-24-tagged-v2.pdf (linked from https://www.nasa.gov/organizations/otps/space-based-solar-power-report/; title, authors, date and report ID read from the PDF's title page on 2026-11-13, file SHA-256 60ecde46…45a4, not stored). Context values quoted in `docs/milestones/M7b.md` (Executive Summary, p. ii): two representative designs normalised to 2 GW delivered to the grid, RD1 "Innovative Heliostat Swarm" generating power 99 % of the year, RD2 "Mature Planar Array" 60 %; solar panel area 11.5 km² (RD1) and 19 km² (RD2); mass 5.9 Mkg (RD1) and 10 Mkg (RD2); systems assessed for operation in 2050. These are the report's design assumptions, **not** transplanted into any configuration, table or figure of this project (PDF §16, §19). |
+| NASA 2024 SBSP report (**context only**) | E. Rodgers, E. Gertsen, J. Sotudeh, C. Mullins, A. Hernandez, H. N. Le, P. Smith, N. Joseph, *Space-Based Solar Power*, NASA Office of Technology, Policy, and Strategy, Report ID 20230018600, 11 January 2024; https://www.nasa.gov/wp-content/uploads/2024/01/otps-sbsp-report-final-tagged-approved-1-8-24-tagged-v2.pdf (linked from https://www.nasa.gov/organizations/otps/space-based-solar-power-report/; title, authors, date and report ID read from the PDF's title page on 2026-11-13, file SHA-256 60ecde46…45a4, not stored). Context values quoted in `docs/milestones/M7b.md` (Executive Summary, p. ii): two representative designs normalised to 2 GW delivered to the grid, RD1 "Innovative Heliostat Swarm" generating power 99 % of the year, RD2 "Mature Planar Array" 60 %; solar panel area 11.5 km² (RD1) and 19 km² (RD2); mass 5.9 Mkg (RD1) and 10 Mkg (RD2); systems assessed for operation in 2050. These are the report's design assumptions, **not** transplanted into any configuration, table or figure of this project (PDF §16, §19). Since the merge with M8a, individual cost inputs of the same report (same file SHA-256), not these design values, enter the economics scenarios `configs/economics/*.yaml` with page-level sources and their own provenance labels (section "M8a" below). |
+
+### M8a: ERA5 site weather (external data set) and economics inputs
+
+**ERA5 hourly total cloud cover** (PDF §14.1 "external weather-data product, retrieval date,
+variables, spatial/temporal resolution and license/attribution"; §14.2 NetCDF for gridded data):
+
+| Item | Value |
+|---|---|
+| Product (used) | *ERA5 hourly time-series data on single levels from 1940 to present*, CDS collection `reanalysis-era5-single-levels-timeseries`, DOI [10.24381/1cf1ad76](https://doi.org/10.24381/1cf1ad76) (DataCite: creator C3S, publisher ECMWF, 2025) |
+| Product (cross-check, same analyses) | *ERA5 hourly data on single levels from 1940 to present*, `reanalysis-era5-single-levels`, DOI [10.24381/cds.adbb2d47](https://doi.org/10.24381/cds.adbb2d47) (DataCite: creator C3S, 2018); two files (2014 at nodes N23.50 E000.00 and N00.00 E000.00) downloaded by the first bulk job before it was replaced; `scripts/era5_product_crosscheck.py`: identical `tcc` at all 3 × 3 × 8760 values of both |
+| Reference paper | Hersbach, H. et al. (2020), "The ERA5 global reanalysis", Q. J. R. Meteorol. Soc. 146(730), 1999–2049, doi:[10.1002/qj.3803](https://doi.org/10.1002/qj.3803) (verified via Crossref, 2026-11-13) |
+| Variable | `total_cloud_cover` (`tcc`, ECMWF parameter 164, fraction of the grid box covered by cloud, 0–1, instantaneous analysis) |
+| Spatial resolution / area | 0.25° regular lat/lon grid; for each site the 3 × 3 nodes centred on the nearest node (`area = [N, W, S, E]` = node ± 0.25°) |
+| Temporal resolution / period | hourly (hh:00 UTC), 2014-01-01 00 UTC – 2023-12-31 23 UTC (87 648 hours; ten complete years of final ERA5, no preliminary ERA5T) |
+| Sites | `configs/weather/era5_sites.yaml`: the receiver sites of the shipped run configurations (`example_site` 0 N 0 E; `site_lon000` 23.4 N 0 E; `site_lon120e` 23.4 S 120 E; `site_lon120w` 33 N 120 W) and eight candidate sites (atacama 24.6 S 70.4 W; sonora_arizona 32.0 N 111.6 W; hawaii_summit 19.8 N 155.5 W; aswan 23.9 N 32.9 E; namibia_highland 23.3 S 16.5 E; rub_al_khali 21.0 N 50.0 E; ladakh 32.8 N 79.0 E; south_australia 29.0 S 134.75 E) |
+| Retrieval | 2026-11-13 (UTC), Slurm job 60341911, `cdsapi` 0.7.7 / `ecmwf-datastores-client` 0.6.0; one CDS request per site (request ids, request JSON, SHA-256 of the delivered zip and of the extracted NetCDF in each `*.nc.provenance.json`) |
+| Volume / location | 12 files × 3.88 MB = 45 MB in `$HELIOSWARM_WEATHER_DIR = /n/netscratch/hekstra_lab/Lab/ian_poon/helioswarm/weather/era5/<collection>/<node>/` (netscratch; regenerable with `helioswarm weather download`); not committed |
+| Committed fixture | `tests/data/era5/N23.50_E000.00_k1_tcc_2014_m02-02.nc` (74 kB, gridded product, February 2014, 3 × 3 nodes; unmodified CDS output, README with attribution) |
+| Licence | CC-BY-4.0 (CDS licence record `cc-by` revision 1, "This dataset is released for use under the CC-BY licence", retrieved 2026-11-13; both collections) |
+| Required attribution | "Generated using Copernicus Climate Change Service information [year]. Neither the European Commission nor ECMWF is responsible for any use that may be made of the Copernicus information or data it contains." ("Contains modified …" for derived data: climatology and run outputs). Source: ECMWF Copernicus Knowledge Base, "How to acknowledge and cite a Climate Data Store (CDS) catalogue entry and the data published as part of it", step 3 (retrieved 2026-11-13). Recorded in every provenance file, `weather.json` and `climatology.json`. |
+| Run provenance | `weather.json` in every run with `models.weather_source = era5` (collection, DOI, citation, licence, attribution, variable, resolution, simulated → historical year map, per site: node, files, SHA-256, CDS request ids, retrieval times), listed with its SHA-256 in `manifest.json` `outputs` |
+
+**Economics inputs** (`configs/economics/*.yaml`; every value carries `provenance` and, unless
+`assumed`, a page-level source). The cited report: NASA Office of Technology, Policy, and
+Strategy, E. Rodgers et al., *Space-Based Solar Power*, Report ID 20230018600, 11 January 2024,
+<https://www.nasa.gov/wp-content/uploads/2024/01/otps-sbsp-report-final-tagged-approved-1-8-24-tagged-v2.pdf>
+(retrieved 2026-11-13, 108 pages, SHA-256 `60ecde4628d6f4057ace4e853d3f429165d5642ff9e3028a9fa4fad2a64745a4`).
+Page numbers are PDF pages (printed page in brackets). Used as a source of individual input
+values and of the LCOE formula only. Its microwave reference designs are not used as a design,
+but two of its system-level numbers are **transferred** to these runs and labelled `assumed`
+for that reason (M8a review): the rectenna / ground-segment cost per m² of the microwave
+reference designs is also used as a proxy for the optical (laser-PV) receiver, for which no
+sourced cost was found, and the operations cost of one GW-class SBSP system is applied unchanged
+to runs of any size.
+
+| Input | Values (optimistic / nominal / conservative) | Provenance |
+|---|---|---|
+| Launch cost to LEO [USD/kg] | 85 / 850 / 1500 | 850: sourced, PDF p. 38 [21] ("$100M or $1000/kg (with 15% block buy discount, $85M or 850/kg)"); 1500: sourced, PDF p. 90 [73] and p. 28 [11] (Falcon Heavy 2019, lowest recorded); 85: derived, PDF p. 90 [73] ($10M/launch announced by SpaceX) at the report's $100M ↔ $1000/kg conversion, × 0.85 block-buy discount (PDF p. 28) |
+| Discount rate | 0.03 / 0.03 / 0.07 | 0.03: sourced, PDF p. 73 [56] (NREL simple LCOE, "default discount rate of 3%"); 0.07 assumed |
+| System lifetime [yr] | 30 | sourced, PDF p. 28 [11], Table 2 |
+| Hardware lifetime [yr] | 15 / 10 / 8 | 10: sourced, PDF p. 28 [11]; 15: sourced, PDF p. 91 [74] (GEO hardware state of practice); 8 assumed |
+| Microwave receiver capex [USD/m²] (`microwave_receiver_capex_per_m2_usd`) | 22.06 / 109.64 / 131.62 | derived: PDF p. 84 [67] RD1 rectenna $623.8M / π(3 km)²; PDF p. 68 [51] RD1 ground system $3.1B / π(3 km)²; RD2 ground systems $8.27B / (5 π (2 km)²) |
+| Optical receiver capex [USD/m²] (`optical_receiver_capex_per_m2_usd`) | 22.06 / 109.64 / 131.62 | **assumed**: the microwave values used as a stated proxy (technology transfer rectenna → laser-PV array; no sourced optical-receiver cost); drives the optical LCOEs (M8a.md F) |
+| Transmitter capex [USD/m² of aperture] (`transmitter_capex_per_m2_usd`) | 0 | **assumed**: transmitter cost folded into the flat manufacturing cost per kg |
+| Fixed operations [USD/yr] | 1.44 × 10⁷ | **assumed** transfer of a sourced number: PDF p. 68 [51] Table 11 ($1.2M/month for one GW-class SBSP system, autonomous operations), applied unchanged to every run |
+| Operations per satellite [USD/yr] | 0 / 5 × 10⁴ / 5 × 10⁵ | 5 × 10⁵: sourced, PDF p. 28 [11] ("today ~500k/year per satellite"); others assumed |
+| Electricity price for the NPV [USD/kWh] | 0.05 | sourced, PDF p. 8 [vii] (upper end of the 0.02–0.05 USD/kWh 2050 terrestrial projections) |
+| LEO → GEO Δv [m/s] (`geo_nominal.yaml`) | 4 700 | sourced, PDF p. 90 [73] (">4,700m/s is needed to reach GEO from LEO", electric-propulsion sensitivity) |
+| Manufacturing [USD/kg], Isp [s], degradation [1/yr], construction years, replacement fraction, opex fraction of capex, LEO altitude, phasing years (deployment time budget), minimum meaningful energy, specific masses | see the YAML files | **assumed** (no defensible single source; varied in the scenarios / Monte Carlo); every one, including the integer inputs, carries a `provenance` field |
+| Monte Carlo ranges (`uncertainty`) | low / mode / high | bounds = the optimistic and conservative scenario values, mode = the nominal value (both checked on load), so their provenance is that of those values |
+| Constants | g0 = 9.80665 m s⁻² (exact, 3rd CGPM 1901); GM_E = 3.9860043550702266 × 10¹⁴ m³ s⁻² (DE440 `gm_de440.tpc` `BODY399_GM`); R_E = 6 378 136.6 m (`pck00011.tpc` `BODY399_RADII`) | sourced |
+
+The `weather` extra (`cdsapi>=0.7.7`, `xarray>=2024.1`, `h5netcdf[h5py]>=1.3`; locked: cdsapi
+0.7.7, xarray 2026.9.0, h5netcdf 1.8.3, h5py 3.16.0; all manylinux/pure wheels on Python 3.12)
+is optional; without it ERA5 configurations are rejected at validation and the ERA5 tests skip.
 
 ## Sourced constants and defaults
 

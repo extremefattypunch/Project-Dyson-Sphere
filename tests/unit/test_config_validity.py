@@ -465,6 +465,9 @@ def test_m7_repin_removing_new_keys_restores_m6_hash() -> None:
         for key in ("max_simultaneous_beams", "max_input_power_W", "max_heat_rejection_W"):
             assert site.pop(key) is None
     assert d.pop("constellation") is None
+    # M8a keys are not hashed while off (config._hash_input): drop them from the plain dump.
+    assert d["models"].pop("weather_source") == "scenario"
+    assert d.pop("weather") is None
     text = json.dumps(d, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
     assert hashlib.sha256(text.encode("ascii")).hexdigest() == M6_MVP_CONFIG_HASH
 

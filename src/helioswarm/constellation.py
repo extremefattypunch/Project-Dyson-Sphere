@@ -82,7 +82,7 @@ import math
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Final, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Final, TypeVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -131,6 +131,8 @@ from helioswarm.system import (
     Unavailability,
     _evaluate_beam_backend,
     atmosphere_at_access,
+    describe_weather,
+    load_run_weather,
     site_link_budget,
 )
 from helioswarm.thermal import (
@@ -149,6 +151,9 @@ from helioswarm.visibility import (
     orbit_drift_m,
     satellite_illumination,
 )
+
+if TYPE_CHECKING:
+    from helioswarm.weather import WeatherProvider
 
 Float64Array = NDArray[np.float64]
 BoolArray = NDArray[np.bool_]
@@ -475,6 +480,7 @@ def evaluate_links(
     earth_orientation: EarthOrientation | None = None,
     backend: Backend = "numpy",
     block_size: int = 16,
+    weather: WeatherProvider | None = None,
 ) -> LinkSet:
     """Stage A for ``members`` (module docstring).
 
@@ -490,6 +496,9 @@ def evaluate_links(
             ``jax`` evaluate the visible epochs of all pairs of a block of satellites with the
             same beam settings in one batched call (:mod:`helioswarm.capture_batch`).
         block_size: Satellites per block (bounds the memory of the per-site access results).
+        weather: ERA5 weather (M8a) for ``models.weather_source = 'era5'``; built from the
+            configuration (:func:`helioswarm.system.load_run_weather`) when omitted, so every
+            array task applies the identical, seeded weather.
 
     Returns:
         :class:`LinkSet`.
@@ -518,6 +527,10 @@ def evaluate_links(
     atm_settings = atmosphere_settings_from_config(config)
     access_settings = access_settings_from_config(config, radii)
     n_t, n, n_s = t.size, len(mem), len(sites)
+    if weather is None and config.models.weather_source == "era5":
+        weather = _timed("weather", timings, lambda: load_run_weather(config, kernels, grid))
+    if weather is not None:
+        log.append(RunLogEntry("INFO", "weather", describe_weather(weather)))
 
     # ---- orbits -----------------------------------------------------------------------
     phases = [resolve_orbit_phase(m.config.orbit, epoch_tdb_s=t0, ephemeris=ephemeris) for m in mem]
@@ -663,7 +676,7 @@ def evaluate_links(
                     settings=access_settings,
                 )
                 t_b = time.perf_counter()
-                vis_idx, atm = atmosphere_at_access(acc, atm_settings, site_cfg)
+                vis_idx, atm = atmosphere_at_access(acc, atm_settings, site_cfg, weather)
                 t_c = time.perf_counter()
                 timings["access"] = timings.get("access", 0.0) + t_b - t_a
                 timings["atmosphere"] = timings.get("atmosphere", 0.0) + t_c - t_b
@@ -913,6 +926,8 @@ class ConstellationRunResult:
         window_end_utc: UTC of the last epoch (label only).
         stage_a_code_provenance: Code provenance of merged array-task link files, or ``None``
             (stage A ran in this process).
+        weather_provenance: ERA5 weather record (``models.weather_source = 'era5'``, M8a;
+            :meth:`helioswarm.weather.WeatherProvider.provenance`), else ``None``.
     """
 
     config: RunConfig
@@ -945,6 +960,7 @@ class ConstellationRunResult:
     log: tuple[RunLogEntry, ...] = field(repr=False)
     window_end_utc: str | None = None
     stage_a_code_provenance: dict[str, Any] | None = field(default=None, repr=False)
+    weather_provenance: dict[str, Any] | None = field(default=None, repr=False)
 
     def __len__(self) -> int:
         return len(self.grid)

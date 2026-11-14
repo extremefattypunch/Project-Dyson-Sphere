@@ -104,6 +104,9 @@ def test_mvp_canonical_json_is_the_m7_text(mvp_data: dict[str, Any]) -> None:
         assert dumped["orbit"].pop(key) is None
     for key in ("beam_evaluation", *BEAM_TABLE_FIELDS):
         dumped["models"].pop(key)
+    # M8a keys (merged after M7b) are not hashed while off (config._hash_input): drop them too.
+    assert dumped["models"].pop("weather_source") == "scenario"
+    assert dumped.pop("weather") is None
     text = json.dumps(
         dumped, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False
     )
