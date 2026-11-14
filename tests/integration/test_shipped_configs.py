@@ -1,7 +1,9 @@
 """Every config shipped in configs/ must validate and round-trip through its resolved dump.
 
 Run configurations are every ``configs/*.yaml`` except sweep definitions (``*_sweep.yaml``),
-which must load as sweeps whose every grid point is a valid run configuration.
+which must load as sweeps whose every grid point is a valid run configuration, and the M8
+optimisation / uncertainty studies (``optimization*.yaml``, ``uncertainty*.yaml``), which are
+loaded and cross-checked by ``tests/integration/test_m8_forward.py``.
 """
 
 from __future__ import annotations
@@ -15,13 +17,19 @@ from helioswarm.sweep import load_sweep
 
 from config_helpers import CONFIG_DIR
 
-SHIPPED = sorted(p for p in CONFIG_DIR.glob("*.yaml") if not p.stem.endswith("_sweep"))
+STUDIES = sorted(
+    p for p in CONFIG_DIR.glob("*.yaml") if p.stem.startswith(("optimization", "uncertainty"))
+)
+SHIPPED = sorted(
+    p for p in CONFIG_DIR.glob("*.yaml") if not p.stem.endswith("_sweep") and p not in STUDIES
+)
 SWEEPS = sorted(CONFIG_DIR.glob("*_sweep.yaml"))
 
 
 def test_configs_directory_is_not_empty() -> None:
     assert SHIPPED, "no configs/*.yaml found"
     assert SWEEPS, "no configs/*_sweep.yaml found"
+    assert len(STUDIES) == 6, [p.name for p in STUDIES]  # M8 studies (validated elsewhere)
 
 
 @pytest.mark.parametrize("path", SHIPPED, ids=lambda p: p.name)

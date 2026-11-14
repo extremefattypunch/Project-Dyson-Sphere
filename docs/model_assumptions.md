@@ -2078,3 +2078,164 @@ results are reported per scenario and as Monte Carlo intervals.
   While `weather_source = scenario` and the section is absent, neither enters the configuration
   hash (`config._hash_input`), so every pre-M8a configuration keeps its hash (MVP
   `a3fafc4d…23af`, test).
+
+## M8: Optimisation formulation, fidelity levels, uncertainty model
+
+PDF basis: §12.1–12.4, §13.1 (optimisation row), §14.3.3 (coarse-to-fine), §17 ("optimization of
+a flawed model": validation gates before optimisation, high-fidelity re-evaluation), §8.4 (PV
+technology scenarios), §6.2 L3. Code: `src/helioswarm/evaluation.py`, `optimization.py`,
+`uncertainty.py`; studies `configs/optimization*.yaml`, `configs/uncertainty*.yaml`, scenarios
+`configs/scenarios/*.yaml`.
+
+### Design evaluation (one model, stated fidelity)
+
+A *design* is a set of dotted overrides of a base run configuration. `ForwardModel` applies
+(1) the fidelity level's `unset` keys and overrides, (2) the design overrides, marks every design
+key `swept` in `provenance_overrides`, validates the result as a complete `RunConfig` and runs the
+**forward simulator of record** — `system.run_single_satellite` (single satellite) or
+`constellation_io.execute_constellation_run` (constellation, M7 scheduler). Metrics are read from
+the run's own summary/time series (`METRIC_DEFINITIONS`): `p_grid_mean_W` (trapezoid time mean),
+`availability`, `availability_above_threshold` = Σ_k w_k [P_grid,k ≥ P_min] / Σ_k w_k with the
+trapezoid weights of `metrics.sample_weights_s` (PDF §12.2 "availability above a specified minimum
+power threshold"), `mass_proxy_kg` (M7 proxy `m_bus + s_col A_col + s_rad A_rad + s_tx πD²/4`,
+`compare.mass_proxy_value_kg`, assumed specific masses), areas, thermal metrics, the peak incident
+irradiance, the peak captured power (receiver capacity), and `lcoe_usd_per_kWh` from
+`economics.evaluate_economics` on the run (labelled: depends on assumed economics). Keys
+`economics.<name>` and `mass_proxy.<field>` vary economic inputs and assumed specific masses
+without changing the run configuration. A design whose configuration does not validate, or whose
+run raises (e.g. `BeamModelValidityError`), is a **failed** result with its error — never dropped.
+
+**Capture percentiles (screening option).** `run_single_satellite(..., capture_percentiles=False)`
+(batched backends only) skips the p05/p50/p95 capture *diagnostics* (NaN, method `not_computed`).
+The expected capture — and therefore every power and energy — comes from the same quadrature and
+is bit-identical (`tests/integration/test_m8_forward.py::test_capture_percentiles_off_leaves_every_power_unchanged`).
+Measured motivation: with jitter comparable to the beam feature scale the level-set percentiles
+cost ~0.13 s per epoch (M5 reference) and dominated a screening evaluation (2 min → 12 s).
+
+**Fidelity levels.** Shipped `screening`: L0 two-body orbit (planets/SRP omitted), the
+day-incommensurate 3896 s grid of M7 (8101 epochs; diurnal aliasing checked by every run),
+Airy far-field expected capture through the batched kernel (`numpy_batch`), scenario clear sky (a
+weather upper bound) — or, in the uncertainty studies, ERA5 outages (`screening_era5`). Shipped
+`high`: L1 with planets and SRP (DOP853, 300 s step), the per-epoch M5 reference capture (with
+percentiles), ERA5 hourly cloud outages (threshold 0.5, weather year 2019), on the 974 s grid of
+M7b for the single-satellite studies; the constellation study's `high` keeps the 3896 s grid of
+`screening` and of the M7 demo (no finer grid: memory/cost for N ≤ 21 over one year). GEO keeps
+its L0 + station-keeping orbit and the Fresnel-Hankel Chebyshev table at both levels (M7b).
+**Beam model at both levels** (named restriction, M8 review): the heliocentric optical studies
+use the base file's `models.beam = airy_far_field` at `screening` *and* `high`. A design with
+`N_F = D²/(λR) > 0.5` at any epoch raises `BeamModelValidityError` and is a failed (infeasible)
+design, so the search is restricted to the far-field regime and `fresnel_hankel` is never used
+for the optical studies (158 failed designs in the main study, 10 in the technology study). For
+the re-evaluated finalists Airy is the high-fidelity answer: their largest `N_F` is 0.21 (c00;
+≤ 0.0055 for the others), where the M5 Fresnel–Hankel pattern gives the same centred receiver
+capture within 1.8e-7 (relative) and a 0.23 % lower peak irradiance
+(`scripts/m8_fresnel_vs_airy_check.py` on the saved `high` runs). Near-field designs would need
+`fresnel_hankel` (per epoch or as a range table) at screening before they could enter a front. The screening–high differences are measured by re-evaluating Pareto designs
+(`optimize --reevaluate`; `docs/milestones/M8.md`); the diagnostic level `high_clear` (= `high`
+without ERA5, `--reevaluate --fidelity high_clear`) separates the model differences (≤ 0.2 % on
+P_grid for the re-evaluated designs) from the weather (−57 to −61 % at the example site). Named approximation: *screening is
+weather-blind* (clear sky), so optimisation does not choose receiver sites; site choice uses ERA5
+directly (M8a climatology, M8 ERA5 comparison).
+
+### Optimisation formulation (PDF §12.1–12.3)
+
+Variables: real (linear or log-decoded), integer (equal-width bins of the genome) or categorical
+**bundles** (a choice sets several keys together, e.g. the optical vs microwave technology blocks
+of M7b, or a whole ring list), genome `u ∈ [0, 1]^n`:
+`x = lo + u (hi − lo)` / `exp(ln lo + u (ln hi − ln lo))` / `min(⌊lo + u (hi − lo + 1)⌋, hi)` /
+`choices[min(⌊u n⌋, n − 1)]`. Objectives in minimisation form (`F = −metric` for maximise), never
+combined into a weighted score (Pareto fronts are reported). Constraints `g = (v − limit)/s`
+(`≤`) or `(limit − v)/s` (`≥`), `s` = configured scale or |limit|; an extra
+`g_evaluation = −1` (ok, all used metrics finite) / `+1` (failed or undefined) makes failed designs
+infeasible; pymoo's constraint domination (feasible first, infeasible by total violation
+Σ max(g, 0)). Algorithm: pymoo 0.6.2 `NSGA2` (SBX, polynomial mutation, duplicate elimination)
+driven by ask/tell; `Algorithm.setup` seeds its own `numpy.random.default_rng(seed)` (read from
+the installed source), so a seed reproduces the run bit for bit and the result is independent
+of the number of worker processes (tested). The reported **front** is the feasible
+non-dominated set of *every* evaluated design of a seed (archive), and across seeds the union.
+**Hypervolume** (pymoo `HV`) against the configured reference point; per-seed convergence =
+relative HV change over the last `window` generations ≤ tolerance; seed agreement =
+(max − min)/max of the final HVs ≤ tolerance (both reported, not enforced).
+**Sanity check** (§12.3 step 1): one real variable, the others nominal: a dense sweep and
+`scipy.optimize.minimize_scalar(method="bounded")` on `J = ±metric − w · penalty` must agree
+(location within one sweep spacing; J within 3·xatol × the largest sweep slope, because bounded
+Brent never evaluates a bound exactly). The penalised J is a sanity-check device only.
+**Synthetic known optima** (§12.3 step 2, tests): sphere, ZDT1 (front `f2 = 1 − √f1`, HV with
+ref (1.1, 1.1) = 1.21 − 1/3), Binh–Korn (constrained; brute-force front), and the physics case
+`J(D) = P0 EE(πDa/(λR)) − c πD²/4` (Airy encircled energy minus an areal aperture-mass penalty)
+whose optimum satisfies `J1(x*)/x* = √(cπ/(4P0))/β`, `β = πa/(λR)`, `D* = x*/β` (from
+`dEE/dx = 2 J1(x)²/x`; unique on (0, j₁,₁) when the right side is in (0, ½)).
+**Not penalised** (stated, M8 review): no shipped single-satellite study has an objective or
+constraint on receiver infrastructure (`receiver_area_m2` exists but is unused; the mass proxy is
+the satellite's), although PDF §12.2 lists "minimize collector area or receiver infrastructure
+where appropriate". The optimiser therefore drives `receiver.radius_m` to its 10 km bound at no
+cost; the receiver-radius trend of the main study is an artefact of the formulation.
+**Re-evaluation** (§12.3 step 5): up to `n_candidates` union-front designs (best of each objective,
+then evenly spaced along the first objective) are re-run at `high` as complete run directories
+(manifest, time series, figures) and the screening vs high values, relative differences and
+feasibility at high fidelity are tabulated.
+
+### Uncertainty model (PDF §12.4)
+
+Epistemic (fixed, unknown technology/economic performance) and aleatory (weather year, a unit's
+pointing-bias and wavefront-error realisation) parameters are listed separately, each with a
+marginal distribution (uniform, triangular, (truncated) normal, lognormal, Rayleigh, discrete
+uniform) and provenance (`sourced` with a source, `assumed`, or `derived` = stated arithmetic on
+sourced numbers, which needs a source; `derived` is an extension of the PDF §13.4 label set used
+only in uncertainty study files and corresponds to `sourced` in run configurations, where those
+values are labelled `sourced` through `provenance_overrides`). Values are `F⁻¹(u)` of uniform
+`u`. **Not sampled** (stated): operational randomness (random outages, scheduling realisations)
+is not an aleatory input of any shipped study. **Pointing jitter** is represented by an
+*epistemic* per-axis sigma (`transmitter.pointing_sigma_rad`, the achievable jitter level is
+the unknown); its realisations are integrated analytically in the expected capture of M5
+(time-averaged capture of a jittered beam), so jitter realisations are not sampled: for the
+power and energy metrics, which are time integrals over ~10⁴ independent jitter draws per year,
+the expected capture is the quantity a sampled realisation would converge to. The pointing
+*bias* (a fixed per-unit offset) is aleatory and sampled. **Nested Monte Carlo**:
+`SeedSequence(seed).spawn(2)` → independent epistemic and aleatory streams (seeds ≥ 1); `N_e`
+epistemic draws, for each `N_a` aleatory draws; reported per output: the epistemic interval
+(p05/p50/p95) of the row means `m_i` (estimates of `E_aleatory[Y | θ_i]`; each carries aleatory
+sampling noise of sd `√(E_i[s_i²]/N_a)`, reported with the interval), the pooled distribution,
+and the law-of-total-variance split `Var Y = E_θ[Var(Y|θ)] + Var_θ[E(Y|θ)]` with the
+**unbiased one-way random-effects estimators** (Searle, Casella & McCulloch 1992, §3.5):
+aleatory `E_i[s_i²]` (within-row sample variances, ddof = 1), epistemic
+`max(Var_i(m_i; ddof = 1) − E_i[s_i²]/N_a, 0)`, epistemic fraction = epistemic/(epistemic +
+aleatory). `Var_i(m_i)` alone also contains the aleatory noise `σ_a²/N_a` of each row mean
+(12.5 % of the aleatory variance at the shipped `N_a = 8`, 25 % at `N_a = 4`); that uncorrected
+ratio is reported only as `epistemic_fraction_upper_bound` (M8 review; the first collation
+reported it as the epistemic share). With `N_a = 1` the split is not identifiable (NaN).
+**Sobol** (Sobol' 2001; Saltelli 2002/2010): SALib 1.6 `sample.sobol.sample`
+(scrambled Sobol', `calc_second_order=False`, `N` a power of 2) and `analyze.sobol.analyze`
+(Saltelli 2010 first-order, Jansen 1999 total index, bootstrap CIs with a seed ≥ 1: SALib 1.6
+treats seed 0 as unseeded and would draw from the global `np.random`); convergence by re-analysing
+prefixes of the same design (`N' = 32, 64, 128 …`). Inputs are treated as independent; ERA5 years
+are equally likely (assumed); the Rayleigh pointing bias (1 nrad per axis) and the uniform
+wavefront error (0–λ/20) are assumed. **Scenarios** (`configs/scenarios/`): optimistic / nominal /
+conservative technology files (helio and GEO twins with identical technology values, tested to
+differ only in orbit/geometry keys) and the PV technology cases; the triangular ranges equal the
+scenario values (checked on load).
+
+### PV technology scenarios (§8.4; values in `docs/data_provenance.md` M8)
+
+The model's efficiency is `η_PV = P_PV / P_absorbed` (M4), so a datasheet efficiency `η_inc`
+(relative to incident AM0) becomes `η_ref = η_inc / α`. A datasheet temperature coefficient of
+maximum power is `γ = (dVmp/dT)/Vmp + (dImp/dT)/Imp` (first order in ΔT). All scenarios state
+`η_ref` at `T_ref = 300 K`, converted from the source temperature with the source's own γ:
+`η_ref(300 K) = η_ref(T_s) (1 + γ (300 − T_s))`. Validity: the linear law of M4 within the source
+range (3G30A: 28–140 °C; K7 silicon table: −160 to +140 °C, 1-sun column used). The K7 cell is a
+1979 legacy silicon case (conservative), not the state of the art. The optimistic scenario (and
+the triangular upper end of `collector.pv_efficiency_reference` in the uncertainty studies)
+uses the 3G30A-derived `η_ref = 0.3195`, which was converted with the datasheet absorptivity
+0.91, but runs with the base absorptivity 0.90 and the PDF §5 example γ = −0.0004 K⁻¹: its
+incident-basis efficiency at 28 °C is 0.3195 × 0.90 × (1 − 0.0004 × 1.15) = 0.2874, 0.9 % below
+the datasheet's 29.0 %, which only `pv_iii_v_3g30a.yaml` (α = 0.91, γ = −0.00231 K⁻¹: 0.2900)
+reproduces exactly.
+
+### L3 SRP sensitivity (§6.2)
+
+For `collector.incidence_mode = sun_tracking` the collector normal is the Sun direction, so the
+SRP force on a flat plate (any specular/diffuse split) is radial and proportional to the full
+collector area: the radial model of M2 is exact in direction and the attitude enters only through
+A/m. The shipped A/m = 0.02 m²/kg is the PDF example; the M7 mass proxy of the 10⁴ m² satellite
+gives A_col/m ≈ 0.60 m²/kg. `configs/scenarios/sensitivity/srp_area_to_mass_sweep.yaml` measures
+the effect (M8.md). Non-radial SRP of a `fixed_normal` attitude is not modelled (limitation).

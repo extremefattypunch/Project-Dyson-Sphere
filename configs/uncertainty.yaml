@@ -1,0 +1,157 @@
+# helioswarm UNCERTAINTY study (M8; PDF §12.4): the MVP-class heliocentric optical satellite
+# (the harmonised M7b case comparison/helio_1au_optical.yaml: 1 au, 30 deg ahead of the Earth,
+# 10 m aperture, 1 km laser-PV receiver at the example site 0 N 0 E) with ERA5 weather.
+#
+#   helioswarm uncertainty configs/uncertainty.yaml --out $HELIOSWARM_RUNS_DIR/uncertainty_helio
+#   (Slurm: slurm/m8_uncertainty.sbatch; parts mc / sobol / scenarios, then --collate)
+#
+# Epistemic = technology/economic performance that is fixed but unknown; aleatory = weather
+# year, pointing-bias realisation, wavefront-error realisation. Triangular epistemic ranges are
+# the conservative / nominal / optimistic scenario values of configs/scenarios/*.yaml
+# (checked on load: scenario_consistency). Provenance per parameter below; economic ranges are
+# those of configs/economics/nominal.yaml (M8a; the LCOE output depends on ASSUMED economics).
+uncertainty_schema_version: 1
+name: m8_uncertainty_helio_optical
+description: >-
+  Nested Monte Carlo and Sobol indices of the heliocentric optical MVP-class link with ERA5
+  weather (fidelity 'screening_era5': L0, 3896 s, batched Airy capture, ERA5 cloud outages),
+  plus the explicit technology and PV-technology scenarios.
+evaluator: forward_model
+base_config: comparison/helio_1au_optical.yaml
+fidelity_name: screening_era5
+fidelity:
+  description: >-
+    L0 two-body orbit (planets/SRP omitted: 0.02 % on P_grid at 1 au, M7b/M8 re-evaluation),
+    day-incommensurate 3896 s grid, batched Airy capture (numpy_batch), ERA5 total cloud cover at
+    the receiver (threshold 0.5, nearest node; the weather year is an aleatory input).
+  unset:
+    - orbit.include_planetary_perturbations
+    - orbit.include_solar_radiation_pressure
+    - orbit.cr
+    - orbit.area_to_mass_m2_kg
+    - time.integrator_step_s
+  overrides:
+    orbit.model: two_body_kepler
+    time.output_step_s: 3896
+    models.weather_source: era5
+    weather.era5_dataset: reanalysis-era5-single-levels-timeseries
+    weather.era5_first_year: 2014
+    weather.era5_last_year: 2023
+    weather.interpolation: nearest
+    weather.outage_model: threshold
+    weather.cloud_cover_threshold: 0.5
+    weather.year_mapping: fixed
+    weather.historical_year: 2019   # base value (scenarios); the samples set the aleatory year
+  backend: numpy_batch
+  capture_percentiles: false
+workers: 8
+
+evaluation:
+  power_threshold_W: 1000.0
+  mass_proxy:                      # M7 demo specific masses (assumed); radiator term varied below
+    collector_areal_mass_kg_m2: 1.0
+    transmitter_areal_mass_kg_m2: 50.0
+    bus_mass_kg: 500.0
+  economics_config: economics/nominal.yaml
+
+outputs:
+  - p_grid_mean_W
+  - availability
+  - availability_above_threshold
+  - pv_temperature_max_K
+  - mass_proxy_kg
+  - lcoe_usd_per_kWh
+
+epistemic:
+  - name: pv_efficiency
+    key: collector.pv_efficiency_reference
+    distribution: {type: triangular, low: 0.1642, mode: 0.30, high: 0.3195}
+    provenance: derived
+    source: "ends derived from sourced cell data (AZUR SPACE 3G30A-Advanced datasheet DB 00010892-01; JPL Pub. 78-15 Vol. VIII Table 7), mode assumed (PDF §5 example); configs/scenarios/*.yaml"
+    unit: "1"
+  - name: pv_temperature_coefficient
+    key: collector.temperature_coefficient_per_K
+    distribution: {type: triangular, low: -0.0044, mode: -0.00231, high: -0.0004}
+    provenance: derived
+    source: "low derived from JPL Pub. 78-15 Vol. VIII (K7 silicon), mode derived from the 3G30A datasheet dVmp/dT, dImp/dT, high = PDF §5 example (assumed)"
+    unit: K^-1
+  - name: electrical_to_beam_efficiency
+    key: transmitter.electrical_to_beam_efficiency
+    distribution: {type: triangular, low: 0.35, mode: 0.50, high: 0.60}
+    provenance: assumed
+    unit: "1"
+  - name: receiver_conversion
+    key: receiver.conversion_efficiency
+    distribution: {type: triangular, low: 0.30, mode: 0.40, high: 0.55}
+    provenance: assumed
+    unit: "1"
+  - name: pointing_jitter
+    key: transmitter.pointing_sigma_rad
+    distribution: {type: triangular, low: 5.0e-10, mode: 1.0e-9, high: 3.0e-9}
+    provenance: assumed
+    unit: rad
+  - name: radiator_specific_mass
+    key: thermal.radiator_specific_mass_kg_m2
+    distribution: {type: triangular, low: 2.0, mode: 5.0, high: 10.0}
+    provenance: assumed
+    unit: kg m^-2
+  - name: launch_cost
+    key: economics.transport.launch_cost_per_kg_leo_usd
+    distribution: {type: triangular, low: 85.0, mode: 850.0, high: 1500.0}
+    provenance: sourced
+    source: "configs/economics/{optimistic,nominal,conservative}.yaml (NASA OTPS 2024, PDF pp. 28, 38, 90; 85 USD/kg derived)"
+    unit: USD kg^-1
+  - name: manufacturing_cost
+    key: economics.manufacturing_cost_per_kg_usd
+    distribution: {type: triangular, low: 500.0, mode: 2000.0, high: 10000.0}
+    provenance: assumed
+    source: "configs/economics/nominal.yaml uncertainty range (M8a)"
+    unit: USD kg^-1
+
+aleatory:
+  - name: weather_year
+    key: weather.historical_year
+    distribution: {type: discrete_uniform, values: [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]}
+    nominal: 2019
+    provenance: sourced
+    source: "ERA5 hourly total cloud cover 2014-2023 at the site node (Hersbach et al. 2020, doi:10.1002/qj.3803; CDS doi:10.24381/1cf1ad76); each year equally likely (assumed)"
+    unit: year
+  - name: pointing_bias
+    key: transmitter.pointing_bias_rad
+    distribution: {type: rayleigh, scale: 1.0e-9}
+    nominal: 0.0
+    provenance: assumed
+    description: "static boresight bias realisation of one unit: |2-D isotropic Gaussian| with 1 nrad per axis"
+    unit: rad
+  - name: wavefront_error
+    key: transmitter.rms_wavefront_error_m
+    distribution: {type: uniform, low: 0.0, high: 5.0e-8}
+    nominal: 0.0
+    provenance: assumed
+    description: "RMS wavefront (phase) error realisation of one unit, 0 to lambda/20 (Ruze/Strehl factor)"
+    unit: m
+
+monte_carlo:
+  seed: 20261114
+  n_epistemic: 64
+  n_aleatory: 8
+
+sobol:
+  seed: 20261115
+  n_base: 256
+  parameters: [pv_efficiency, pv_temperature_coefficient, electrical_to_beam_efficiency,
+               receiver_conversion, pointing_jitter, radiator_specific_mass, launch_cost,
+               manufacturing_cost, weather_year, pointing_bias, wavefront_error]
+  num_resamples: 500
+  conf_level: 0.95
+  convergence_n: [32, 64, 128]
+
+scenarios:
+  - {name: optimistic, config: scenarios/optimistic.yaml}
+  - {name: nominal, config: scenarios/nominal.yaml}
+  - {name: conservative, config: scenarios/conservative.yaml}
+  - {name: pv_iii_v_3g30a, config: scenarios/pv_iii_v_3g30a.yaml,
+     description: "sourced III-V triple-junction collector (PDF §8.4 technology scenario)"}
+  - {name: pv_silicon_k7_1979, config: scenarios/pv_silicon_k7_1979.yaml,
+     description: "sourced legacy silicon collector (PDF §8.4 technology scenario)"}
+scenario_consistency: true

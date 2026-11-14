@@ -1,0 +1,18 @@
+# M8: the ERA5 comparison at an ERA5-CHOSEN clear site: "aswan" (23.9 N 32.9 E), the candidate with
+# the highest clear fraction (0.889 at c = 0.5, 2014-2023) in the M8a climatology
+# (docs/milestones/M8a.md A); the GEO satellite is placed above the site longitude.
+extends: geo_optical_era5.yaml
+
+project:
+  name: "cmp_geo_optical_era5_aswan"
+  description: "M8: M7b GEO optical case with ERA5 weather at the aswan site"
+
+orbit:
+  geostationary_longitude_deg: 32.9
+
+receiver:
+  sites:
+    - name: "aswan"
+      latitude_deg: 23.9
+      longitude_deg: 32.9
+      altitude_m: 0.0

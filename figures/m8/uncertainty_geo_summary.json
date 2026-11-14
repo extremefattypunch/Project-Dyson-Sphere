@@ -1,0 +1,562 @@
+{
+  "definition_sha256": "0fb2aad0ad83366e803cc09ddf0acbd8c487e41173644b3ba6cde9bc931b0610",
+  "fidelity": "screening_era5",
+  "fidelity_description": "GEO L0 orbit (as configured), 3896 s grid, Fresnel-Hankel capture evaluated on the validated Chebyshev (range, elevation) table (M7b), ERA5 total cloud cover at the receiver (threshold 0.5, nearest node; the weather year is an aleatory input).",
+  "layout": "helioswarm-uncertainty-collation/1",
+  "monte_carlo": {
+    "availability": {
+      "aleatory_p05_p95_width": {
+        "max": 0.09162037037037041,
+        "mean": 0.05172183641975309,
+        "min": 0.004253086419753083,
+        "n": 32,
+        "p05": 0.006935339506172828,
+        "p50": 0.051766975308641966,
+        "p95": 0.09069398148148151
+      },
+      "epistemic_interval_of_expected_value": {
+        "max": 0.41685185185185186,
+        "mean": 0.3781587577160494,
+        "min": 0.34802469135802466,
+        "n": 32,
+        "p05": 0.35387037037037034,
+        "p50": 0.37797839506172837,
+        "p95": 0.40212037037037035
+      },
+      "epistemic_rows_used": 32,
+      "n_aleatory": 4,
+      "n_epistemic": 32,
+      "n_nonfinite": 0,
+      "pooled": {
+        "max": 0.4275308641975309,
+        "mean": 0.37815875771604934,
+        "min": 0.32123456790123456,
+        "n": 128,
+        "p05": 0.32123456790123456,
+        "p50": 0.3781481481481481,
+        "p95": 0.4275308641975309
+      },
+      "variance": {
+        "aleatory": 0.000851167052469136,
+        "aleatory_noise_sd_of_row_mean": 0.014587383696786893,
+        "between_row_population": 0.00023732916389073485,
+        "epistemic": 3.2193180253797126e-05,
+        "epistemic_fraction": 0.036443999923522194,
+        "epistemic_fraction_upper_bound": 0.27101513873995364,
+        "epistemic_unclipped": 3.2193180253797126e-05,
+        "total_population": 0.0008757044532425866,
+        "within_row_population": 0.000638375289351852
+      }
+    },
+    "availability_above_threshold": {
+      "aleatory_p05_p95_width": {
+        "max": 0.09162037037037041,
+        "mean": 0.05172183641975309,
+        "min": 0.004253086419753083,
+        "n": 32,
+        "p05": 0.006935339506172828,
+        "p50": 0.051766975308641966,
+        "p95": 0.09069398148148151
+      },
+      "epistemic_interval_of_expected_value": {
+        "max": 0.41685185185185186,
+        "mean": 0.3781587577160494,
+        "min": 0.34802469135802466,
+        "n": 32,
+        "p05": 0.35387037037037034,
+        "p50": 0.37797839506172837,
+        "p95": 0.40212037037037035
+      },
+      "epistemic_rows_used": 32,
+      "n_aleatory": 4,
+      "n_epistemic": 32,
+      "n_nonfinite": 0,
+      "pooled": {
+        "max": 0.4275308641975309,
+        "mean": 0.37815875771604934,
+        "min": 0.32123456790123456,
+        "n": 128,
+        "p05": 0.32123456790123456,
+        "p50": 0.3781481481481481,
+        "p95": 0.4275308641975309
+      },
+      "variance": {
+        "aleatory": 0.000851167052469136,
+        "aleatory_noise_sd_of_row_mean": 0.014587383696786893,
+        "between_row_population": 0.00023732916389073485,
+        "epistemic": 3.2193180253797126e-05,
+        "epistemic_fraction": 0.036443999923522194,
+        "epistemic_fraction_upper_bound": 0.27101513873995364,
+        "epistemic_unclipped": 3.2193180253797126e-05,
+        "total_population": 0.0008757044532425866,
+        "within_row_population": 0.000638375289351852
+      }
+    },
+    "lcoe_usd_per_kWh": {
+      "aleatory_p05_p95_width": {
+        "max": 10.258553532709243,
+        "mean": 3.8176677601025917,
+        "min": 0.1339307449017717,
+        "n": 32,
+        "p05": 1.3458246098235276,
+        "p50": 3.5392542849570816,
+        "p95": 7.4762618260341265
+      },
+      "epistemic_interval_of_expected_value": {
+        "max": 42.439427260421446,
+        "mean": 24.071509217369268,
+        "min": 15.346839090229071,
+        "n": 32,
+        "p05": 16.90333166089596,
+        "p50": 21.829311984994977,
+        "p95": 39.2918031513133
+      },
+      "epistemic_rows_used": 32,
+      "n_aleatory": 4,
+      "n_epistemic": 32,
+      "n_nonfinite": 0,
+      "pooled": {
+        "max": 47.4331933169272,
+        "mean": 24.071509217369268,
+        "min": 14.42887483383461,
+        "n": 128,
+        "p05": 16.105625168900268,
+        "p50": 21.61119291606676,
+        "p95": 39.05725074723792
+      },
+      "variance": {
+        "aleatory": 4.751205434803063,
+        "aleatory_noise_sd_of_row_mean": 1.089862999968696,
+        "between_row_population": 50.3521211839176,
+        "epistemic": 50.7885817988916,
+        "epistemic_fraction": 0.9144540216761828,
+        "epistemic_fraction_upper_bound": 0.9339076442468665,
+        "epistemic_unclipped": 50.7885817988916,
+        "total_population": 53.9155252600199,
+        "within_row_population": 3.5634040761022967
+      }
+    },
+    "mass_proxy_kg": {
+      "aleatory_p05_p95_width": {
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "n": 32,
+        "p05": 0.0,
+        "p50": 0.0,
+        "p95": 0.0
+      },
+      "epistemic_interval_of_expected_value": {
+        "max": 18770.18103628215,
+        "mean": 16915.420516491242,
+        "min": 15496.427508206145,
+        "n": 32,
+        "p05": 15583.499567561377,
+        "p50": 16797.619724265664,
+        "p95": 18369.63614466377
+      },
+      "epistemic_rows_used": 32,
+      "n_aleatory": 4,
+      "n_epistemic": 32,
+      "n_nonfinite": 0,
+      "pooled": {
+        "max": 18770.18103628215,
+        "mean": 16915.420516491242,
+        "min": 15496.427508206145,
+        "n": 128,
+        "p05": 15539.138812289679,
+        "p50": 16797.619724265664,
+        "p95": 18442.809463597714
+      },
+      "variance": {
+        "aleatory": 0.0,
+        "aleatory_noise_sd_of_row_mean": 0.0,
+        "between_row_population": 847668.7506176707,
+        "epistemic": 875012.903863402,
+        "epistemic_fraction": 1.0,
+        "epistemic_fraction_upper_bound": 1.0000000000000002,
+        "epistemic_unclipped": 875012.903863402,
+        "total_population": 847668.7506176706,
+        "within_row_population": 0.0
+      }
+    },
+    "p_grid_mean_W": {
+      "aleatory_p05_p95_width": {
+        "max": 68390.1991309307,
+        "mean": 35791.04869169596,
+        "min": 1447.7329205351998,
+        "n": 32,
+        "p05": 11112.143187798994,
+        "p50": 30952.780275820114,
+        "p95": 66069.73950832977
+      },
+      "epistemic_interval_of_expected_value": {
+        "max": 315576.0783872615,
+        "mean": 225558.68428593245,
+        "min": 142792.86134264857,
+        "n": 32,
+        "p05": 144984.83112047095,
+        "p50": 233964.9998850778,
+        "p95": 284788.55610525445
+      },
+      "epistemic_rows_used": 32,
+      "n_aleatory": 4,
+      "n_epistemic": 32,
+      "n_nonfinite": 0,
+      "pooled": {
+        "max": 334176.31378263934,
+        "mean": 225558.68428593245,
+        "min": 129158.20608783937,
+        "n": 128,
+        "p05": 144033.93883802163,
+        "p50": 232019.07232786148,
+        "p95": 296418.1908131854
+      },
+      "variance": {
+        "aleatory": 390861712.1379384,
+        "aleatory_noise_sd_of_row_mean": 9885.111432578016,
+        "between_row_population": 1938165966.94737,
+        "epistemic": 1902972021.7176392,
+        "epistemic_fraction": 0.8296032940971007,
+        "epistemic_fraction_upper_bound": 0.8686215772958724,
+        "epistemic_unclipped": 1902972021.7176392,
+        "total_population": 2231312251.0508237,
+        "within_row_population": 293146284.1034538
+      }
+    },
+    "pv_temperature_max_K": {
+      "aleatory_p05_p95_width": {
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "n": 32,
+        "p05": 0.0,
+        "p50": 0.0,
+        "p95": 0.0
+      },
+      "epistemic_interval_of_expected_value": {
+        "max": 317.7588116738435,
+        "mean": 308.8381215093207,
+        "min": 304.1390977458795,
+        "n": 32,
+        "p05": 304.7103575402038,
+        "p50": 307.615796142606,
+        "p95": 314.83092114943236
+      },
+      "epistemic_rows_used": 32,
+      "n_aleatory": 4,
+      "n_epistemic": 32,
+      "n_nonfinite": 0,
+      "pooled": {
+        "max": 317.7588116738435,
+        "mean": 308.8381215093207,
+        "min": 304.1390977458795,
+        "n": 128,
+        "p05": 304.6825480964598,
+        "p50": 307.615796142606,
+        "p95": 314.87688238217515
+      },
+      "variance": {
+        "aleatory": 0.0,
+        "aleatory_noise_sd_of_row_mean": 0.0,
+        "between_row_population": 11.602229089459897,
+        "epistemic": 11.976494543958603,
+        "epistemic_fraction": 1.0,
+        "epistemic_fraction_upper_bound": 1.0,
+        "epistemic_unclipped": 11.976494543958603,
+        "total_population": 11.602229089459897,
+        "within_row_population": 0.0
+      }
+    }
+  },
+  "monte_carlo_settings": {
+    "n_aleatory": 4,
+    "n_epistemic": 32,
+    "seed": 20261114
+  },
+  "outputs": [
+    "p_grid_mean_W",
+    "availability",
+    "availability_above_threshold",
+    "pv_temperature_max_K",
+    "mass_proxy_kg",
+    "lcoe_usd_per_kWh"
+  ],
+  "parameters": [
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": 0.3195,
+        "low": 0.1642,
+        "mode": 0.3,
+        "type": "triangular"
+      },
+      "key": "collector.pv_efficiency_reference",
+      "name": "pv_efficiency",
+      "provenance": "derived",
+      "source": "ends derived from sourced cell data (AZUR SPACE 3G30A-Advanced datasheet DB 00010892-01; JPL Pub. 78-15 Vol. VIII Table 7), mode assumed (PDF \u00a75 example); configs/scenarios/*.yaml",
+      "unit": "1"
+    },
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": -0.0004,
+        "low": -0.0044,
+        "mode": -0.00231,
+        "type": "triangular"
+      },
+      "key": "collector.temperature_coefficient_per_K",
+      "name": "pv_temperature_coefficient",
+      "provenance": "derived",
+      "source": "low derived from JPL Pub. 78-15 Vol. VIII (K7 silicon), mode derived from the 3G30A datasheet dVmp/dT, dImp/dT, high = PDF \u00a75 example (assumed)",
+      "unit": "K^-1"
+    },
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": 0.6,
+        "low": 0.35,
+        "mode": 0.5,
+        "type": "triangular"
+      },
+      "key": "transmitter.electrical_to_beam_efficiency",
+      "name": "electrical_to_beam_efficiency",
+      "provenance": "assumed",
+      "source": null,
+      "unit": "1"
+    },
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": 0.55,
+        "low": 0.3,
+        "mode": 0.4,
+        "type": "triangular"
+      },
+      "key": "receiver.conversion_efficiency",
+      "name": "receiver_conversion",
+      "provenance": "assumed",
+      "source": null,
+      "unit": "1"
+    },
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": 3e-09,
+        "low": 5e-10,
+        "mode": 1e-09,
+        "type": "triangular"
+      },
+      "key": "transmitter.pointing_sigma_rad",
+      "name": "pointing_jitter",
+      "provenance": "assumed",
+      "source": null,
+      "unit": "rad"
+    },
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": 10.0,
+        "low": 2.0,
+        "mode": 5.0,
+        "type": "triangular"
+      },
+      "key": "thermal.radiator_specific_mass_kg_m2",
+      "name": "radiator_specific_mass",
+      "provenance": "assumed",
+      "source": null,
+      "unit": "kg m^-2"
+    },
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": 1500.0,
+        "low": 85.0,
+        "mode": 850.0,
+        "type": "triangular"
+      },
+      "key": "economics.transport.launch_cost_per_kg_leo_usd",
+      "name": "launch_cost",
+      "provenance": "sourced",
+      "source": "configs/economics/geo_{optimistic,nominal,conservative}.yaml (NASA OTPS 2024, PDF pp. 28, 38, 90; 85 USD/kg derived)",
+      "unit": "USD kg^-1"
+    },
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": 10000.0,
+        "low": 500.0,
+        "mode": 2000.0,
+        "type": "triangular"
+      },
+      "key": "economics.manufacturing_cost_per_kg_usd",
+      "name": "manufacturing_cost",
+      "provenance": "assumed",
+      "source": "configs/economics/geo_nominal.yaml uncertainty range (M8a)",
+      "unit": "USD kg^-1"
+    },
+    {
+      "category": "aleatory",
+      "distribution": {
+        "type": "discrete_uniform",
+        "values": [
+          2014,
+          2015,
+          2016,
+          2017,
+          2018,
+          2019,
+          2020,
+          2021,
+          2022,
+          2023
+        ]
+      },
+      "key": "weather.historical_year",
+      "name": "weather_year",
+      "provenance": "sourced",
+      "source": "ERA5 hourly total cloud cover 2014-2023 at the site node (Hersbach et al. 2020, doi:10.1002/qj.3803; CDS doi:10.24381/1cf1ad76); each year equally likely (assumed)",
+      "unit": "year"
+    },
+    {
+      "category": "aleatory",
+      "distribution": {
+        "scale": 1e-09,
+        "type": "rayleigh"
+      },
+      "key": "transmitter.pointing_bias_rad",
+      "name": "pointing_bias",
+      "provenance": "assumed",
+      "source": null,
+      "unit": "rad"
+    },
+    {
+      "category": "aleatory",
+      "distribution": {
+        "high": 5e-08,
+        "low": 0.0,
+        "type": "uniform"
+      },
+      "key": "transmitter.rms_wavefront_error_m",
+      "name": "wavefront_error",
+      "provenance": "assumed",
+      "source": null,
+      "unit": "m"
+    }
+  ],
+  "parts": {
+    "mc": {
+      "failed": 0,
+      "failures": [],
+      "n": 128,
+      "status": "complete"
+    },
+    "scenarios": {
+      "failed": 0,
+      "failures": [],
+      "n": 3,
+      "status": "complete"
+    }
+  },
+  "provenance": {
+    "code": {
+      "git_commit": "4a97cff2792286cec73df0fa17626183674c7add",
+      "git_dirty": true,
+      "helioswarm_version": "0.1.0.dev0",
+      "packages": {
+        "astropy": "8.0.2",
+        "helioswarm": "0.1.0.dev0",
+        "itur": "0.4.0",
+        "jax": "0.12.0.1",
+        "jax-cuda12-plugin": null,
+        "jaxlib": "0.12.0.1",
+        "matplotlib": "3.11.2",
+        "numpy": "2.5.4",
+        "pandas": "3.1.1",
+        "pyarrow": "26.0.1",
+        "pydantic": "2.14.3",
+        "pyyaml": "6.0.3",
+        "scipy": "1.18.1",
+        "spiceypy": "8.4.0"
+      },
+      "python_version": "3.12.16",
+      "source_sha256": "6d2e6ac593ed63aeec3a9adb40078ef319b2d98289ab44f457e0cd4972c76104"
+    },
+    "cpu_model": "Intel(R) Xeon(R) Platinum 8268 CPU @ 2.90GHz",
+    "platform": "Linux-4.18.0-553.155.1.el8_10.x86_64-x86_64-with-glibc2.28",
+    "slurm": {
+      "SLURM_ARRAY_JOB_ID": null,
+      "SLURM_ARRAY_TASK_ID": null,
+      "SLURM_CPUS_PER_TASK": "8",
+      "SLURM_JOB_ID": "60458413",
+      "SLURM_JOB_NODELIST": "holy7c02202",
+      "SLURM_JOB_PARTITION": "serial_requeue"
+    },
+    "study_packages": {
+      "SALib": "1.6.0",
+      "numpy": "2.5.4",
+      "pyarrow": "26.0.1",
+      "pymoo": "0.6.2",
+      "scipy": "1.18.1"
+    }
+  },
+  "scenario_range": {
+    "availability": {
+      "max": 0.370679012345679,
+      "min": 0.370679012345679
+    },
+    "availability_above_threshold": {
+      "max": 0.370679012345679,
+      "min": 0.370679012345679
+    },
+    "lcoe_usd_per_kWh": {
+      "max": 67.30847226622825,
+      "min": 10.220120864214296
+    },
+    "mass_proxy_kg": {
+      "max": 17366.25630098045,
+      "min": 15200.027410475212
+    },
+    "p_grid_mean_W": {
+      "max": 462766.05939652625,
+      "min": 69846.81791563258
+    },
+    "pv_temperature_max_K": {
+      "max": 320.5932987245107,
+      "min": 303.2397860466811
+    }
+  },
+  "scenarios": {
+    "conservative": {
+      "availability": 0.370679012345679,
+      "availability_above_threshold": 0.370679012345679,
+      "error": null,
+      "lcoe_usd_per_kWh": 67.30847226622825,
+      "mass_proxy_kg": 17366.25630098045,
+      "p_grid_mean_W": 69846.81791563258,
+      "pv_temperature_max_K": 320.5932987245107,
+      "status": "ok"
+    },
+    "nominal": {
+      "availability": 0.370679012345679,
+      "availability_above_threshold": 0.370679012345679,
+      "error": null,
+      "lcoe_usd_per_kWh": 18.146280212940212,
+      "mass_proxy_kg": 16667.916616434217,
+      "p_grid_mean_W": 261669.8688576755,
+      "pv_temperature_max_K": 305.77851634994784,
+      "status": "ok"
+    },
+    "optimistic": {
+      "availability": 0.370679012345679,
+      "availability_above_threshold": 0.370679012345679,
+      "error": null,
+      "lcoe_usd_per_kWh": 10.220120864214296,
+      "mass_proxy_kg": 15200.027410475212,
+      "p_grid_mean_W": 462766.05939652625,
+      "pv_temperature_max_K": 303.2397860466811,
+      "status": "ok"
+    }
+  },
+  "study": "m8_uncertainty_geo_optical"
+}

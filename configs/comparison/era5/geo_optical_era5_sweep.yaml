@@ -1,0 +1,8 @@
+# M8 ERA5 comparison sweep: geo_optical_era5 over the ten ERA5 weather years (each mapped onto 2030; base
+# point 2019). Run with slurm/m8_sweeps.sbatch; compared by comparison_era5*.yaml.
+sweep_schema_version: 1
+name: cmp_geo_optical_era5
+description: "M8 ERA5 comparison: geo_optical_era5 x weather year"
+base_config: geo_optical_era5.yaml
+parameters:
+  weather.historical_year: [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]

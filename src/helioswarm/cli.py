@@ -8,7 +8,9 @@ follow one convention: 0 success, 1 invalid input or failure, 2 command-line usa
     Validate run configurations and/or sweep files, each one in turn (the provenance and
     resolved-dump options take a single CONFIG). A sweep file is recognised by its
     ``sweep_schema_version`` key; every grid point is validated as a full configuration and
-    nothing runs. Exit code 0 if every file is valid, 1 if any is invalid or unreadable.
+    nothing runs. M8 optimisation and uncertainty studies (``optimization_schema_version`` /
+    ``uncertainty_schema_version``) are cross-checked as by ``optimize`` / ``uncertainty``.
+    Exit code 0 if every file is valid, 1 if any is invalid or unreadable.
 
 ``helioswarm run CONFIG [--out DIR] [--overwrite] [--backend numpy|numpy_batch|jax]
 [--kernel-dir DIR] [--chunk-index I --chunk-count N --candidates-dir D] [--candidates-dir D]
@@ -74,6 +76,23 @@ follow one convention: 0 success, 1 invalid input or failure, 2 command-line usa
     no re-simulation (:mod:`helioswarm.economics`; PDF §12.5). Sweep points without a saved run
     are listed as not costed (failed / incomplete / missing). Exit code 0 ok (failed points
     listed), 1 on an error or missing/incomplete points.
+
+``helioswarm optimize CONFIG --out DIR [--seed S | --array-index I] [--workers N]
+[--overwrite] [--collate] [--reevaluate [--n-candidates K] [--no-save-runs]]
+[--sanity [NAME ...]]``
+    Design optimisation (:mod:`helioswarm.optimization`; PDF §12.1-12.3): without a mode
+    option, NSGA-II for every configured seed, then the collation. ``--seed`` /
+    ``--array-index`` run one seed (Slurm array task), ``--collate`` builds the union Pareto
+    front, convergence and seed-agreement summary from the saved seeds, ``--reevaluate``
+    re-evaluates selected front designs at the high-fidelity level, ``--sanity`` runs the
+    single-objective sweep + scipy checks. Exit code 0 on success, 1 on an error (incl.
+    missing seeds at collation, failed sanity agreement).
+
+``helioswarm uncertainty CONFIG --out DIR [--part mc|sobol|scenarios ...]
+[--array-index I --array-count N] [--workers N] [--overwrite] [--collate]``
+    Seeded nested Monte Carlo (epistemic vs aleatory), Sobol indices and explicit scenarios
+    (:mod:`helioswarm.uncertainty`; PDF §12.4). Without options every configured part runs in
+    this process and is collated. Exit code 0 / 1.
 """
 
 from __future__ import annotations
@@ -319,6 +338,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     cmp_.add_argument("--out", metavar="DIR", required=True, help="output directory")
     _add_m8a_parsers(sub)
+    _add_m8_parsers(sub)
     return parser
 
 
@@ -747,9 +767,51 @@ def _cmd_validate_config(args: argparse.Namespace, out: TextIO, err: TextIO) -> 
     return worst
 
 
+def _study_kind(path: str) -> str | None:
+    """``optimization`` / ``uncertainty`` for an M8 study file, else ``None``."""
+    try:
+        raw = read_yaml(path)
+    except (ConfigError, OSError):
+        return None
+    if isinstance(raw, dict):
+        for kind in ("optimization", "uncertainty"):
+            if f"{kind}_schema_version" in raw:
+                return kind
+    return None
+
+
+def _cmd_validate_study(args: argparse.Namespace, kind: str, out: TextIO, err: TextIO) -> int:
+    if args.show_provenance or args.write_resolved:
+        err.write(
+            "ERROR: --show-provenance/--write-resolved apply to run configurations, not "
+            f"{kind} studies; validate the base configuration instead\n"
+        )
+        return EXIT_INVALID
+    try:
+        if kind == "optimization":
+            from helioswarm.optimization import load_optimization
+
+            sha = load_optimization(args.config).definition_sha256
+        else:
+            from helioswarm.uncertainty import load_uncertainty
+
+            sha = load_uncertainty(args.config).definition_sha256
+    except ConfigError as exc:
+        err.write(f"ERROR: {exc.format()}\n")
+        return EXIT_INVALID
+    out.write(
+        f"OK: {args.config} is a valid helioswarm {kind} study (definition_sha256 {sha}; "
+        "variables/parameters, metrics and fidelity levels cross-checked)\n"
+    )
+    return EXIT_OK
+
+
 def _validate_one_config(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
     if _is_sweep_file(args.config):
         return _cmd_validate_sweep(args, out, err)
+    kind = _study_kind(args.config)
+    if kind is not None:
+        return _cmd_validate_study(args, kind, out, err)
     try:
         config = load_config(args.config)
     except ConfigError as exc:
@@ -994,6 +1056,199 @@ def _cmd_economics(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
     return EXIT_OK
 
 
+# ---------------------------------------------------------------------------------------------
+# M8: optimisation (``optimize``) and uncertainty (``uncertainty``)
+# ---------------------------------------------------------------------------------------------
+
+
+def _add_m8_parsers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    opt = sub.add_parser(
+        "optimize",
+        help="design optimisation (NSGA-II, sanity checks, high-fidelity re-evaluation)",
+        description="Design optimisation (helioswarm.optimization; PDF §12): NSGA-II per seed "
+        "on the forward model at the search fidelity, collation of the union Pareto front, "
+        "high-fidelity re-evaluation of selected designs, single-objective sanity checks. "
+        "Exit status: 0 ok, 1 error, 2 usage error.",
+    )
+    opt.add_argument("config", metavar="CONFIG", help="optimisation study (YAML)")
+    opt.add_argument("--out", metavar="DIR", required=True, help="output directory")
+    who = opt.add_mutually_exclusive_group()
+    who.add_argument("--seed", type=int, default=None, help="run only this configured seed")
+    who.add_argument(
+        "--array-index", type=int, default=None, help="run the seed with this index (Slurm)"
+    )
+    mode = opt.add_mutually_exclusive_group()
+    mode.add_argument("--collate", action="store_true", help="collate the saved seeds only")
+    mode.add_argument(
+        "--reevaluate", action="store_true", help="re-evaluate front designs at high fidelity"
+    )
+    mode.add_argument(
+        "--sanity",
+        nargs="*",
+        metavar="NAME",
+        default=None,
+        help="run the sanity checks (all, or the named ones)",
+    )
+    opt.add_argument("--workers", type=int, default=None, help="worker processes (default: config)")
+    opt.add_argument("--n-candidates", type=int, default=None, help="re-evaluation candidates")
+    opt.add_argument(
+        "--fidelity",
+        default=None,
+        help="--reevaluate at this defined fidelity level instead of the configured one "
+        "(output reevaluation_<level>/)",
+    )
+    opt.add_argument(
+        "--no-save-runs", action="store_true", help="re-evaluate without saving run directories"
+    )
+    opt.add_argument("--overwrite", action="store_true", help="recompute a finished seed")
+
+    unc = sub.add_parser(
+        "uncertainty",
+        help="nested Monte Carlo, Sobol indices and scenarios",
+        description="Uncertainty and sensitivity (helioswarm.uncertainty; PDF §12.4): seeded "
+        "nested Monte Carlo (epistemic vs aleatory), Sobol indices with bootstrap confidence "
+        "intervals and convergence, explicit scenarios. Exit status: 0 ok, 1 error.",
+    )
+    unc.add_argument("config", metavar="CONFIG", help="uncertainty study (YAML)")
+    unc.add_argument("--out", metavar="DIR", required=True, help="output directory")
+    unc.add_argument(
+        "--part",
+        action="append",
+        choices=("mc", "sobol", "scenarios"),
+        default=None,
+        help="part(s) to evaluate (default: every configured part)",
+    )
+    unc.add_argument("--array-index", type=int, default=0, help="array task index")
+    unc.add_argument("--array-count", type=int, default=1, help="array task count")
+    unc.add_argument("--workers", type=int, default=None, help="worker processes (default: config)")
+    unc.add_argument("--overwrite", action="store_true", help="recompute an existing part file")
+    unc.add_argument("--collate", action="store_true", help="collate the saved parts only")
+
+
+def _cmd_optimize(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
+    from helioswarm import optimization as op
+
+    def log(msg: str) -> None:
+        out.write(msg + "\n")
+        out.flush()
+
+    try:
+        problem = op.load_optimization(args.config)
+        d = problem.definition
+        target = Path(args.out)
+        if args.collate:
+            c = op.collate(problem, target)
+            log(
+                f"collated seeds {list(c.seeds)} -> {c.path} (union front {c.union_front.num_rows}"
+                f", seed HV spread {c.seed_spread:.3g}, agree {c.seeds_agree})"
+            )
+            if c.missing_seeds:
+                err.write(f"WARNING: seeds not finished: {list(c.missing_seeds)}\n")
+                return EXIT_INVALID
+            return EXIT_OK
+        if args.reevaluate:
+            r = op.reevaluate(
+                problem,
+                target,
+                workers=args.workers,
+                n_candidates=args.n_candidates,
+                save_runs=not args.no_save_runs,
+                fidelity=args.fidelity,
+                log=log,
+            )
+            log(f"re-evaluation written to {r.path}")
+            return EXIT_OK
+        if args.sanity is not None:
+            names = args.sanity or [c.name for c in d.sanity_checks]
+            unknown = set(names) - {c.name for c in d.sanity_checks}
+            if unknown:
+                err.write(f"ERROR: unknown sanity check(s) {sorted(unknown)}\n")
+                return EXIT_INVALID
+            op.prepare_out(problem, target)
+            all_ok = True
+            for chk in d.sanity_checks:
+                if chk.name not in names:
+                    continue
+                res = op.run_sanity_check(problem, chk, workers=args.workers or d.workers)
+                path = op.write_sanity(problem, res, target)
+                all_ok &= res.agree
+                log(
+                    f"sanity {chk.name}: scipy {chk.variable} = {res.scipy_value:.6g} "
+                    f"(J {res.scipy_objective:.6g}, {res.scipy_evaluations} evaluations), sweep "
+                    f"best {res.sweep_values[res.best_sweep_index]:.6g} "
+                    f"(J {res.sweep_objective[res.best_sweep_index]:.6g}); agree {res.agree} "
+                    f"-> {path}"
+                )
+            return EXIT_OK if all_ok else EXIT_INVALID
+        if args.seed is not None:
+            if args.seed not in d.algorithm.seeds:
+                err.write(f"ERROR: seed {args.seed} is not configured {list(d.algorithm.seeds)}\n")
+                return EXIT_INVALID
+            seeds: list[int] = [args.seed]
+        elif args.array_index is not None:
+            seeds = [op.seed_for_task(problem, args.array_index)]
+        else:
+            seeds = list(d.algorithm.seeds)
+        for seed in seeds:
+            path = op.optimize_seed(
+                problem, target, seed, workers=args.workers, overwrite=args.overwrite, log=log
+            )
+            log(f"seed {seed} written to {path}")
+        if args.seed is None and args.array_index is None:
+            c = op.collate(problem, target)
+            log(f"collated -> {c.path} (union front {c.union_front.num_rows})")
+    except (ConfigError, ValueError, FileExistsError, FileNotFoundError, OSError) as exc:
+        err.write(f"ERROR: {exc}\n")
+        return EXIT_INVALID
+    return EXIT_OK
+
+
+def _cmd_uncertainty(args: argparse.Namespace, out: TextIO, err: TextIO) -> int:
+    from helioswarm import uncertainty as un
+
+    def log(msg: str) -> None:
+        out.write(msg + "\n")
+        out.flush()
+
+    try:
+        study = un.load_uncertainty(args.config)
+        d = study.definition
+        target = Path(args.out)
+        if not args.collate:
+            flags: tuple[tuple[un.Part, bool], ...] = (
+                ("mc", d.monte_carlo is not None),
+                ("sobol", d.sobol is not None),
+                ("scenarios", bool(d.scenarios)),
+            )
+            configured: list[un.Part] = [p for p, on in flags if on]
+            parts: list[un.Part] = args.part or configured
+            for part in parts:
+                if part not in configured:
+                    err.write(f"ERROR: part {part!r} is not configured in {args.config}\n")
+                    return EXIT_INVALID
+                un.run_part(
+                    study,
+                    target,
+                    part,
+                    array_index=args.array_index,
+                    array_count=args.array_count,
+                    workers=args.workers,
+                    overwrite=args.overwrite,
+                    log=log,
+                )
+        if args.collate or (args.part is None and args.array_count == 1):
+            c = un.collate(study, target)
+            log(f"collated -> {c.path}")
+            missing = [p for p, i in c.summary["parts"].items() if i["status"] != "complete"]
+            if missing:
+                err.write(f"WARNING: parts not complete: {missing}\n")
+                return EXIT_INVALID
+    except (ConfigError, ValueError, FileExistsError, FileNotFoundError, OSError) as exc:
+        err.write(f"ERROR: {exc}\n")
+        return EXIT_INVALID
+    return EXIT_OK
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point of the ``helioswarm`` console script; returns the process exit code."""
     parser = _build_parser()
@@ -1019,6 +1274,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_weather(args, sys.stdout, sys.stderr)
     if command == "economics":
         return _cmd_economics(args, sys.stdout, sys.stderr)
+    if command == "optimize":
+        return _cmd_optimize(args, sys.stdout, sys.stderr)
+    if command == "uncertainty":
+        return _cmd_uncertainty(args, sys.stdout, sys.stderr)
     parser.error(f"unknown command {command!r}")  # argparse already rejects unknown commands
 
 

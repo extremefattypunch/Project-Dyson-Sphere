@@ -1,0 +1,69 @@
+{
+  "agree": true,
+  "check": "aperture_net_power",
+  "provenance": {
+    "code": {
+      "git_commit": null,
+      "git_dirty": null,
+      "helioswarm_version": "0.1.0.dev0",
+      "packages": {
+        "astropy": "8.0.2",
+        "helioswarm": "0.1.0.dev0",
+        "itur": "0.4.0",
+        "jax": "0.12.0.1",
+        "jax-cuda12-plugin": null,
+        "jaxlib": "0.12.0.1",
+        "matplotlib": "3.11.2",
+        "numpy": "2.5.4",
+        "pandas": "3.1.1",
+        "pyarrow": "26.0.1",
+        "pydantic": "2.14.3",
+        "pyyaml": "6.0.3",
+        "scipy": "1.18.1",
+        "spiceypy": "8.4.0"
+      },
+      "python_version": "3.12.16",
+      "source_sha256": "86c7b6398e673e673098273f4ae0ae1be3991886ad838cc89c103115ebff8cda"
+    },
+    "cpu_model": "Intel(R) Xeon(R) Platinum 8268 CPU @ 2.90GHz",
+    "platform": "Linux-4.18.0-553.155.1.el8_10.x86_64-x86_64-with-glibc2.28",
+    "slurm": {
+      "SLURM_ARRAY_JOB_ID": null,
+      "SLURM_ARRAY_TASK_ID": null,
+      "SLURM_CPUS_PER_TASK": "8",
+      "SLURM_JOB_ID": "60458413",
+      "SLURM_JOB_NODELIST": "holy7c02202",
+      "SLURM_JOB_PARTITION": "serial_requeue"
+    },
+    "study_packages": {
+      "SALib": "1.6.0",
+      "numpy": "2.5.4",
+      "pyarrow": "26.0.1",
+      "pymoo": "0.6.2",
+      "scipy": "1.18.1"
+    }
+  },
+  "scipy": {
+    "evaluations": 11,
+    "method": "scipy.optimize.minimize_scalar(method='bounded')",
+    "objective": 134437.92603144326,
+    "u": 0.8488347513448992,
+    "value": 70.33020491549158
+  },
+  "spec": {
+    "metric": "p_grid_mean_W",
+    "name": "aperture_net_power",
+    "penalty_metric": "transmitter_aperture_area_m2",
+    "penalty_weight": 20.0,
+    "sense": "max",
+    "sweep_points": 21,
+    "variable": "aperture_diameter",
+    "xatol": 0.0001
+  },
+  "sweep_best": {
+    "index": 17,
+    "objective": 134428.45974088582,
+    "value": 70.74203848767574
+  },
+  "sweep_failed_points": 0
+}

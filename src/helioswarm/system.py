@@ -417,8 +417,14 @@ def _evaluate_beam_backend(
     settings: BeamSettings,
     backend: Backend,
     epochs_tdb_s: Float64Array,
+    capture_percentiles: bool = True,
 ) -> BeamResult:
     if backend == "numpy":
+        if not capture_percentiles:
+            raise ValueError(
+                "capture percentiles can only be skipped with the batched backends "
+                "(numpy_batch, jax); the M5 reference always computes them"
+            )
         return evaluate_beam(range_m, elevation_rad, settings, epochs_tdb_s=epochs_tdb_s)
     if backend in ("jax", "numpy_batch"):
         from helioswarm.capture_batch import evaluate_beam_batched
@@ -429,6 +435,7 @@ def _evaluate_beam_backend(
             settings,
             backend="jax" if backend == "jax" else "numpy",
             epochs_tdb_s=epochs_tdb_s,
+            percentiles=capture_percentiles,
         )
     raise ValueError(f"unknown backend {backend!r}; use 'numpy', 'numpy_batch' or 'jax'")
 
@@ -704,6 +711,7 @@ def run_single_satellite(
     earth_orientation: EarthOrientation | None = None,
     backend: Backend = "numpy",
     weather: WeatherProvider | None = None,
+    capture_percentiles: bool = True,
 ) -> SystemRunResult:
     """End-to-end run of one satellite and one receiver (module docstring).
 
@@ -719,6 +727,10 @@ def run_single_satellite(
         weather: ERA5 weather provider for ``models.weather_source = 'era5'``; built from the
             configuration and ``$HELIOSWARM_WEATHER_DIR`` with
             :func:`helioswarm.weather.weather_generator` (its own seeded stream) when omitted.
+        capture_percentiles: Compute the p05/p50/p95 capture percentiles (default). ``False``
+            (batched backends only; M8 screening evaluations) leaves them NaN with
+            ``percentile_method = not_computed``; the expected capture, and so every power
+            and energy, is unchanged (the percentiles are diagnostics, PDF §9.5).
 
     Returns:
         :class:`SystemRunResult`.
@@ -791,7 +803,7 @@ def run_single_satellite(
         if config.models.beam_evaluation == "chebyshev_table":
 
             def reference(r: Float64Array, e: Float64Array, t: Float64Array) -> BeamResult:
-                return _evaluate_beam_backend(r, e, beam_settings, backend, t)
+                return _evaluate_beam_backend(r, e, beam_settings, backend, t, capture_percentiles)
 
             beam, table_diag = _timed(
                 "beam",
@@ -816,6 +828,7 @@ def run_single_satellite(
                     beam_settings,
                     backend,
                     access.t_emit_tdb_s[vis_idx],
+                    capture_percentiles,
                 ),
             )
 

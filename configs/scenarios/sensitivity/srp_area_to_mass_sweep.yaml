@@ -1,0 +1,19 @@
+# M8: PDF §6.2 L3 sensitivity ("attitude-dependent area and other non-gravitational forces"),
+# closed as a documented sensitivity case (docs/model_assumptions.md M8 "L3 SRP sensitivity").
+#
+# For the sun-tracking flat collector (collector.incidence_mode = sun_tracking) the collector
+# normal points at the Sun, so the attitude-dependent SRP force of a flat plate is RADIAL with the
+# full collector area: the implemented radial cannonball model is exact in direction, and the
+# attitude enters only through the area-to-mass ratio. The shipped configurations use the PDF §5
+# example A/m = 0.02 m^2/kg, but the M7 mass proxy of this satellite gives
+# A_col/m = 10000 m^2 / 16 620 kg = 0.60 m^2/kg (collector only; radiator and aperture would add
+# area). This sweep re-runs the harmonised heliocentric optical case (L1 with planets + SRP, 974 s,
+# one year) at A/m = 0.02 (configured), 0.2 and 0.6 m^2/kg (mass-proxy consistent) to measure the
+# effect on orbit drift and delivered power. Non-radial SRP (fixed_normal attitude) is NOT
+# modelled (limitation, M8.md F).
+sweep_schema_version: 1
+name: m8_srp_area_to_mass
+description: "M8 L3 sensitivity: SRP area-to-mass ratio of the sun-tracking collector"
+base_config: ../../comparison/helio_1au_optical.yaml
+parameters:
+  orbit.area_to_mass_m2_kg: [0.02, 0.2, 0.6]

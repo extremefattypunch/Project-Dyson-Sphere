@@ -166,3 +166,58 @@ physics time series were unchanged (identical headline numbers).
 | Slurm | none (in session, seconds per run directory; reads saved summaries only) |
 | Result location | `$HELIOSWARM_RUNS_DIR/economics_m8a/<run>/economics.{json,md}` |
 | Interpretation | Every case is 3–6 orders of magnitude above 0.05 USD/kWh (demo N = 10 clear sky: 93 / 417 / 1 750 USD/kWh, MC 345–804; N = 1000: 436 / 3 700 / 21 600; MVP optical 1 250 / 2 670 / 6 650; MVP microwave undefined, 2.8 kWh/yr). Receiver area and fixed operations dominate the MVP; transport (mass ratio ~3.1 at ~4.9 km/s) and replacements dominate the constellation. Scenario ranges for an assumed technology, not predictions (PDF §12.5). |
+
+### E14 (2026-11-14): design optimisation of one heliocentric optical satellite (M8)
+
+| Field | Content |
+|---|---|
+| Question | Which designs of one heliocentric optical satellite + laser-PV receiver (orbit, collector, aperture, wavelength, pointing, receiver radius, radiator, min elevation) form the Pareto front of time-averaged P_grid, mass proxy and availability above 1 kW, under the stated constraints, and do the selected designs survive a high-fidelity re-evaluation? |
+| Config | `configs/optimization.yaml` (screening L0/3896 s/batched Airy/clear sky; high L1/974 s/reference capture/ERA5 2019) |
+| Code commit | `4a97cff` + uncommitted M8 tree, frozen snapshots `20261114T113917Z` (30-generation pilot) and `20261114T115605Z` (100 generations) |
+| Slurm | 60475688 (pilot, 2 seeds), 60477411 (4 seeds × 100 generations, shared), 60481938 (re-evaluation `high`), 60482584 (`high_clear`); sanity check in session |
+| Result location | `$HELIOSWARM_RUNS_DIR/m8_optimization/` (`seed_*/`, `collated/`, `reevaluation/`, `sanity/`), `$HELIOSWARM_RUNS_DIR/m8_optimization_g30/`; `figures/m8/optimization_helio_*` |
+| Interpretation | `docs/milestones/M8.md` A/F: front from ~1 kW / 1.6 t to 1.67 MW / 349 t; receiver capacity binds; wavelength, receiver radius and min elevation at their bounds; the orbit variables exploit the one-year window (drifting 0.74 au orbits with a close approach inside 2030) — a negative result for orbit optimisation with a one-year objective; seed agreement 7.7 % (> 5 %). Re-evaluation: model differences ≤ 0.2 %, but ERA5 weather at the example site removes 57–61 % and makes all six re-evaluated designs infeasible (availability < 0.2). |
+
+### E15 (2026-11-14): technology and constellation design studies (M8)
+
+| Field | Content |
+|---|---|
+| Question | (a) Does a categorical optical-vs-microwave technology choice change the P_grid–mass front of one heliocentric satellite? (b) How do ring count, satellites, phase distribution/span, collector area, receiver beam slots and scheduling policy trade network P_grid against mass in the M7 demo network? |
+| Config | `configs/optimization_technology.yaml`, `configs/optimization_constellation.yaml` |
+| Code commit | as E14 (snapshots `…113917Z` technology, `…115605Z` constellation) |
+| Slurm | technology 60477024 (seed 1), 60479896 (seed 2), re-evaluation 60486043; constellation 60477744 (+ OOM attempt 60477439), re-evaluation 60481984 |
+| Result location | `$HELIOSWARM_RUNS_DIR/m8_optimization_technology/`, `$HELIOSWARM_RUNS_DIR/m8_optimization_constellation/`; `figures/m8/optimization_{technology,constellation}_*` |
+| Interpretation | (a) microwave eliminated (best 9 W at 205 000 t vs optical 0.46 kW at 1.8 t up to 2.76 MW); seeds disagree (80 % HV spread: one seed never explored large collectors) — exploratory. (b) network fronts 4.3 kW / 13 t to 189 kW / 847 t; at high fidelity (L1, ERA5) −22 to −27 % P_grid and two of three re-evaluated designs miss the 0.9 availability requirement. |
+
+### E16 (2026-11-14): uncertainty and sensitivity of the heliocentric, GEO and constellation cases (M8)
+
+| Field | Content |
+|---|---|
+| Question | How large are the epistemic (technology/economics) and aleatory (weather year, pointing bias, wavefront error) uncertainties of P_grid, availability, mass and LCOE, which inputs dominate (Sobol), and what do the explicit technology and sourced PV scenarios give? |
+| Config | `configs/uncertainty.yaml`, `configs/uncertainty_geo.yaml`, `configs/uncertainty_constellation.yaml`, `configs/scenarios/*.yaml` |
+| Code commit | as E14 |
+| Slurm | 60475690 (helio: 512 MC + 3 328 Sobol + 5 scenarios), 60475692 (GEO: 128 MC + 3 scenarios, shared), 60477756 (constellation: 64 MC; OOM attempt 60477441) |
+| Result location | `$HELIOSWARM_RUNS_DIR/m8_uncertainty_{helio,geo,constellation}/collated/`; `figures/m8/uncertainty_*` |
+| Interpretation | Helio P_grid 1.6–3.6 kW (p05–p95), 86 % of the variance epistemic; PV efficiency, receiver conversion and electrical-to-beam efficiency dominate (ST 0.36/0.29/0.22), weather year 0.13; nanoradian pointing negligible. GEO 144–296 kW. Constellation 21–41 kW, weather mostly in availability. |
+
+### E17 (2026-11-14): M7b comparison with ERA5 weather and helio-vs-GEO economics (M8, moved from M8a)
+
+| Field | Content |
+|---|---|
+| Question | Does real weather change the GEO-vs-heliocentric comparison, and how do LCOE/NPV ranges compare on one economic boundary? |
+| Config | `configs/comparison/era5/*`, `configs/economics/{,geo_}{optimistic,nominal,conservative}.yaml` |
+| Code commit | as E14 (snapshot `…113917Z`) |
+| Slurm | 60475691 (four ten-year sweeps + the L3 SRP sweep in one job); compare/economics in session |
+| Result location | `$HELIOSWARM_RUNS_DIR/m8_sweeps/`, `$HELIOSWARM_RUNS_DIR/m8_economics/`; `figures/m8/comparison_era5_*`, `figures/m8/helio_vs_geo_economics.md` |
+| Interpretation | Weather removes 62–66 % (example site) or 10–11 % (aswan) of the delivered power for both architectures alike; GEO/helio power ratio ~90; GEO ~80–95× lower LCOE in every scenario; all LCOEs far above market, NPV negative. |
+
+### E18 (2026-11-14): L3 SRP area-to-mass sensitivity and PV technology curves (M8)
+
+| Field | Content |
+|---|---|
+| Question | How much does a mass-proxy-consistent A/m (0.6 m²/kg instead of 0.02) change the L1 orbit and P_grid of the 1 au case; how do sourced PV technologies behave vs distance? |
+| Config | `configs/scenarios/sensitivity/srp_area_to_mass_sweep.yaml`; `configs/scenarios/{nominal,pv_iii_v_3g30a,pv_silicon_k7_1979}.yaml` |
+| Code commit | as E14 |
+| Slurm | 60475691; `helioswarm characterize` in session (no kernels) |
+| Result location | `$HELIOSWARM_RUNS_DIR/m8_sweeps/m8_srp_area_to_mass/`, `$HELIOSWARM_RUNS_DIR/m8_characterize/` |
+| Interpretation | Drift 6.1e4 → 1.04e6 km over one year, P_grid +1.1 %; III-V η 0.318 vs legacy Si 0.151 at 1 au, all technologies thermally infeasible at 0.5 au. |

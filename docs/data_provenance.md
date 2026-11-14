@@ -265,3 +265,54 @@ The model-validity thresholds `models.gaussian_beam_min_truncation_ratio` (defau
 documented error bounds are computed, not cited: the Gaussian truncation factor by closed form
 (checked by quadrature in `tests/unit/test_config_validity.py`), and the air-mass excess against
 the Kasten & Young (1989), Appl. Opt. 28, 4735 interpolation formula.
+
+## M8: PV technology data (sourced), study inputs
+
+**Verification of the sources.** Both sources were fetched on 2026-11-14 into
+`/n/netscratch/hekstra_lab/Lab/ian_poon/helioswarm/sources/pv_datasheets/` (not committed; values
+transcribed below with `pdftotext -layout`), and their identity was checked at the publisher:
+the AZUR SPACE datasheets are served from the manufacturer's own site (azurspace.com product
+download links); the JPL report's bibliographic record was read from the NASA Technical Reports
+Server API (`https://ntrs.nasa.gov/api/citations/19790024459`: title, authors, report numbers
+NASA-CR-162290 / JPL-PUB-78-15-VOL-8, date 1979-09-01). Neither has a DOI.
+
+| Source | File / SHA-256 | Values used | Use |
+|---|---|---|---|
+| AZUR SPACE Solar Power GmbH, "30% Triple-Junction (TJ) III-V Bare Solar Cells & Assemblies, TJ 3G30-Advanced (8x8)", datasheet DB 00010892-01, issue 11-Apr-2025, https://www.azurspace.com/media/uploads/file_links/file/bdb_00010892-01-00_tj3g30-advanced_8x8.pdf | `07a7f5ff5cbaa358a79cd1430fbaa496a51a0c62e03b82221f249f5bd77821ff` | CIC (assembly) BOL: η = 29.0 % at AM0 1367 W/m², 28 °C; Vmp = 2400 mV, Imp = 998 mA; ΔVmp/ΔT = −6.7 mV/°C, ΔImp/ΔT = +0.48 mA/°C (BOL, range 28–140 °C); absorptivity ≤ 0.91 (threshold value, 100 µm AR coverglass) | `configs/scenarios/pv_iii_v_3g30a.yaml`; optimistic η end / nominal γ of `configs/scenarios/*` and `configs/uncertainty*.yaml` |
+| AZUR SPACE, TJ 3G30-Advanced (HP), datasheet DB 00010894-02, issue 24-Mar-2026, https://www.azurspace.com/media/uploads/file_links/file/bdb_00010894-02-00_3g30-advanced_hp.pdf | `ce04aaf519a2df4b3ef31d4c79c36b2951d595b449f8df340ca17f1479b73998` | same Voc/Vmp coefficients; CIC η 28.7 % (1367 W/m²) | cross-check only (not used) |
+| B. E. Anspaugh, D. M. Beckert, R. G. Downing, T. F. Miyahira, R. S. Weiss, "Characterization of Solar Cells for Space Applications, Volume VIII: Electrical Characteristics of Spectrolab BSF, BSR, Textured 290-Micron Solar Cells (K7) as a Function of Intensity, Temperature and Irradiation", JPL Publication 78-15 Vol. VIII (NASA-CR-162290), 1 Sep 1979, https://ntrs.nasa.gov/api/citations/19790024459/downloads/19790024459.pdf | `4d55c65a6f3b91ff9b52b1f89cf5fdec1d044b5a1bbbc2cffee8e0ea857e7f95` | Table 7 (average AM0 efficiency, %, 135.3 mW/cm² column; bare cells, no coverslide): 15.24 at 20 °C, 13.90 at 40 °C (scanned report, OCR text; the neighbouring entries 16.48 at 0 °C and 12.54 at 60 °C confirm the monotone trend) | `configs/scenarios/pv_silicon_k7_1979.yaml`; conservative ends |
+| JPL Publication 78-15 Vol. V (OCLI MLAR wraparound silicon cells), NTRS 19790014459 | `c95743526dc35c1a45ee407926d793a04ee32a7f6736d0400864c11e4981c7e0` | — | fetched while searching; not used |
+
+Derived values (arithmetic on the sourced numbers; provenance `derived` in the uncertainty study
+files — an extension of the PDF §13.4 label set that requires a source — and **`sourced`** in the
+machine-readable provenance of every run configuration that uses them: `provenance_overrides`
+in `configs/scenarios/{nominal,optimistic,conservative,pv_iii_v_3g30a,pv_silicon_k7_1979}.yaml`
+and the GEO twins, so run manifests and provenance tables report them as sourced; the citation is
+in each file's header and `project.description`; the K7 absorptivity 0.90 stays `assumed`;
+tested by `tests/integration/test_m8_forward.py::test_pv_technology_values_follow_from_the_sourced_numbers`):
+
+| Quantity | Formula | Value |
+|---|---|---|
+| III-V γ | −6.7/2400 + 0.48/998 | −0.00231 K⁻¹ (−2.311e-3) |
+| III-V η_ref at 300 K | (0.290/0.91)(1 − 0.00231 (300 − 301.15)) | 0.3195 |
+| K7 silicon γ | (13.90 − 15.24)/(20 × 15.24) | −0.0044 K⁻¹ (−4.396e-3) |
+| K7 silicon η_ref at 300 K | (0.1524/0.90)(1 − 0.0044 × 6.85); α = 0.90 **assumed** (not in the source) | 0.1642 |
+
+The optimistic scenario and the triangular upper end of `pv_efficiency_reference` in
+`configs/uncertainty*.yaml` use the III-V η_ref = 0.3195 (converted with α = 0.91) with the base
+absorptivity 0.90 and the assumed γ = −0.0004 K⁻¹, i.e. 28.74 % incident-basis efficiency at
+28 °C, 0.9 % below the datasheet's 29.0 % (only `pv_iii_v_3g30a.yaml` reproduces 29.0 %; M8
+review, documented in the scenario header and `docs/model_assumptions.md` M8).
+
+Not sourced (labelled `assumed` everywhere): laser electrical-to-beam efficiency, laser-PV
+receiver conversion efficiency, pointing jitter, radiator specific mass, the optimisation bounds,
+objective reference points and constraint limits (e.g. the 1000 W/m² irradiance cap, 10 MW
+receiver capacity, 100 m aperture, 0.2 minimum availability), the Rayleigh pointing-bias scale and
+the wavefront-error range of the uncertainty studies, and equal probabilities of the ERA5 years.
+A sourced laser-PV receiver efficiency or flux limit was not found; none was invented.
+
+ERA5 (M8a provenance) is the aleatory weather input of `configs/uncertainty*.yaml` and the high
+fidelity level; economics inputs are those of `configs/economics/*.yaml` (M8a), plus
+`geo_optimistic.yaml` / `geo_conservative.yaml` (M8): the optimistic/conservative cost files with
+the explicit, sourced LEO→GEO Δv of `geo_nominal.yaml` (NASA OTPS 2024, PDF p. 90: ">4,700 m/s");
+the geo/helio files differ only in the transport block (tested).

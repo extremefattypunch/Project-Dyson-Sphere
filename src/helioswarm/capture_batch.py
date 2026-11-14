@@ -435,8 +435,12 @@ def evaluate_beam_batched(
     *,
     backend: BatchBackend = "numpy",
     epochs_tdb_s: ArrayLike | None = None,
+    percentiles: bool = True,
 ) -> BeamResult:
     """:func:`helioswarm.beam.evaluate_beam` for ``airy_far_field`` through the batched kernel.
+
+    ``percentiles=False`` skips the p05/p50/p95 capture percentiles (NaN, method
+    ``not_computed``; :func:`airy_capture_batch`); the expected capture is unchanged.
 
     Same inputs, outputs and validity checks as the M5 function; only the capture quadrature
     is batched (module docstring). The peak irradiance per watt ``pi D^2/(4 lambda^2 R^2)``,
@@ -473,6 +477,7 @@ def evaluate_beam_batched(
         r * settings.pointing_bias_rad,
         r * settings.pointing_sigma_rad,
         backend=backend,
+        percentiles=percentiles,
     )
     factor = settings.wavefront_efficiency * settings.lattice_main_lobe_fraction
     proj_err = np.zeros(r.size)

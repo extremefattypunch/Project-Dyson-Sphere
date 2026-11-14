@@ -1,0 +1,23 @@
+# M8 (moved from M8a): the M7b harmonised comparison re-run with REAL WEATHER (ERA5 hourly total
+# cloud cover, M8a threshold model) at the comparison receiver site. Optical only: the microwave
+# links are not coupled to ERA5 (ITU-R statistics, M8a limitation). The weather block is the same
+# in the heliocentric and the GEO file (checked by helioswarm compare: only orbit/geometry keys
+# may differ).
+extends: ../geo_optical.yaml
+
+project:
+  name: "cmp_geo_optical_era5"
+  description: "M8: M7b GEO optical case with ERA5 weather at the example site"
+
+models:
+  weather_source: "era5"     # M8a: ERA5 cloud outage at the receiver (optical link)
+
+weather:
+  era5_dataset: "reanalysis-era5-single-levels-timeseries"
+  era5_first_year: 2014
+  era5_last_year: 2023
+  interpolation: "nearest"
+  outage_model: "threshold"
+  cloud_cover_threshold: 0.5
+  year_mapping: "fixed"
+  historical_year: 2019        # base point; the sweeps vary the weather year 2014-2023

@@ -1,0 +1,113 @@
+# helioswarm OPTIMISATION study (M8; PDF §12.1 constellation and operations variables): the M7
+# demo network (constellation_demo.yaml: optical satellites at 1 au, three receiver sites with
+# capacity limits, deterministic scheduler) with ring count, satellites per ring, phase
+# distribution and span, collector area per satellite, receiver beam slots per site and the
+# scheduling policy as decision variables. Network P_grid is the incoherent sum after the
+# scheduler (no double counting, M7). Every value is an assumed study setting.
+#
+#   helioswarm optimize configs/optimization_constellation.yaml --out $HELIOSWARM_RUNS_DIR/optimization_constellation
+#
+# Ring count is a categorical bundle that sets the whole ring list; the satellites-per-ring,
+# phase-distribution and phase-span variables act on the FIRST ring (rings[0]); the second ring
+# of the two-ring choice is fixed (5 satellites at 1 au inclined 5 deg, even phases).
+#
+# Fidelity levels: 'high' keeps the 3896 s grid of 'screening' (and of the M7 demo; no finer
+# grid, for memory/cost of N <= 21 satellites over one year); it differs by L1 orbits, the
+# per-epoch reference capture and ERA5 weather. Receiver infrastructure enters only through the
+# beam-slot count; there is no receiver-area objective (as in optimization.yaml).
+optimization_schema_version: 1
+name: m8_constellation
+description: >-
+  Constellation demo network: ring count, satellites in ring 1, phase distribution/span,
+  collector area, receiver beam slots, scheduling policy; maximise network P_grid and
+  availability above 10 kW, minimise the network mass proxy.
+evaluator: forward_model
+base_config: constellation_demo.yaml
+search_fidelity: screening
+workers: 8
+
+fidelity:
+  screening:
+    description: >-
+      L0 Kepler orbits, 3896 s grid (M7 production grid), batched Airy capture (numpy_batch),
+      scenario clear sky at every site.
+    unset:
+      - orbit.include_planetary_perturbations
+      - orbit.include_solar_radiation_pressure
+      - orbit.cr
+      - orbit.area_to_mass_m2_kg
+      - time.integrator_step_s
+    overrides:
+      orbit.model: two_body_kepler
+    backend: numpy_batch
+  high:
+    description: >-
+      L1 stacked test particles with planets and SRP (M7), 3896 s grid, per-epoch M5 reference
+      capture, ERA5 cloud outages at each site (threshold 0.5, weather year 2019).
+    overrides:
+      models.weather_source: era5
+      weather.era5_dataset: reanalysis-era5-single-levels-timeseries
+      weather.era5_first_year: 2014
+      weather.era5_last_year: 2023
+      weather.interpolation: nearest
+      weather.outage_model: threshold
+      weather.cloud_cover_threshold: 0.5
+      weather.year_mapping: fixed
+      weather.historical_year: 2019
+    backend: numpy
+
+evaluation:
+  power_threshold_W: 10000.0
+
+variables:
+  - name: ring_count
+    kind: categorical
+    choices:
+      one_ring:
+        constellation.rings:
+          - {name: ring_a, n_satellites: 10, phase_distribution: even, phase_offset_deg: 30.0,
+             phase_span_deg: 300.0}
+      two_rings:
+        constellation.rings:
+          - {name: ring_a, n_satellites: 10, phase_distribution: even, phase_offset_deg: 30.0,
+             phase_span_deg: 300.0}
+          - {name: ring_b, n_satellites: 5, phase_distribution: even, phase_offset_deg: 60.0,
+             phase_span_deg: 240.0, inclination_deg: 5.0}
+  - {name: n_satellites, kind: integer, key: "constellation.rings[0].n_satellites", lower: 2,
+     upper: 20, unit: "1"}
+  - name: phase_distribution
+    kind: categorical
+    choices:
+      even: {"constellation.rings[0].phase_distribution": even}
+      random: {"constellation.rings[0].phase_distribution": random}
+  - {name: phase_span, kind: real, key: "constellation.rings[0].phase_span_deg", lower: 60.0,
+     upper: 300.0, unit: deg}
+  - {name: collector_area, kind: real, key: collector.area_m2, lower: 1.0e3, upper: 3.0e4, log: true,
+     unit: m^2}
+  - {name: beam_slots, kind: integer, key: receiver.max_simultaneous_beams, lower: 1, upper: 10,
+     unit: "1"}
+  - name: scheduling_policy
+    kind: categorical
+    choices:
+      greedy: {constellation.scheduler.policy: greedy_max_power}
+      optimal: {constellation.scheduler.policy: optimal_assignment}
+
+objectives:
+  - {metric: p_grid_mean_W, sense: max, reference: 0.0}
+  - {metric: mass_proxy_kg, sense: min, reference: 2.0e6}
+  - {metric: availability_above_threshold, sense: max, reference: 0.0}
+
+constraints:
+  - {name: min_availability, metric: availability, op: ">=", limit: 0.9,
+     description: "network availability >= 0.9 (assumed requirement)"}
+  - {name: receiver_capacity, metric: capacity_loss_fraction, op: "<=", limit: 0.3,
+     description: "energy lost to receiver capacity <= 30 % of the unconstrained baseline (assumed)"}
+
+algorithm:
+  pop_size: 16
+  n_generations: 10
+  seeds: [20261131, 20261132]
+
+reevaluation:
+  fidelity: high
+  n_candidates: 3

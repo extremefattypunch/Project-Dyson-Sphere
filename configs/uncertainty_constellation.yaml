@@ -1,0 +1,86 @@
+# helioswarm UNCERTAINTY study (M8; PDF §12.4) of the M7 constellation demo network with ERA5
+# weather (constellation_demo_era5.yaml: 10 optical satellites at 1 au, three receiver sites with
+# capacity limits, deterministic scheduler; M8a ERA5 outages at each site, sites sharing the
+# historical hour so the real spatial correlation is kept).
+#
+#   helioswarm uncertainty configs/uncertainty_constellation.yaml --out $HELIOSWARM_RUNS_DIR/uncertainty_constellation
+#
+# Nested Monte Carlo only (16 epistemic x 4 aleatory = 64 network-year evaluations at ~90-100 s
+# each, measured, M8.md D). No Sobol design: a useful one (N >= 128, 7 inputs: >= 1152 network
+# years, ~30 CPU-hours) is beyond this milestone's budget; dropped and documented. Technology
+# ranges are those of uncertainty.yaml / configs/scenarios (same provenance).
+uncertainty_schema_version: 1
+name: m8_uncertainty_constellation
+description: >-
+  Nested Monte Carlo of the constellation demo (N = 10, three sites, scheduler) with ERA5 weather
+  years as the aleatory input: network P_grid, availability, mass proxy.
+evaluator: forward_model
+base_config: constellation_demo_era5.yaml
+fidelity_name: screening_era5
+fidelity:
+  description: >-
+    L0 Kepler orbits (the demo is at 1 au, planets/SRP omitted), 3896 s grid, batched Airy
+    capture (numpy_batch), ERA5 cloud outages at every site (threshold 0.5; the weather year is
+    the aleatory input), M7 scheduler.
+  unset:
+    - orbit.include_planetary_perturbations
+    - orbit.include_solar_radiation_pressure
+    - orbit.cr
+    - orbit.area_to_mass_m2_kg
+    - time.integrator_step_s
+  overrides:
+    orbit.model: two_body_kepler
+  backend: numpy_batch
+workers: 8
+
+evaluation:
+  power_threshold_W: 10000.0
+
+outputs:
+  - p_grid_mean_W
+  - availability
+  - availability_above_threshold
+  - mass_proxy_kg
+  - capacity_loss_fraction
+
+epistemic:
+  - name: pv_efficiency
+    key: collector.pv_efficiency_reference
+    distribution: {type: triangular, low: 0.1642, mode: 0.30, high: 0.3195}
+    provenance: derived
+    source: "as configs/uncertainty.yaml (AZUR SPACE DB 00010892-01; JPL Pub. 78-15 Vol. VIII; mode PDF §5)"
+    unit: "1"
+  - name: pv_temperature_coefficient
+    key: collector.temperature_coefficient_per_K
+    distribution: {type: triangular, low: -0.0044, mode: -0.00231, high: -0.0004}
+    provenance: derived
+    source: "as configs/uncertainty.yaml"
+    unit: K^-1
+  - name: electrical_to_beam_efficiency
+    key: transmitter.electrical_to_beam_efficiency
+    distribution: {type: triangular, low: 0.35, mode: 0.50, high: 0.60}
+    provenance: assumed
+    unit: "1"
+  - name: receiver_conversion
+    key: receiver.conversion_efficiency
+    distribution: {type: triangular, low: 0.30, mode: 0.40, high: 0.55}
+    provenance: assumed
+    unit: "1"
+  - name: radiator_specific_mass
+    key: thermal.radiator_specific_mass_kg_m2
+    distribution: {type: triangular, low: 2.0, mode: 5.0, high: 10.0}
+    provenance: assumed
+    unit: kg m^-2
+
+aleatory:
+  - name: weather_year
+    key: weather.historical_year
+    distribution: {type: discrete_uniform, values: [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]}
+    provenance: sourced
+    source: "ERA5 hourly total cloud cover 2014-2023 at the site nodes (Hersbach et al. 2020, doi:10.1002/qj.3803; CDS doi:10.24381/1cf1ad76); each year equally likely (assumed)"
+    unit: year
+
+monte_carlo:
+  seed: 20261116
+  n_epistemic: 16
+  n_aleatory: 4

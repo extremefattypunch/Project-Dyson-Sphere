@@ -1,0 +1,102 @@
+# helioswarm OPTIMISATION study (M8; PDF §12.1 "Transmitter: technology"): the transmitter
+# technology as a CATEGORICAL decision variable (optical laser + laser-PV receiver vs microwave
+# array + rectenna), with aperture diameter, receiver radius and collector area. Each choice is a
+# bundle of the technology blocks of the harmonised M7b comparison (comparison/_optical.yaml,
+# comparison/_microwave.yaml): mode, wavelength, illumination/taper, efficiencies, pointing, beam
+# model and receiver technology change together, so every decoded design is a coherent
+# configuration of one technology. Optical apertures large enough to leave the far field fail
+# the Airy validity check: they are recorded as failed (infeasible) designs, never dropped.
+#
+#   helioswarm optimize configs/optimization_technology.yaml --out $HELIOSWARM_RUNS_DIR/optimization_technology
+#
+# Atmosphere per technology as in M7b: optical scenario clear sky, microwave ITU-R
+# P.618/P.676/P.840 at 1 % exceedance (set by the bundles, identical at both fidelity levels).
+optimization_schema_version: 1
+name: m8_technology
+description: >-
+  Categorical transmitter technology (optical vs microwave) x aperture x receiver radius x
+  collector area for one heliocentric satellite (1 au, 30 deg ahead of the Earth): maximise
+  P_grid, minimise the mass proxy.
+evaluator: forward_model
+base_config: comparison/helio_1au_optical.yaml
+search_fidelity: screening
+workers: 8
+
+fidelity:
+  screening:
+    description: >-
+      L0 Kepler orbit, 3896 s grid, per-epoch M5 reference capture (optical Airy; microwave
+      aperture far field of the tapered array).
+    unset:
+      - orbit.include_planetary_perturbations
+      - orbit.include_solar_radiation_pressure
+      - orbit.cr
+      - orbit.area_to_mass_m2_kg
+      - time.integrator_step_s
+    overrides:
+      orbit.model: two_body_kepler
+      time.output_step_s: 3896
+    backend: numpy
+  high:
+    description: >-
+      L1 with planets and SRP, 974 s grid, per-epoch reference capture.
+    overrides:
+      time.output_step_s: 974
+    backend: numpy
+
+evaluation:
+  power_threshold_W: 1000.0
+  mass_proxy:
+    collector_areal_mass_kg_m2: 1.0
+    transmitter_areal_mass_kg_m2: 50.0
+    bus_mass_kg: 500.0
+
+variables:
+  - name: technology
+    kind: categorical
+    choices:
+      optical:
+        transmitter.mode: optical
+        transmitter.wavelength_m: 1.0e-6
+        transmitter.electrical_to_beam_efficiency: 0.50
+        transmitter.pointing_sigma_rad: 1.0e-9
+        transmitter.aperture_illumination: uniform_circular
+        receiver.technology: laser_photovoltaic
+        receiver.conversion_efficiency: 0.40
+        models.beam: airy_far_field
+        models.atmosphere: scenario
+      microwave:
+        transmitter.mode: microwave
+        transmitter.wavelength_m: 0.12236426857142857
+        transmitter.electrical_to_beam_efficiency: 0.70
+        transmitter.pointing_sigma_rad: 1.0e-6
+        transmitter.aperture_illumination: parabolic_on_pedestal
+        transmitter.edge_taper_dB: 10.0
+        transmitter.array_element_spacing_m: 0.06
+        transmitter.array_element_pattern_exponent: 1.0
+        receiver.technology: rectenna
+        receiver.conversion_efficiency: 0.85
+        models.beam: aperture_far_field
+        models.atmosphere: itu_r
+  - {name: aperture_diameter, kind: real, key: transmitter.aperture_diameter_m, lower: 1.0,
+     upper: 3000.0, log: true, unit: m}
+  - {name: receiver_radius, kind: real, key: receiver.radius_m, lower: 100.0, upper: 10000.0,
+     log: true, unit: m}
+  - {name: collector_area, kind: real, key: collector.area_m2, lower: 1.0e3, upper: 1.0e5, log: true,
+     unit: m^2}
+
+objectives:
+  - {metric: p_grid_mean_W, sense: max, reference: 0.0}
+  - {metric: mass_proxy_kg, sense: min, reference: 4.0e8}
+
+constraints:
+  - {name: thermal, metric: thermal_feasible_fraction, op: ">=", limit: 1.0, scale: 0.01}
+
+algorithm:
+  pop_size: 24
+  n_generations: 15
+  seeds: [20261121, 20261122]
+
+reevaluation:
+  fidelity: high
+  n_candidates: 4

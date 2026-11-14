@@ -1,0 +1,16 @@
+# M8 (moved from M8a): heliocentric vs GEO optical with ERA5 weather at the aswan receiver,
+# ten weather years each (M7b comparison machinery; mass proxy as comparison.yaml, assumed).
+#   helioswarm compare configs/comparison/era5/comparison_era5_aswan.yaml \
+#       --runs-dir $HELIOSWARM_RUNS_DIR/comparison_era5 --out $HELIOSWARM_RUNS_DIR/comparison_era5/report_aswan
+comparison_schema_version: 1
+name: geo_vs_helio_era5_aswan
+description: "M8: GEO vs heliocentric 1 au optical with ERA5 weather (2014-2023) at the aswan site"
+mass_proxy:
+  collector_areal_mass_kg_m2: 1.0
+  transmitter_areal_mass_kg_m2: 50.0
+  bus_mass_kg: 500.0
+cases:
+  - label: helio_1au_optical_era5_aswan
+    sweep: helio_1au_optical_era5_aswan_sweep.yaml
+  - label: geo_optical_era5_aswan
+    sweep: geo_optical_era5_aswan_sweep.yaml

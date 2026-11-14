@@ -9,6 +9,7 @@ agree with the numpy batch to 1e-12.
 
 from __future__ import annotations
 
+import dataclasses
 import math
 import os
 
@@ -124,6 +125,28 @@ def test_evaluate_beam_batched_matches_evaluate_beam() -> None:
     np.testing.assert_allclose(
         got.diagnostics.first_null_radius_m, ref.diagnostics.first_null_radius_m, rtol=1e-15
     )
+
+
+def test_batched_beam_without_percentiles_keeps_the_expected_capture() -> None:
+    # M8 screening option: the p05/p50/p95 diagnostics are skipped (NaN, "not_computed");
+    # the expected/nominal/bias-only capture is the same quadrature, hence bit-identical.
+    cfg = load_config(MVP_CONFIG)
+    st = beam_settings_from_config(cfg)
+    rng = np.random.default_rng(3)
+    r = rng.uniform(1.6e11, 1.8e11, 15)
+    el = rng.uniform(0.2, 1.5, 15)
+    full = evaluate_beam_batched(r, el, st, backend="numpy")
+    lean = evaluate_beam_batched(r, el, st, backend="numpy", percentiles=False)
+    for name in ("capture_fraction", "capture_fraction_nominal", "capture_fraction_bias_only"):
+        assert np.array_equal(getattr(lean, name), getattr(full, name))
+    assert np.all(np.isnan(lean.capture_fraction_p05))
+    assert set(lean.diagnostics.percentile_method.tolist()) == {"not_computed"}
+    # The BeamResult invariant still rejects NaN percentiles that were not deliberately skipped.
+    diag = dataclasses.replace(
+        lean.diagnostics, percentile_method=np.full(r.size, "exact_monotone")
+    )
+    with pytest.raises(ValueError, match="capture_fraction_p05 must lie in"):
+        dataclasses.replace(lean, diagnostics=diag)
 
 
 def test_batched_beam_refuses_other_models() -> None:

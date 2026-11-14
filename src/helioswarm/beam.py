@@ -389,6 +389,12 @@ class BeamResult:
             "capture_fraction_p95",
         ):
             v = getattr(self, name)
+            if (
+                name.startswith("capture_fraction_p")
+                and np.all(np.isnan(v))
+                and np.all(np.asarray(self.diagnostics.percentile_method) == "not_computed")
+            ):
+                continue  # percentiles not requested (batched kernel, percentiles=False)
             if np.any(~np.isfinite(v)) or np.any(v < 0.0) or np.any(v > 1.0 + CAPTURE_TOLERANCE):
                 raise ValueError(f"BeamResult.{name} must lie in [0, 1]")
 

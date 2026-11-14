@@ -1,0 +1,2270 @@
+{
+  "definition_sha256": "262d183ccf4fdd9acfc784e776098104110ec1a655cd6c8a87225b9a953d0eff",
+  "fidelity": "screening_era5",
+  "fidelity_description": "L0 two-body orbit (planets/SRP omitted: 0.02 % on P_grid at 1 au, M7b/M8 re-evaluation), day-incommensurate 3896 s grid, batched Airy capture (numpy_batch), ERA5 total cloud cover at the receiver (threshold 0.5, nearest node; the weather year is an aleatory input).",
+  "layout": "helioswarm-uncertainty-collation/1",
+  "monte_carlo": {
+    "availability": {
+      "aleatory_p05_p95_width": {
+        "max": 0.0404537037037037,
+        "mean": 0.028532986111111103,
+        "min": 0.009654320987654313,
+        "n": 64,
+        "p05": 0.010751234567901233,
+        "p50": 0.031390432098765436,
+        "p95": 0.03982716049382716
+      },
+      "epistemic_interval_of_expected_value": {
+        "max": 0.16219907407407405,
+        "mean": 0.15194275655864198,
+        "min": 0.14262345679012345,
+        "n": 64,
+        "p05": 0.14478202160493825,
+        "p50": 0.15131172839506174,
+        "p95": 0.15877391975308644
+      },
+      "epistemic_rows_used": 64,
+      "n_aleatory": 8,
+      "n_epistemic": 64,
+      "n_nonfinite": 0,
+      "pooled": {
+        "max": 0.16666666666666666,
+        "mean": 0.15194275655864198,
+        "min": 0.12450617283950617,
+        "n": 512,
+        "p05": 0.12450617283950617,
+        "p50": 0.15660493827160493,
+        "p95": 0.16666666666666666
+      },
+      "variance": {
+        "aleatory": 0.00015019430674290178,
+        "aleatory_noise_sd_of_row_mean": 0.004332930687521175,
+        "between_row_population": 2.1946328559530128e-05,
+        "epistemic": 3.5203946382472485e-06,
+        "epistemic_fraction": 0.022902133671119214,
+        "epistemic_fraction_upper_bound": 0.14309741996603517,
+        "epistemic_unclipped": 3.5203946382472485e-06,
+        "total_population": 0.00015336634695956914,
+        "within_row_population": 0.00013142001840003905
+      }
+    },
+    "availability_above_threshold": {
+      "aleatory_p05_p95_width": {
+        "max": 0.0404537037037037,
+        "mean": 0.028532986111111103,
+        "min": 0.009654320987654313,
+        "n": 64,
+        "p05": 0.010751234567901233,
+        "p50": 0.031390432098765436,
+        "p95": 0.03982716049382716
+      },
+      "epistemic_interval_of_expected_value": {
+        "max": 0.16219907407407405,
+        "mean": 0.15194275655864198,
+        "min": 0.14262345679012345,
+        "n": 64,
+        "p05": 0.14478202160493825,
+        "p50": 0.15131172839506174,
+        "p95": 0.15877391975308644
+      },
+      "epistemic_rows_used": 64,
+      "n_aleatory": 8,
+      "n_epistemic": 64,
+      "n_nonfinite": 0,
+      "pooled": {
+        "max": 0.16666666666666666,
+        "mean": 0.15194275655864198,
+        "min": 0.12450617283950617,
+        "n": 512,
+        "p05": 0.12450617283950617,
+        "p50": 0.15660493827160493,
+        "p95": 0.16666666666666666
+      },
+      "variance": {
+        "aleatory": 0.00015019430674290178,
+        "aleatory_noise_sd_of_row_mean": 0.004332930687521175,
+        "between_row_population": 2.1946328559530128e-05,
+        "epistemic": 3.5203946382472485e-06,
+        "epistemic_fraction": 0.022902133671119214,
+        "epistemic_fraction_upper_bound": 0.14309741996603517,
+        "epistemic_unclipped": 3.5203946382472485e-06,
+        "total_population": 0.00015336634695956914,
+        "within_row_population": 0.00013142001840003905
+      }
+    },
+    "lcoe_usd_per_kWh": {
+      "aleatory_p05_p95_width": {
+        "max": 1071.8247282829116,
+        "mean": 471.85288693869427,
+        "min": 116.5784676658086,
+        "n": 64,
+        "p05": 183.65508820031786,
+        "p50": 487.05221594015086,
+        "p95": 770.4449905373996
+      },
+      "epistemic_interval_of_expected_value": {
+        "max": 4112.2083894817715,
+        "mean": 2163.982058682119,
+        "min": 1133.351041636868,
+        "n": 64,
+        "p05": 1394.2877485905162,
+        "p50": 2084.840943749586,
+        "p95": 3297.3648031911753
+      },
+      "epistemic_rows_used": 64,
+      "n_aleatory": 8,
+      "n_epistemic": 64,
+      "n_nonfinite": 0,
+      "pooled": {
+        "max": 5015.282041120678,
+        "mean": 2163.982058682119,
+        "min": 1022.3159146935028,
+        "n": 512,
+        "p05": 1355.235325457631,
+        "p50": 2086.896972629797,
+        "p95": 3301.819328128092
+      },
+      "variance": {
+        "aleatory": 44266.387551998414,
+        "aleatory_noise_sd_of_row_mean": 74.3861441667721,
+        "between_row_population": 311997.3183383867,
+        "epistemic": 311416.3582807105,
+        "epistemic_fraction": 0.8755453052737662,
+        "epistemic_fraction_upper_bound": 0.889564496588681,
+        "epistemic_unclipped": 311416.3582807105,
+        "total_population": 350730.4074463853,
+        "within_row_population": 38733.08910799861
+      }
+    },
+    "mass_proxy_kg": {
+      "aleatory_p05_p95_width": {
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "n": 64,
+        "p05": 0.0,
+        "p50": 0.0,
+        "p95": 0.0
+      },
+      "epistemic_interval_of_expected_value": {
+        "max": 18535.57044542901,
+        "mean": 16762.938615452847,
+        "min": 15296.278223172541,
+        "n": 64,
+        "p05": 15706.833880152002,
+        "p50": 16665.495950512035,
+        "p95": 18065.41815077243
+      },
+      "epistemic_rows_used": 64,
+      "n_aleatory": 8,
+      "n_epistemic": 64,
+      "n_nonfinite": 0,
+      "pooled": {
+        "max": 18535.57044542901,
+        "mean": 16762.938615452847,
+        "min": 15296.278223172541,
+        "n": 512,
+        "p05": 15705.637535680404,
+        "p50": 16665.495950512035,
+        "p95": 18066.27142176428
+      },
+      "variance": {
+        "aleatory": 0.0,
+        "aleatory_noise_sd_of_row_mean": 0.0,
+        "between_row_population": 569231.8720190257,
+        "epistemic": 578267.2985590103,
+        "epistemic_fraction": 1.0,
+        "epistemic_fraction_upper_bound": 1.0,
+        "epistemic_unclipped": 578267.2985590103,
+        "total_population": 569231.8720190257,
+        "within_row_population": 0.0
+      }
+    },
+    "p_grid_mean_W": {
+      "aleatory_p05_p95_width": {
+        "max": 1019.628847095466,
+        "mean": 531.0257647884512,
+        "min": 96.42409081507776,
+        "n": 64,
+        "p05": 202.28567408769538,
+        "p50": 542.8715471949877,
+        "p95": 921.1556309188953
+      },
+      "epistemic_interval_of_expected_value": {
+        "max": 3850.158107655233,
+        "mean": 2535.1885594361497,
+        "min": 1309.5013977765307,
+        "n": 64,
+        "p05": 1674.9463312774096,
+        "p50": 2504.850993785997,
+        "p95": 3457.871773105595
+      },
+      "epistemic_rows_used": 64,
+      "n_aleatory": 8,
+      "n_epistemic": 64,
+      "n_nonfinite": 0,
+      "pooled": {
+        "max": 4289.843303775031,
+        "mean": 2535.18855943615,
+        "min": 1064.3915234836888,
+        "n": 512,
+        "p05": 1630.0016673282387,
+        "p50": 2495.790493189344,
+        "p95": 3563.703637229045
+      },
+      "variance": {
+        "aleatory": 54487.08175663823,
+        "aleatory_noise_sd_of_row_mean": 82.52808745863301,
+        "between_row_population": 285610.3797290706,
+        "epistemic": 283332.9926004284,
+        "epistemic_fraction": 0.8387097573750254,
+        "epistemic_fraction_upper_bound": 0.8569513447820679,
+        "epistemic_unclipped": 283332.9926004284,
+        "total_population": 333286.5762661291,
+        "within_row_population": 47676.19653705845
+      }
+    },
+    "pv_temperature_max_K": {
+      "aleatory_p05_p95_width": {
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "n": 64,
+        "p05": 0.0,
+        "p50": 0.0,
+        "p95": 0.0
+      },
+      "epistemic_interval_of_expected_value": {
+        "max": 315.0961291379001,
+        "mean": 306.0717549120351,
+        "min": 301.39499383009337,
+        "n": 64,
+        "p05": 302.0071191001576,
+        "p50": 305.06542303271385,
+        "p95": 312.2740435970025
+      },
+      "epistemic_rows_used": 64,
+      "n_aleatory": 8,
+      "n_epistemic": 64,
+      "n_nonfinite": 0,
+      "pooled": {
+        "max": 315.0961291379001,
+        "mean": 306.0717549120352,
+        "min": 301.39499383009337,
+        "n": 512,
+        "p05": 301.99661279562696,
+        "p50": 305.06542303271385,
+        "p95": 312.3080790059205
+      },
+      "variance": {
+        "aleatory": 0.0,
+        "aleatory_noise_sd_of_row_mean": 0.0,
+        "between_row_population": 11.38478832716215,
+        "epistemic": 11.56549925299012,
+        "epistemic_fraction": 1.0,
+        "epistemic_fraction_upper_bound": 1.0000000000000002,
+        "epistemic_unclipped": 11.56549925299012,
+        "total_population": 11.384788327162148,
+        "within_row_population": 0.0
+      }
+    }
+  },
+  "monte_carlo_settings": {
+    "n_aleatory": 8,
+    "n_epistemic": 64,
+    "seed": 20261114
+  },
+  "outputs": [
+    "p_grid_mean_W",
+    "availability",
+    "availability_above_threshold",
+    "pv_temperature_max_K",
+    "mass_proxy_kg",
+    "lcoe_usd_per_kWh"
+  ],
+  "parameters": [
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": 0.3195,
+        "low": 0.1642,
+        "mode": 0.3,
+        "type": "triangular"
+      },
+      "key": "collector.pv_efficiency_reference",
+      "name": "pv_efficiency",
+      "provenance": "derived",
+      "source": "ends derived from sourced cell data (AZUR SPACE 3G30A-Advanced datasheet DB 00010892-01; JPL Pub. 78-15 Vol. VIII Table 7), mode assumed (PDF \u00a75 example); configs/scenarios/*.yaml",
+      "unit": "1"
+    },
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": -0.0004,
+        "low": -0.0044,
+        "mode": -0.00231,
+        "type": "triangular"
+      },
+      "key": "collector.temperature_coefficient_per_K",
+      "name": "pv_temperature_coefficient",
+      "provenance": "derived",
+      "source": "low derived from JPL Pub. 78-15 Vol. VIII (K7 silicon), mode derived from the 3G30A datasheet dVmp/dT, dImp/dT, high = PDF \u00a75 example (assumed)",
+      "unit": "K^-1"
+    },
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": 0.6,
+        "low": 0.35,
+        "mode": 0.5,
+        "type": "triangular"
+      },
+      "key": "transmitter.electrical_to_beam_efficiency",
+      "name": "electrical_to_beam_efficiency",
+      "provenance": "assumed",
+      "source": null,
+      "unit": "1"
+    },
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": 0.55,
+        "low": 0.3,
+        "mode": 0.4,
+        "type": "triangular"
+      },
+      "key": "receiver.conversion_efficiency",
+      "name": "receiver_conversion",
+      "provenance": "assumed",
+      "source": null,
+      "unit": "1"
+    },
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": 3e-09,
+        "low": 5e-10,
+        "mode": 1e-09,
+        "type": "triangular"
+      },
+      "key": "transmitter.pointing_sigma_rad",
+      "name": "pointing_jitter",
+      "provenance": "assumed",
+      "source": null,
+      "unit": "rad"
+    },
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": 10.0,
+        "low": 2.0,
+        "mode": 5.0,
+        "type": "triangular"
+      },
+      "key": "thermal.radiator_specific_mass_kg_m2",
+      "name": "radiator_specific_mass",
+      "provenance": "assumed",
+      "source": null,
+      "unit": "kg m^-2"
+    },
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": 1500.0,
+        "low": 85.0,
+        "mode": 850.0,
+        "type": "triangular"
+      },
+      "key": "economics.transport.launch_cost_per_kg_leo_usd",
+      "name": "launch_cost",
+      "provenance": "sourced",
+      "source": "configs/economics/{optimistic,nominal,conservative}.yaml (NASA OTPS 2024, PDF pp. 28, 38, 90; 85 USD/kg derived)",
+      "unit": "USD kg^-1"
+    },
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": 10000.0,
+        "low": 500.0,
+        "mode": 2000.0,
+        "type": "triangular"
+      },
+      "key": "economics.manufacturing_cost_per_kg_usd",
+      "name": "manufacturing_cost",
+      "provenance": "assumed",
+      "source": "configs/economics/nominal.yaml uncertainty range (M8a)",
+      "unit": "USD kg^-1"
+    },
+    {
+      "category": "aleatory",
+      "distribution": {
+        "type": "discrete_uniform",
+        "values": [
+          2014,
+          2015,
+          2016,
+          2017,
+          2018,
+          2019,
+          2020,
+          2021,
+          2022,
+          2023
+        ]
+      },
+      "key": "weather.historical_year",
+      "name": "weather_year",
+      "provenance": "sourced",
+      "source": "ERA5 hourly total cloud cover 2014-2023 at the site node (Hersbach et al. 2020, doi:10.1002/qj.3803; CDS doi:10.24381/1cf1ad76); each year equally likely (assumed)",
+      "unit": "year"
+    },
+    {
+      "category": "aleatory",
+      "distribution": {
+        "scale": 1e-09,
+        "type": "rayleigh"
+      },
+      "key": "transmitter.pointing_bias_rad",
+      "name": "pointing_bias",
+      "provenance": "assumed",
+      "source": null,
+      "unit": "rad"
+    },
+    {
+      "category": "aleatory",
+      "distribution": {
+        "high": 5e-08,
+        "low": 0.0,
+        "type": "uniform"
+      },
+      "key": "transmitter.rms_wavefront_error_m",
+      "name": "wavefront_error",
+      "provenance": "assumed",
+      "source": null,
+      "unit": "m"
+    }
+  ],
+  "parts": {
+    "mc": {
+      "failed": 0,
+      "failures": [],
+      "n": 512,
+      "status": "complete"
+    },
+    "scenarios": {
+      "failed": 0,
+      "failures": [],
+      "n": 5,
+      "status": "complete"
+    },
+    "sobol": {
+      "failed": 0,
+      "failures": [],
+      "n": 3328,
+      "status": "complete"
+    }
+  },
+  "provenance": {
+    "code": {
+      "git_commit": "4a97cff2792286cec73df0fa17626183674c7add",
+      "git_dirty": true,
+      "helioswarm_version": "0.1.0.dev0",
+      "packages": {
+        "astropy": "8.0.2",
+        "helioswarm": "0.1.0.dev0",
+        "itur": "0.4.0",
+        "jax": "0.12.0.1",
+        "jax-cuda12-plugin": null,
+        "jaxlib": "0.12.0.1",
+        "matplotlib": "3.11.2",
+        "numpy": "2.5.4",
+        "pandas": "3.1.1",
+        "pyarrow": "26.0.1",
+        "pydantic": "2.14.3",
+        "pyyaml": "6.0.3",
+        "scipy": "1.18.1",
+        "spiceypy": "8.4.0"
+      },
+      "python_version": "3.12.16",
+      "source_sha256": "6d2e6ac593ed63aeec3a9adb40078ef319b2d98289ab44f457e0cd4972c76104"
+    },
+    "cpu_model": "Intel(R) Xeon(R) Platinum 8268 CPU @ 2.90GHz",
+    "platform": "Linux-4.18.0-553.155.1.el8_10.x86_64-x86_64-with-glibc2.28",
+    "slurm": {
+      "SLURM_ARRAY_JOB_ID": null,
+      "SLURM_ARRAY_TASK_ID": null,
+      "SLURM_CPUS_PER_TASK": "8",
+      "SLURM_JOB_ID": "60458413",
+      "SLURM_JOB_NODELIST": "holy7c02202",
+      "SLURM_JOB_PARTITION": "serial_requeue"
+    },
+    "study_packages": {
+      "SALib": "1.6.0",
+      "numpy": "2.5.4",
+      "pyarrow": "26.0.1",
+      "pymoo": "0.6.2",
+      "scipy": "1.18.1"
+    }
+  },
+  "scenario_range": {
+    "availability": {
+      "max": 0.14882716049382716,
+      "min": 0.14882716049382716
+    },
+    "availability_above_threshold": {
+      "max": 0.14882716049382716,
+      "min": 0.14882716049382716
+    },
+    "lcoe_usd_per_kWh": {
+      "max": 6008.979265513661,
+      "min": 907.1154968284974
+    },
+    "mass_proxy_kg": {
+      "max": 17307.727455386885,
+      "min": 15174.848179803304
+    },
+    "p_grid_mean_W": {
+      "max": 5077.856246028361,
+      "min": 762.7188613701504
+    },
+    "pv_temperature_max_K": {
+      "max": 317.6694799316221,
+      "min": 300.6241484582137
+    }
+  },
+  "scenarios": {
+    "conservative": {
+      "availability": 0.14882716049382716,
+      "availability_above_threshold": 0.14882716049382716,
+      "error": null,
+      "lcoe_usd_per_kWh": 6008.979265513661,
+      "mass_proxy_kg": 17307.727455386885,
+      "p_grid_mean_W": 762.7188613701504,
+      "pv_temperature_max_K": 317.6694799316221,
+      "status": "ok"
+    },
+    "nominal": {
+      "availability": 0.14882716049382716,
+      "availability_above_threshold": 0.14882716049382716,
+      "error": null,
+      "lcoe_usd_per_kWh": 1611.0244344170026,
+      "mass_proxy_kg": 16606.905525400332,
+      "p_grid_mean_W": 2869.5127334829926,
+      "pv_temperature_max_K": 302.968310245482,
+      "status": "ok"
+    },
+    "optimistic": {
+      "availability": 0.14882716049382716,
+      "availability_above_threshold": 0.14882716049382716,
+      "error": null,
+      "lcoe_usd_per_kWh": 907.1154968284974,
+      "mass_proxy_kg": 15174.848179803304,
+      "p_grid_mean_W": 5077.856246028361,
+      "pv_temperature_max_K": 300.6241484582137,
+      "status": "ok"
+    },
+    "pv_iii_v_3g30a": {
+      "availability": 0.14882716049382716,
+      "availability_above_threshold": 0.14882716049382716,
+      "error": null,
+      "lcoe_usd_per_kWh": 1494.276855886077,
+      "mass_proxy_kg": 16781.999616499932,
+      "p_grid_mean_W": 3099.996395069561,
+      "pv_temperature_max_K": 301.5756257669444,
+      "status": "ok"
+    },
+    "pv_silicon_k7_1979": {
+      "availability": 0.14882716049382716,
+      "availability_above_threshold": 0.14882716049382716,
+      "error": null,
+      "lcoe_usd_per_kWh": 3130.2029538996967,
+      "mass_proxy_kg": 15534.966447140949,
+      "p_grid_mean_W": 1458.4745920080102,
+      "pv_temperature_max_K": 317.6694799316221,
+      "status": "ok"
+    }
+  },
+  "sobol": {
+    "availability": {
+      "convergence": {
+        "128": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 1.0568019501445427
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.2512924420065793
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 1.0687816214963455
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.1550245427501192
+          }
+        },
+        "256": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 1.0324389529537195
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.17539493335650977
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 1.0346482233854046
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.11866599802443649
+          }
+        },
+        "32": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 1.0659770655934098
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.5610532197360535
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 1.0782881610289028
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.23987450695134946
+          }
+        },
+        "64": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 1.1497550236228258
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.36151315371011794
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 1.1245531418987778
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.16600295266316414
+          }
+        }
+      },
+      "indices": {
+        "S1": {
+          "electrical_to_beam_efficiency": 0.0,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 0.0,
+          "pointing_jitter": 0.0,
+          "pv_efficiency": 0.0,
+          "pv_temperature_coefficient": 0.0,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.0,
+          "wavefront_error": 0.0,
+          "weather_year": 1.0324389529537195
+        },
+        "S1_conf": {
+          "electrical_to_beam_efficiency": 0.0,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 0.0,
+          "pointing_jitter": 0.0,
+          "pv_efficiency": 0.0,
+          "pv_temperature_coefficient": 0.0,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.0,
+          "wavefront_error": 0.0,
+          "weather_year": 0.17539493335650977
+        },
+        "ST": {
+          "electrical_to_beam_efficiency": 0.0,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 0.0,
+          "pointing_jitter": 0.0,
+          "pv_efficiency": 0.0,
+          "pv_temperature_coefficient": 0.0,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.0,
+          "wavefront_error": 0.0,
+          "weather_year": 1.0346482233854046
+        },
+        "ST_conf": {
+          "electrical_to_beam_efficiency": 0.0,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 0.0,
+          "pointing_jitter": 0.0,
+          "pv_efficiency": 0.0,
+          "pv_temperature_coefficient": 0.0,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.0,
+          "wavefront_error": 0.0,
+          "weather_year": 0.11866599802443649
+        }
+      },
+      "status": "ok",
+      "variance": 0.0001411943786500929
+    },
+    "availability_above_threshold": {
+      "convergence": {
+        "128": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 1.0568019501445427
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.2512924420065793
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 1.0687816214963455
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.1550245427501192
+          }
+        },
+        "256": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 1.0324389529537195
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.17539493335650977
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 1.0346482233854046
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.11866599802443649
+          }
+        },
+        "32": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 1.0659770655934098
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.5610532197360535
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 1.0782881610289028
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.23987450695134946
+          }
+        },
+        "64": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 1.1497550236228258
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.36151315371011794
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 1.1245531418987778
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.0,
+            "pv_temperature_coefficient": 0.0,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.16600295266316414
+          }
+        }
+      },
+      "indices": {
+        "S1": {
+          "electrical_to_beam_efficiency": 0.0,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 0.0,
+          "pointing_jitter": 0.0,
+          "pv_efficiency": 0.0,
+          "pv_temperature_coefficient": 0.0,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.0,
+          "wavefront_error": 0.0,
+          "weather_year": 1.0324389529537195
+        },
+        "S1_conf": {
+          "electrical_to_beam_efficiency": 0.0,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 0.0,
+          "pointing_jitter": 0.0,
+          "pv_efficiency": 0.0,
+          "pv_temperature_coefficient": 0.0,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.0,
+          "wavefront_error": 0.0,
+          "weather_year": 0.17539493335650977
+        },
+        "ST": {
+          "electrical_to_beam_efficiency": 0.0,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 0.0,
+          "pointing_jitter": 0.0,
+          "pv_efficiency": 0.0,
+          "pv_temperature_coefficient": 0.0,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.0,
+          "wavefront_error": 0.0,
+          "weather_year": 1.0346482233854046
+        },
+        "ST_conf": {
+          "electrical_to_beam_efficiency": 0.0,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 0.0,
+          "pointing_jitter": 0.0,
+          "pv_efficiency": 0.0,
+          "pv_temperature_coefficient": 0.0,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.0,
+          "wavefront_error": 0.0,
+          "weather_year": 0.11866599802443649
+        }
+      },
+      "status": "ok",
+      "variance": 0.0001411943786500929
+    },
+    "lcoe_usd_per_kWh": {
+      "convergence": {
+        "128": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.18866698859492967,
+            "launch_cost": 0.00877292115320178,
+            "manufacturing_cost": 0.09728753622776504,
+            "pointing_bias": 4.594524068473691e-05,
+            "pointing_jitter": -0.0006415116983895793,
+            "pv_efficiency": 0.3464170441988423,
+            "pv_temperature_coefficient": 9.64946037561241e-05,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.24545379867765493,
+            "wavefront_error": 0.0074391645337949725,
+            "weather_year": 0.11451474621218027
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.09762975720045604,
+            "launch_cost": 0.023982348030640453,
+            "manufacturing_cost": 0.07315410416269551,
+            "pointing_bias": 0.00042741482349902693,
+            "pointing_jitter": 0.0008708071021643427,
+            "pv_efficiency": 0.16429698005558463,
+            "pv_temperature_coefficient": 0.00777883786374847,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.1170416442344888,
+            "wavefront_error": 0.02535732299308403,
+            "weather_year": 0.08128504571317546
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.18187585386018595,
+            "launch_cost": 0.012089771051780652,
+            "manufacturing_cost": 0.1128386146900508,
+            "pointing_bias": 3.239981769658982e-06,
+            "pointing_jitter": 1.124800999090131e-05,
+            "pv_efficiency": 0.3125253445542075,
+            "pv_temperature_coefficient": 0.0009957292355739769,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.22215538095962026,
+            "wavefront_error": 0.011866866046536816,
+            "weather_year": 0.10763510281274787
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.0732539927639782,
+            "launch_cost": 0.003963059552813075,
+            "manufacturing_cost": 0.033729407503570986,
+            "pointing_bias": 1.483908861696001e-06,
+            "pointing_jitter": 3.6861086332733473e-06,
+            "pv_efficiency": 0.09622922439060318,
+            "pv_temperature_coefficient": 0.00046190199940928154,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.06407244334888675,
+            "wavefront_error": 0.00402216879571017,
+            "weather_year": 0.035861845700365456
+          }
+        },
+        "256": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.1656632784472531,
+            "launch_cost": 0.01040377763949332,
+            "manufacturing_cost": 0.11658061994900988,
+            "pointing_bias": 6.0215956680022675e-06,
+            "pointing_jitter": -0.00029323814520529557,
+            "pv_efficiency": 0.31944679335070103,
+            "pv_temperature_coefficient": 0.0018161036050103184,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.21896960205487004,
+            "wavefront_error": 0.010390168961620604,
+            "weather_year": 0.10640950146903622
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.07218292152492749,
+            "launch_cost": 0.01877394343386407,
+            "manufacturing_cost": 0.050145396262920035,
+            "pointing_bias": 0.00029352137240587457,
+            "pointing_jitter": 0.0006474106413873035,
+            "pv_efficiency": 0.10937731605472294,
+            "pv_temperature_coefficient": 0.006101496031424889,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.08090205201260661,
+            "wavefront_error": 0.019473234927363654,
+            "weather_year": 0.059007663829351895
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.19362090927347522,
+            "launch_cost": 0.012056873032445395,
+            "manufacturing_cost": 0.12312966470123324,
+            "pointing_bias": 3.643666644777494e-06,
+            "pointing_jitter": 1.2733398306420091e-05,
+            "pv_efficiency": 0.33564579063538796,
+            "pv_temperature_coefficient": 0.0009851912202622475,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.2274660136865179,
+            "wavefront_error": 0.013232883469513868,
+            "weather_year": 0.1155687719651193
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.04554312932264449,
+            "launch_cost": 0.0028170832069679035,
+            "manufacturing_cost": 0.02709149476824598,
+            "pointing_bias": 1.1846804364815658e-06,
+            "pointing_jitter": 3.1297577611276704e-06,
+            "pv_efficiency": 0.06973712714704798,
+            "pv_temperature_coefficient": 0.000291858550792973,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.04617934163136797,
+            "wavefront_error": 0.003025201473408714,
+            "weather_year": 0.026209350726709706
+          }
+        },
+        "32": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.13044558495216063,
+            "launch_cost": -0.0232036117073866,
+            "manufacturing_cost": 0.15297615809166706,
+            "pointing_bias": -4.913700807030874e-05,
+            "pointing_jitter": 0.0017723582698744046,
+            "pv_efficiency": 0.14441998343829018,
+            "pv_temperature_coefficient": 0.008943903585249073,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.16272985165892148,
+            "wavefront_error": 0.006085054595510985,
+            "weather_year": 0.16463898616213504
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.16264622097279235,
+            "launch_cost": 0.04595458823073073,
+            "manufacturing_cost": 0.19419109061448114,
+            "pointing_bias": 0.0009382896255095022,
+            "pointing_jitter": 0.0015586990374896583,
+            "pv_efficiency": 0.18582398900298194,
+            "pv_temperature_coefficient": 0.016782500843092206,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.17178708931802525,
+            "wavefront_error": 0.03806217675958925,
+            "weather_year": 0.1873777467855392
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.16124814332715154,
+            "launch_cost": 0.01262190973032826,
+            "manufacturing_cost": 0.20276681020121118,
+            "pointing_bias": 3.832891076836114e-06,
+            "pointing_jitter": 1.25463577665324e-05,
+            "pv_efficiency": 0.11889672582565293,
+            "pv_temperature_coefficient": 0.0009047961878098542,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.13684909103588733,
+            "wavefront_error": 0.01180535683601058,
+            "weather_year": 0.10422801815079809
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.06809361807930268,
+            "launch_cost": 0.005510894181677383,
+            "manufacturing_cost": 0.10266948822706276,
+            "pointing_bias": 3.6145967698827897e-06,
+            "pointing_jitter": 7.307075154059539e-06,
+            "pv_efficiency": 0.08250843977337222,
+            "pv_temperature_coefficient": 0.000526610063068044,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.05250801504986416,
+            "wavefront_error": 0.008594121560611312,
+            "weather_year": 0.04882458307650255
+          }
+        },
+        "64": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.19196759418697218,
+            "launch_cost": 0.013033270444479036,
+            "manufacturing_cost": 0.07294219975083023,
+            "pointing_bias": -1.0461238743595618e-05,
+            "pointing_jitter": -0.0008051329208548205,
+            "pv_efficiency": 0.2802610174680601,
+            "pv_temperature_coefficient": 0.002286615811931958,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.3372995333887864,
+            "wavefront_error": 0.001576830322447691,
+            "weather_year": 0.1934127099138628
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.13033125341480292,
+            "launch_cost": 0.028103469530591774,
+            "manufacturing_cost": 0.10116251177029816,
+            "pointing_bias": 0.000672137904721343,
+            "pointing_jitter": 0.0011899499125624807,
+            "pv_efficiency": 0.1976166491011351,
+            "pv_temperature_coefficient": 0.012246235761875446,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.1824593575370623,
+            "wavefront_error": 0.03285900733833439,
+            "weather_year": 0.11642900452099234
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.18943552464009952,
+            "launch_cost": 0.010362063528265604,
+            "manufacturing_cost": 0.10360958105729803,
+            "pointing_bias": 3.056807999287438e-06,
+            "pointing_jitter": 1.216723867390244e-05,
+            "pv_efficiency": 0.25036293441488633,
+            "pv_temperature_coefficient": 0.0010533478654895314,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.21243660996599412,
+            "wavefront_error": 0.010410430408170596,
+            "weather_year": 0.10262079596524956
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.11963428704206527,
+            "launch_cost": 0.004755898054004549,
+            "manufacturing_cost": 0.05430571888049855,
+            "pointing_bias": 1.9391156717027807e-06,
+            "pointing_jitter": 6.625259611636921e-06,
+            "pv_efficiency": 0.09639891988612666,
+            "pv_temperature_coefficient": 0.0007099850118030747,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.09675427253827665,
+            "wavefront_error": 0.005620144240305408,
+            "weather_year": 0.047985576701830006
+          }
+        }
+      },
+      "indices": {
+        "S1": {
+          "electrical_to_beam_efficiency": 0.1656632784472531,
+          "launch_cost": 0.01040377763949332,
+          "manufacturing_cost": 0.11658061994900988,
+          "pointing_bias": 6.0215956680022675e-06,
+          "pointing_jitter": -0.00029323814520529557,
+          "pv_efficiency": 0.31944679335070103,
+          "pv_temperature_coefficient": 0.0018161036050103184,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.21896960205487004,
+          "wavefront_error": 0.010390168961620604,
+          "weather_year": 0.10640950146903622
+        },
+        "S1_conf": {
+          "electrical_to_beam_efficiency": 0.07218292152492749,
+          "launch_cost": 0.01877394343386407,
+          "manufacturing_cost": 0.050145396262920035,
+          "pointing_bias": 0.00029352137240587457,
+          "pointing_jitter": 0.0006474106413873035,
+          "pv_efficiency": 0.10937731605472294,
+          "pv_temperature_coefficient": 0.006101496031424889,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.08090205201260661,
+          "wavefront_error": 0.019473234927363654,
+          "weather_year": 0.059007663829351895
+        },
+        "ST": {
+          "electrical_to_beam_efficiency": 0.19362090927347522,
+          "launch_cost": 0.012056873032445395,
+          "manufacturing_cost": 0.12312966470123324,
+          "pointing_bias": 3.643666644777494e-06,
+          "pointing_jitter": 1.2733398306420091e-05,
+          "pv_efficiency": 0.33564579063538796,
+          "pv_temperature_coefficient": 0.0009851912202622475,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.2274660136865179,
+          "wavefront_error": 0.013232883469513868,
+          "weather_year": 0.1155687719651193
+        },
+        "ST_conf": {
+          "electrical_to_beam_efficiency": 0.04554312932264449,
+          "launch_cost": 0.0028170832069679035,
+          "manufacturing_cost": 0.02709149476824598,
+          "pointing_bias": 1.1846804364815658e-06,
+          "pointing_jitter": 3.1297577611276704e-06,
+          "pv_efficiency": 0.06973712714704798,
+          "pv_temperature_coefficient": 0.000291858550792973,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.04617934163136797,
+          "wavefront_error": 0.003025201473408714,
+          "weather_year": 0.026209350726709706
+        }
+      },
+      "status": "ok",
+      "variance": 338368.75054504006
+    },
+    "mass_proxy_kg": {
+      "convergence": {
+        "128": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.11471589933227924,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.1695165638350917,
+            "pv_temperature_coefficient": 6.81520843999095e-05,
+            "radiator_specific_mass": 0.7304870242820023,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.07796830839110115,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.11209749732738813,
+            "pv_temperature_coefficient": 0.004792467956273335,
+            "radiator_specific_mass": 0.17691803951073545,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.09511902675666228,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.18518659149069974,
+            "pv_temperature_coefficient": 0.00036871289202081896,
+            "radiator_specific_mass": 0.7489464825562472,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.03255930594288203,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.05601507761190136,
+            "pv_temperature_coefficient": 0.00014117374556278726,
+            "radiator_specific_mass": 0.16819378142788202,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          }
+        },
+        "256": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.0853378112650288,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.167629247522806,
+            "pv_temperature_coefficient": 0.00035474304256968034,
+            "radiator_specific_mass": 0.7142835840903509,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.05311743441661629,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.06898284547989281,
+            "pv_temperature_coefficient": 0.0035380701450855945,
+            "radiator_specific_mass": 0.13489387576639647,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.091471200578243,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.17370758311283632,
+            "pv_temperature_coefficient": 0.00037644950323917115,
+            "radiator_specific_mass": 0.7191061882166868,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.020083078459586155,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.03868940484552357,
+            "pv_temperature_coefficient": 0.00010173958299865635,
+            "radiator_specific_mass": 0.12094624563592002,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          }
+        },
+        "32": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.08650819679266944,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.05364084693455976,
+            "pv_temperature_coefficient": -0.0025765624469464813,
+            "radiator_specific_mass": 0.8759515646121627,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.12780909984287672,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.1250186084637818,
+            "pv_temperature_coefficient": 0.011357637724470888,
+            "radiator_specific_mass": 0.3621536627686485,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.07662480106223023,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.05861330306766353,
+            "pv_temperature_coefficient": 0.00035751091461258566,
+            "radiator_specific_mass": 0.8042759438036312,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.058497198391610036,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.04321134734191506,
+            "pv_temperature_coefficient": 0.0003585082298675445,
+            "radiator_specific_mass": 0.3753659792961049,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          }
+        },
+        "64": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.09367572582092157,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.16253755563355532,
+            "pv_temperature_coefficient": -0.002888874373589208,
+            "radiator_specific_mass": 0.7696066937773733,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.08597224797636016,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.13135383369714373,
+            "pv_temperature_coefficient": 0.007042541860069702,
+            "radiator_specific_mass": 0.23814936832053987,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.0911833106998837,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.17272405308272806,
+            "pv_temperature_coefficient": 0.00035934483621038484,
+            "radiator_specific_mass": 0.7402625261462679,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.0455308626834595,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.07484416957632334,
+            "pv_temperature_coefficient": 0.00021991124336545213,
+            "radiator_specific_mass": 0.23770183635535638,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          }
+        }
+      },
+      "indices": {
+        "S1": {
+          "electrical_to_beam_efficiency": 0.0853378112650288,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 0.0,
+          "pointing_jitter": 0.0,
+          "pv_efficiency": 0.167629247522806,
+          "pv_temperature_coefficient": 0.00035474304256968034,
+          "radiator_specific_mass": 0.7142835840903509,
+          "receiver_conversion": 0.0,
+          "wavefront_error": 0.0,
+          "weather_year": 0.0
+        },
+        "S1_conf": {
+          "electrical_to_beam_efficiency": 0.05311743441661629,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 0.0,
+          "pointing_jitter": 0.0,
+          "pv_efficiency": 0.06898284547989281,
+          "pv_temperature_coefficient": 0.0035380701450855945,
+          "radiator_specific_mass": 0.13489387576639647,
+          "receiver_conversion": 0.0,
+          "wavefront_error": 0.0,
+          "weather_year": 0.0
+        },
+        "ST": {
+          "electrical_to_beam_efficiency": 0.091471200578243,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 0.0,
+          "pointing_jitter": 0.0,
+          "pv_efficiency": 0.17370758311283632,
+          "pv_temperature_coefficient": 0.00037644950323917115,
+          "radiator_specific_mass": 0.7191061882166868,
+          "receiver_conversion": 0.0,
+          "wavefront_error": 0.0,
+          "weather_year": 0.0
+        },
+        "ST_conf": {
+          "electrical_to_beam_efficiency": 0.020083078459586155,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 0.0,
+          "pointing_jitter": 0.0,
+          "pv_efficiency": 0.03868940484552357,
+          "pv_temperature_coefficient": 0.00010173958299865635,
+          "radiator_specific_mass": 0.12094624563592002,
+          "receiver_conversion": 0.0,
+          "wavefront_error": 0.0,
+          "weather_year": 0.0
+        }
+      },
+      "status": "ok",
+      "variance": 569024.2825631254
+    },
+    "p_grid_mean_W": {
+      "convergence": {
+        "128": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.2651476675610144,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": -0.00012759206887843366,
+            "pointing_jitter": -0.00038066592978435164,
+            "pv_efficiency": 0.324501413501173,
+            "pv_temperature_coefficient": -0.0004886637899201783,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.31264760321891455,
+            "wavefront_error": 0.01378536866517908,
+            "weather_year": 0.1677865780499603
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.11677912302595228,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0004916520585825551,
+            "pointing_jitter": 0.0010045302295385123,
+            "pv_efficiency": 0.13684388716785667,
+            "pv_temperature_coefficient": 0.007576538432757136,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.1266053842127097,
+            "wavefront_error": 0.025240965184640904,
+            "weather_year": 0.08543956072777507
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.2187048083655246,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 4.915160011347117e-06,
+            "pointing_jitter": 1.4309593674365601e-05,
+            "pv_efficiency": 0.3463990230543106,
+            "pv_temperature_coefficient": 0.0007629641786135789,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.2883204937122175,
+            "wavefront_error": 0.013984406748245512,
+            "weather_year": 0.12935145872854154
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.06518251983691947,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 2.081265637442263e-06,
+            "pointing_jitter": 4.27118520302856e-06,
+            "pv_efficiency": 0.07984596578538873,
+            "pv_temperature_coefficient": 0.00027779913991550476,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.07945972876370792,
+            "wavefront_error": 0.004419188349752822,
+            "weather_year": 0.03647365432610176
+          }
+        },
+        "256": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.21625965815597398,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": -1.9124582167213527e-05,
+            "pointing_jitter": -1.0572457746235472e-05,
+            "pv_efficiency": 0.3473840168672528,
+            "pv_temperature_coefficient": 0.0008103068064254532,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.2827697179485148,
+            "wavefront_error": 0.0190001984752156,
+            "weather_year": 0.12221072521434566
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.07942361456082249,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0003974009774573614,
+            "pointing_jitter": 0.0006931243627526708,
+            "pv_efficiency": 0.09619095345313196,
+            "pv_temperature_coefficient": 0.005181222850089089,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.09244348681164827,
+            "wavefront_error": 0.02148334605162734,
+            "weather_year": 0.06204884730728499
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.21618092290489788,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 5.7581564735200776e-06,
+            "pointing_jitter": 1.4879453664905763e-05,
+            "pv_efficiency": 0.3590360989199657,
+            "pv_temperature_coefficient": 0.000753942747568506,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.28776599343120907,
+            "wavefront_error": 0.016062401263476852,
+            "weather_year": 0.13071436607181458
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.04456561282848957,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 2.023472136486196e-06,
+            "pointing_jitter": 3.3716416081572404e-06,
+            "pv_efficiency": 0.06533140246155845,
+            "pv_temperature_coefficient": 0.0001906578729110497,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.05582471650568131,
+            "wavefront_error": 0.0034660515800724206,
+            "weather_year": 0.029510555795210256
+          }
+        },
+        "32": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.17656213386529399,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": -0.0002252846015847825,
+            "pointing_jitter": 0.0029497312409288217,
+            "pv_efficiency": 0.10608436792235848,
+            "pv_temperature_coefficient": 0.009992217176493075,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.31349436573716893,
+            "wavefront_error": 0.010061633752498385,
+            "weather_year": 0.290718088508519
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.22767879450406292,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0013689095861948455,
+            "pointing_jitter": 0.001367201666983505,
+            "pv_efficiency": 0.17391243943861667,
+            "pv_temperature_coefficient": 0.017761861152160847,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.2211703126776966,
+            "wavefront_error": 0.04757763063632166,
+            "weather_year": 0.20943615374034877
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.1649469743639112,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 5.456341510186503e-06,
+            "pointing_jitter": 1.0306743939606416e-05,
+            "pv_efficiency": 0.10660481309633561,
+            "pv_temperature_coefficient": 0.0008577017848019945,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.18780916464195013,
+            "wavefront_error": 0.015551851140400107,
+            "weather_year": 0.13570099644173045
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.09953593514804022,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 4.401775328398163e-06,
+            "pointing_jitter": 5.687408870009745e-06,
+            "pv_efficiency": 0.06806038633752229,
+            "pv_temperature_coefficient": 0.0006718043850145052,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.07692732461496625,
+            "wavefront_error": 0.012073661863433132,
+            "weather_year": 0.06758464966225539
+          }
+        },
+        "64": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.25598896146293726,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": -0.00020751487762460632,
+            "pointing_jitter": -0.00024611570518164917,
+            "pv_efficiency": 0.3267201472270475,
+            "pv_temperature_coefficient": 0.0037195984427258236,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.4391687605014859,
+            "wavefront_error": 0.010768019982819094,
+            "weather_year": 0.2876906717552212
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.15305518261081358,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.000843785331600655,
+            "pointing_jitter": 0.0015498635908661883,
+            "pv_efficiency": 0.20141272221502243,
+            "pv_temperature_coefficient": 0.011819563161096456,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.17781511516024104,
+            "wavefront_error": 0.03477802440834037,
+            "weather_year": 0.12179567320842995
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.21165105313516328,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 5.218180336988483e-06,
+            "pointing_jitter": 1.1320113696797205e-05,
+            "pv_efficiency": 0.36512346946436225,
+            "pv_temperature_coefficient": 0.000767674024316874,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.2810289824320357,
+            "wavefront_error": 0.0142012135262353,
+            "weather_year": 0.14314935423217012
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.0899879743049362,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 3.3140770455617033e-06,
+            "pointing_jitter": 4.555010803496246e-06,
+            "pv_efficiency": 0.12399018630386309,
+            "pv_temperature_coefficient": 0.0004122541309196957,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.08373404108627233,
+            "wavefront_error": 0.007684050177359744,
+            "weather_year": 0.05665846513515629
+          }
+        }
+      },
+      "indices": {
+        "S1": {
+          "electrical_to_beam_efficiency": 0.21625965815597398,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": -1.9124582167213527e-05,
+          "pointing_jitter": -1.0572457746235472e-05,
+          "pv_efficiency": 0.3473840168672528,
+          "pv_temperature_coefficient": 0.0008103068064254532,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.2827697179485148,
+          "wavefront_error": 0.0190001984752156,
+          "weather_year": 0.12221072521434566
+        },
+        "S1_conf": {
+          "electrical_to_beam_efficiency": 0.07942361456082249,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 0.0003974009774573614,
+          "pointing_jitter": 0.0006931243627526708,
+          "pv_efficiency": 0.09619095345313196,
+          "pv_temperature_coefficient": 0.005181222850089089,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.09244348681164827,
+          "wavefront_error": 0.02148334605162734,
+          "weather_year": 0.06204884730728499
+        },
+        "ST": {
+          "electrical_to_beam_efficiency": 0.21618092290489788,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 5.7581564735200776e-06,
+          "pointing_jitter": 1.4879453664905763e-05,
+          "pv_efficiency": 0.3590360989199657,
+          "pv_temperature_coefficient": 0.000753942747568506,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.28776599343120907,
+          "wavefront_error": 0.016062401263476852,
+          "weather_year": 0.13071436607181458
+        },
+        "ST_conf": {
+          "electrical_to_beam_efficiency": 0.04456561282848957,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 2.023472136486196e-06,
+          "pointing_jitter": 3.3716416081572404e-06,
+          "pv_efficiency": 0.06533140246155845,
+          "pv_temperature_coefficient": 0.0001906578729110497,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.05582471650568131,
+          "wavefront_error": 0.0034660515800724206,
+          "weather_year": 0.029510555795210256
+        }
+      },
+      "status": "ok",
+      "variance": 328947.3391342222
+    },
+    "pv_temperature_max_K": {
+      "convergence": {
+        "128": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.9653426424065005,
+            "pv_temperature_coefficient": 0.000950863847270852,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.22536959767998813,
+            "pv_temperature_coefficient": 0.011008137965963352,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.9619492408805604,
+            "pv_temperature_coefficient": 0.002115909255501282,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.1836834384432448,
+            "pv_temperature_coefficient": 0.000703810138660273,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          }
+        },
+        "256": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.9659607948988445,
+            "pv_temperature_coefficient": 0.0014370137570160917,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.15974800881821766,
+            "pv_temperature_coefficient": 0.007835647601312397,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.9655608249837483,
+            "pv_temperature_coefficient": 0.002040560446067921,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.12500902108019818,
+            "pv_temperature_coefficient": 0.00044014252418624755,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          }
+        },
+        "32": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.3088131983184697,
+            "pv_temperature_coefficient": -0.00040605669753220606,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.30967805164622436,
+            "pv_temperature_coefficient": 0.024739800187344913,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.27363385780089805,
+            "pv_temperature_coefficient": 0.0021205995031631972,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.11855856056323742,
+            "pv_temperature_coefficient": 0.001574373514337727,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          }
+        },
+        "64": {
+          "S1": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.970351223537968,
+            "pv_temperature_coefficient": 0.0011077028817784093,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "S1_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.3047781873421456,
+            "pv_temperature_coefficient": 0.015016628444171027,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "ST": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.9516078785333306,
+            "pv_temperature_coefficient": 0.0021240134135190594,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          },
+          "ST_conf": {
+            "electrical_to_beam_efficiency": 0.0,
+            "launch_cost": 0.0,
+            "manufacturing_cost": 0.0,
+            "pointing_bias": 0.0,
+            "pointing_jitter": 0.0,
+            "pv_efficiency": 0.24433232390598972,
+            "pv_temperature_coefficient": 0.0009545173241174298,
+            "radiator_specific_mass": 0.0,
+            "receiver_conversion": 0.0,
+            "wavefront_error": 0.0,
+            "weather_year": 0.0
+          }
+        }
+      },
+      "indices": {
+        "S1": {
+          "electrical_to_beam_efficiency": 0.0,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 0.0,
+          "pointing_jitter": 0.0,
+          "pv_efficiency": 0.9659607948988445,
+          "pv_temperature_coefficient": 0.0014370137570160917,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.0,
+          "wavefront_error": 0.0,
+          "weather_year": 0.0
+        },
+        "S1_conf": {
+          "electrical_to_beam_efficiency": 0.0,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 0.0,
+          "pointing_jitter": 0.0,
+          "pv_efficiency": 0.15974800881821766,
+          "pv_temperature_coefficient": 0.007835647601312397,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.0,
+          "wavefront_error": 0.0,
+          "weather_year": 0.0
+        },
+        "ST": {
+          "electrical_to_beam_efficiency": 0.0,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 0.0,
+          "pointing_jitter": 0.0,
+          "pv_efficiency": 0.9655608249837483,
+          "pv_temperature_coefficient": 0.002040560446067921,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.0,
+          "wavefront_error": 0.0,
+          "weather_year": 0.0
+        },
+        "ST_conf": {
+          "electrical_to_beam_efficiency": 0.0,
+          "launch_cost": 0.0,
+          "manufacturing_cost": 0.0,
+          "pointing_bias": 0.0,
+          "pointing_jitter": 0.0,
+          "pv_efficiency": 0.12500902108019818,
+          "pv_temperature_coefficient": 0.00044014252418624755,
+          "radiator_specific_mass": 0.0,
+          "receiver_conversion": 0.0,
+          "wavefront_error": 0.0,
+          "weather_year": 0.0
+        }
+      },
+      "status": "ok",
+      "variance": 13.749011390880584
+    }
+  },
+  "sobol_settings": {
+    "conf_level": 0.95,
+    "convergence_n": [
+      32,
+      64,
+      128
+    ],
+    "n_base": 256,
+    "num_resamples": 500,
+    "parameters": [
+      "pv_efficiency",
+      "pv_temperature_coefficient",
+      "electrical_to_beam_efficiency",
+      "receiver_conversion",
+      "pointing_jitter",
+      "radiator_specific_mass",
+      "launch_cost",
+      "manufacturing_cost",
+      "weather_year",
+      "pointing_bias",
+      "wavefront_error"
+    ],
+    "seed": 20261115
+  },
+  "study": "m8_uncertainty_helio_optical"
+}

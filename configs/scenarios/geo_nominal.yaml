@@ -1,0 +1,55 @@
+# Explicit technology scenario (M8; PDF §12.4 "keep optimistic, nominal and conservative scenarios
+# explicit in configuration"). A complete run configuration: the harmonised heliocentric optical case
+# of M7b (../comparison/helio_1au_optical.yaml: 1 au, 30 deg ahead of the Earth, 10 m aperture,
+# 1 km laser-PV receiver at 0 N 0 E) with the technology-performance inputs below replaced.
+# The GEO twin (geo_<name>.yaml) sets the SAME values on ../comparison/geo_optical.yaml; the pair is
+# checked to differ only in orbit/geometry keys (tests/integration/test_m8_forward.py::test_scenario_twins_differ_only_in_orbit_geometry).
+#
+# Values and provenance (docs/data_provenance.md, M8 "PV technology data"):
+#   collector.pv_efficiency_reference (at reference_temperature_K = 300 K in every scenario)
+#       optimistic 0.3195 = (0.290/0.91)(1 - 0.00231 (300 - 301.15)), DERIVED from the SOURCED
+#       AZUR SPACE 3G30A-Advanced (8x8) CIC BOL efficiency 29.0 % (AM0 1367 W/m2, 28 C),
+#       absorptivity <= 0.91 and its own temperature coefficient (below) (datasheet
+#       DB 00010892-01, 11-Apr-2025); nominal 0.30 (PDF §5 example, assumed);
+#       conservative 0.1642 = (0.1524/0.90)(1 - 0.0044 (300 - 293.15)), DERIVED from the SOURCED
+#       1-sun AM0 efficiency 15.24 % at 20 C of Spectrolab K7 BSF/BSR silicon cells (JPL
+#       Publication 78-15 Vol. VIII, 1979, Table 7), an ASSUMED absorptivity 0.90 (the model's
+#       efficiency is P_PV/P_absorbed) and the K7 coefficient (below).
+#   collector.temperature_coefficient_per_K  optimistic -0.0004 (PDF §5 example, assumed);
+#       nominal -0.00231 /K, DERIVED from the SOURCED 3G30A BOL dVmp/dT = -6.7 mV/C, dImp/dT =
+#       +0.48 mA/C at Vmp 2400 mV, Imp 998 mA (gamma = dVmp/Vmp + dImp/Imp, first order);
+#       conservative -0.0044 /K, DERIVED from the SOURCED K7 1-sun efficiencies 15.24 % (20 C) and
+#       13.90 % (40 C): (13.90 - 15.24)/(20 K x 15.24).
+#   transmitter.electrical_to_beam_efficiency 0.60 / 0.50 / 0.35, receiver.conversion_efficiency
+#       0.55 / 0.40 / 0.30, transmitter.pointing_sigma_rad 5e-10 / 1e-9 / 3e-9 rad,
+#       thermal.radiator_specific_mass_kg_m2 2 / 5 / 10 kg/m2: ASSUMED scenario values (nominal =
+#       PDF §5 example / M7 demo); no sourced laser or laser-PV values are used.
+# These are scenario values, not design recommendations or predictions.
+#
+# Machine-readable provenance (PDF §13.4; M8 review): the sourced/derived values above are
+# labelled 'sourced' through provenance_overrides (derived = stated arithmetic on sourced
+# numbers, citation in these comments, docs/data_provenance.md M8 and project.description);
+# every other value keeps its schema label ('assumed').
+extends: ../comparison/geo_optical.yaml
+
+project:
+  name: "scenario_geo_nominal"
+  description: "M8 technology scenario 'geo_nominal' on the M7b geo_optical case; gamma derived from AZUR SPACE 3G30A-Advanced datasheet DB 00010892-01 (sourced)"
+
+collector:
+  pv_efficiency_reference: 0.30
+  reference_temperature_K: 300.0
+  temperature_coefficient_per_K: -0.00231
+
+transmitter:
+  electrical_to_beam_efficiency: 0.50
+  pointing_sigma_rad: 1.0e-9
+
+receiver:
+  conversion_efficiency: 0.40
+
+thermal:
+  radiator_specific_mass_kg_m2: 5.0
+
+provenance_overrides:
+  collector.temperature_coefficient_per_K: "sourced"

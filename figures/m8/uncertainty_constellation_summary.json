@@ -1,0 +1,386 @@
+{
+  "definition_sha256": "77697fa910fe9c37ae0609e5d9a55f3184a3adfe2fc00c6473e3b7fb99421363",
+  "fidelity": "screening_era5",
+  "fidelity_description": "L0 Kepler orbits (the demo is at 1 au, planets/SRP omitted), 3896 s grid, batched Airy capture (numpy_batch), ERA5 cloud outages at every site (threshold 0.5; the weather year is the aleatory input), M7 scheduler.",
+  "layout": "helioswarm-uncertainty-collation/1",
+  "monte_carlo": {
+    "availability": {
+      "aleatory_p05_p95_width": {
+        "max": 0.035929012345679134,
+        "mean": 0.015216820987654332,
+        "min": 0.006058641975308587,
+        "n": 16,
+        "p05": 0.006118827160493834,
+        "p50": 0.010699074074074055,
+        "p95": 0.03548456790123461
+      },
+      "epistemic_interval_of_expected_value": {
+        "max": 0.9448302469135803,
+        "mean": 0.9372588734567902,
+        "min": 0.9290432098765432,
+        "n": 16,
+        "p05": 0.9300385802469135,
+        "p50": 0.9376697530864198,
+        "p95": 0.9422608024691359
+      },
+      "epistemic_rows_used": 16,
+      "n_aleatory": 4,
+      "n_epistemic": 16,
+      "n_nonfinite": 0,
+      "pooled": {
+        "max": 0.9476543209876543,
+        "mean": 0.9372588734567902,
+        "min": 0.9067901234567901,
+        "n": 64,
+        "p05": 0.9104382716049383,
+        "p50": 0.9381172839506173,
+        "p95": 0.9476543209876543
+      },
+      "variance": {
+        "aleatory": 9.433358577198622e-05,
+        "aleatory_noise_sd_of_row_mean": 0.004856273925860912,
+        "between_row_population": 1.4433771618036565e-05,
+        "epistemic": 0.0,
+        "epistemic_fraction": 0.0,
+        "epistemic_fraction_upper_bound": 0.16944236282945999,
+        "epistemic_unclipped": -8.187373383757552e-06,
+        "total_population": 8.51839609470262e-05,
+        "within_row_population": 7.075018932898967e-05
+      }
+    },
+    "availability_above_threshold": {
+      "aleatory_p05_p95_width": {
+        "max": 0.04704320987654309,
+        "mean": 0.018767168209876527,
+        "min": 0.004302469135802456,
+        "n": 16,
+        "p05": 0.004577932098765475,
+        "p50": 0.015365740740740763,
+        "p95": 0.04503858024691357
+      },
+      "epistemic_interval_of_expected_value": {
+        "max": 0.9143209876543209,
+        "mean": 0.8758227237654321,
+        "min": 0.8128240740740742,
+        "n": 16,
+        "p05": 0.8374189814814815,
+        "p50": 0.874645061728395,
+        "p95": 0.9126543209876542
+      },
+      "epistemic_rows_used": 16,
+      "n_aleatory": 4,
+      "n_epistemic": 16,
+      "n_nonfinite": 0,
+      "pooled": {
+        "max": 0.9237037037037037,
+        "mean": 0.8758227237654321,
+        "min": 0.8104320987654321,
+        "n": 64,
+        "p05": 0.8200802469135803,
+        "p50": 0.8766666666666667,
+        "p95": 0.9163425925925925
+      },
+      "variance": {
+        "aleatory": 0.00014658820825712532,
+        "aleatory_noise_sd_of_row_mean": 0.006053680869048296,
+        "between_row_population": 0.0007221584492750109,
+        "epistemic": 0.0007336552938290637,
+        "epistemic_fraction": 0.8334685710150551,
+        "epistemic_fraction_upper_bound": 0.8678750050229505,
+        "epistemic_unclipped": 0.0007336552938290637,
+        "total_population": 0.0008320996054678564,
+        "within_row_population": 0.00010994115619284401
+      }
+    },
+    "capacity_loss_fraction": {
+      "aleatory_p05_p95_width": {
+        "max": 0.004773361013914491,
+        "mean": 0.0031677171960864878,
+        "min": 0.0012433891670685197,
+        "n": 16,
+        "p05": 0.0018910477942085191,
+        "p50": 0.0031990496140659255,
+        "p95": 0.004705159596012728
+      },
+      "epistemic_interval_of_expected_value": {
+        "max": 0.02828189057376579,
+        "mean": 0.027108494976256906,
+        "min": 0.026144533155584654,
+        "n": 16,
+        "p05": 0.026233777750061922,
+        "p50": 0.02714935723820451,
+        "p95": 0.028131648531065236
+      },
+      "epistemic_rows_used": 16,
+      "n_aleatory": 4,
+      "n_epistemic": 16,
+      "n_nonfinite": 0,
+      "pooled": {
+        "max": 0.029724154563970262,
+        "mean": 0.027108494976256906,
+        "min": 0.024653042384558455,
+        "n": 64,
+        "p05": 0.024653042410916877,
+        "p50": 0.02700383327166167,
+        "p95": 0.029724154538042134
+      },
+      "variance": {
+        "aleatory": 2.789011507174061e-06,
+        "aleatory_noise_sd_of_row_mean": 0.0008350166925238772,
+        "between_row_population": 3.244606746976947e-07,
+        "epistemic": 0.0,
+        "epistemic_fraction": 0.0,
+        "epistemic_fraction_upper_bound": 0.1342844476144057,
+        "epistemic_unclipped": -3.5116149044930755e-07,
+        "total_population": 2.4162193050782403e-06,
+        "within_row_population": 2.0917586303805457e-06
+      }
+    },
+    "mass_proxy_kg": {
+      "aleatory_p05_p95_width": {
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "n": 16,
+        "p05": 0.0,
+        "p50": 0.0,
+        "p95": 0.0
+      },
+      "epistemic_interval_of_expected_value": {
+        "max": 180387.77022622956,
+        "mean": 167906.30268835818,
+        "min": 157648.61980764463,
+        "n": 16,
+        "p05": 157764.8865969374,
+        "p50": 167761.6009177655,
+        "p95": 178173.15141291148
+      },
+      "epistemic_rows_used": 16,
+      "n_aleatory": 4,
+      "n_epistemic": 16,
+      "n_nonfinite": 0,
+      "pooled": {
+        "max": 180387.77022622956,
+        "mean": 167906.30268835818,
+        "min": 157648.61980764463,
+        "n": 64,
+        "p05": 157671.87316550317,
+        "p50": 167761.6009177655,
+        "p95": 179944.84646356592
+      },
+      "variance": {
+        "aleatory": 0.0,
+        "aleatory_noise_sd_of_row_mean": 0.0,
+        "between_row_population": 38655506.659957096,
+        "epistemic": 41232540.43728757,
+        "epistemic_fraction": 1.0,
+        "epistemic_fraction_upper_bound": 1.0,
+        "epistemic_unclipped": 41232540.43728757,
+        "total_population": 38655506.659957096,
+        "within_row_population": 0.0
+      }
+    },
+    "p_grid_mean_W": {
+      "aleatory_p05_p95_width": {
+        "max": 2538.867688054117,
+        "mean": 1191.0266826414331,
+        "min": 387.94280203118615,
+        "n": 16,
+        "p05": 448.99633081243337,
+        "p50": 1108.4960420997468,
+        "p95": 2087.3791040118595
+      },
+      "epistemic_interval_of_expected_value": {
+        "max": 41405.866866676486,
+        "mean": 28954.344303833765,
+        "min": 20604.49031459522,
+        "n": 16,
+        "p05": 22422.613566586457,
+        "p50": 26989.983850391625,
+        "p95": 40029.58042794492
+      },
+      "epistemic_rows_used": 16,
+      "n_aleatory": 4,
+      "n_epistemic": 16,
+      "n_nonfinite": 0,
+      "pooled": {
+        "max": 41968.81087721056,
+        "mean": 28954.344303833765,
+        "min": 20320.83247218191,
+        "n": 64,
+        "p05": 21105.10745395004,
+        "p50": 27317.11572418002,
+        "p95": 40913.91765682118
+      },
+      "variance": {
+        "aleatory": 435272.2434239487,
+        "aleatory_noise_sd_of_row_mean": 329.87582641955925,
+        "between_row_population": 34885941.837349966,
+        "epistemic": 37102853.23231731,
+        "epistemic_fraction": 0.9884045290512645,
+        "epistemic_fraction_upper_bound": 0.9907289983225424,
+        "epistemic_unclipped": 37102853.23231731,
+        "total_population": 35212396.01991793,
+        "within_row_population": 326454.1825679615
+      }
+    }
+  },
+  "monte_carlo_settings": {
+    "n_aleatory": 4,
+    "n_epistemic": 16,
+    "seed": 20261116
+  },
+  "outputs": [
+    "p_grid_mean_W",
+    "availability",
+    "availability_above_threshold",
+    "mass_proxy_kg",
+    "capacity_loss_fraction"
+  ],
+  "parameters": [
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": 0.3195,
+        "low": 0.1642,
+        "mode": 0.3,
+        "type": "triangular"
+      },
+      "key": "collector.pv_efficiency_reference",
+      "name": "pv_efficiency",
+      "provenance": "derived",
+      "source": "as configs/uncertainty.yaml (AZUR SPACE DB 00010892-01; JPL Pub. 78-15 Vol. VIII; mode PDF \u00a75)",
+      "unit": "1"
+    },
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": -0.0004,
+        "low": -0.0044,
+        "mode": -0.00231,
+        "type": "triangular"
+      },
+      "key": "collector.temperature_coefficient_per_K",
+      "name": "pv_temperature_coefficient",
+      "provenance": "derived",
+      "source": "as configs/uncertainty.yaml",
+      "unit": "K^-1"
+    },
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": 0.6,
+        "low": 0.35,
+        "mode": 0.5,
+        "type": "triangular"
+      },
+      "key": "transmitter.electrical_to_beam_efficiency",
+      "name": "electrical_to_beam_efficiency",
+      "provenance": "assumed",
+      "source": null,
+      "unit": "1"
+    },
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": 0.55,
+        "low": 0.3,
+        "mode": 0.4,
+        "type": "triangular"
+      },
+      "key": "receiver.conversion_efficiency",
+      "name": "receiver_conversion",
+      "provenance": "assumed",
+      "source": null,
+      "unit": "1"
+    },
+    {
+      "category": "epistemic",
+      "distribution": {
+        "high": 10.0,
+        "low": 2.0,
+        "mode": 5.0,
+        "type": "triangular"
+      },
+      "key": "thermal.radiator_specific_mass_kg_m2",
+      "name": "radiator_specific_mass",
+      "provenance": "assumed",
+      "source": null,
+      "unit": "kg m^-2"
+    },
+    {
+      "category": "aleatory",
+      "distribution": {
+        "type": "discrete_uniform",
+        "values": [
+          2014,
+          2015,
+          2016,
+          2017,
+          2018,
+          2019,
+          2020,
+          2021,
+          2022,
+          2023
+        ]
+      },
+      "key": "weather.historical_year",
+      "name": "weather_year",
+      "provenance": "sourced",
+      "source": "ERA5 hourly total cloud cover 2014-2023 at the site nodes (Hersbach et al. 2020, doi:10.1002/qj.3803; CDS doi:10.24381/1cf1ad76); each year equally likely (assumed)",
+      "unit": "year"
+    }
+  ],
+  "parts": {
+    "mc": {
+      "failed": 0,
+      "failures": [],
+      "n": 64,
+      "status": "complete"
+    }
+  },
+  "provenance": {
+    "code": {
+      "git_commit": "4a97cff2792286cec73df0fa17626183674c7add",
+      "git_dirty": true,
+      "helioswarm_version": "0.1.0.dev0",
+      "packages": {
+        "astropy": "8.0.2",
+        "helioswarm": "0.1.0.dev0",
+        "itur": "0.4.0",
+        "jax": "0.12.0.1",
+        "jax-cuda12-plugin": null,
+        "jaxlib": "0.12.0.1",
+        "matplotlib": "3.11.2",
+        "numpy": "2.5.4",
+        "pandas": "3.1.1",
+        "pyarrow": "26.0.1",
+        "pydantic": "2.14.3",
+        "pyyaml": "6.0.3",
+        "scipy": "1.18.1",
+        "spiceypy": "8.4.0"
+      },
+      "python_version": "3.12.16",
+      "source_sha256": "6d2e6ac593ed63aeec3a9adb40078ef319b2d98289ab44f457e0cd4972c76104"
+    },
+    "cpu_model": "Intel(R) Xeon(R) Platinum 8268 CPU @ 2.90GHz",
+    "platform": "Linux-4.18.0-553.155.1.el8_10.x86_64-x86_64-with-glibc2.28",
+    "slurm": {
+      "SLURM_ARRAY_JOB_ID": null,
+      "SLURM_ARRAY_TASK_ID": null,
+      "SLURM_CPUS_PER_TASK": "8",
+      "SLURM_JOB_ID": "60458413",
+      "SLURM_JOB_NODELIST": "holy7c02202",
+      "SLURM_JOB_PARTITION": "serial_requeue"
+    },
+    "study_packages": {
+      "SALib": "1.6.0",
+      "numpy": "2.5.4",
+      "pyarrow": "26.0.1",
+      "pymoo": "0.6.2",
+      "scipy": "1.18.1"
+    }
+  },
+  "study": "m8_uncertainty_constellation"
+}

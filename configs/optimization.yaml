@@ -1,0 +1,175 @@
+# helioswarm OPTIMISATION study (M8; PDF §12.1-12.3, §14.3.3 coarse-to-fine).
+#
+#   helioswarm optimize configs/optimization.yaml --out $HELIOSWARM_RUNS_DIR/optimization
+#   (Slurm: one array task per seed, slurm/m8_optimize.sbatch; then MODE=collate / reevaluate)
+#
+# Design space: ONE heliocentric optical satellite and the laser-PV receiver of the harmonised M7b
+# case (comparison/helio_1au_optical.yaml: example site 0 N 0 E, technology of the PDF §5
+# example). The validated forward model is evaluated at the 'screening' fidelity during the
+# search and the selected Pareto designs are re-evaluated at 'high' (PDF §12.3 step 5).
+# Every bound, objective reference, constraint limit and specific mass below is an ASSUMED study
+# setting (none is sourced); the results are design-space explorations of the model, not
+# recommendations.
+#
+# Not varied here (and why): transmitter technology (separate study
+# optimization_technology.yaml), constellation size/phases/scheduling and receiver capacity
+# (optimization_constellation.yaml), beam taper (the screening beam is the Airy pattern of a
+# uniformly illuminated aperture; tapered apertures need the per-epoch aperture_far_field
+# model), receiver site (the screening level is clear-sky: optimising a site against an
+# all-clear sky would be weather-blind; site choice by ERA5 is in M8a/M8 ERA5 comparison runs),
+# radiator view factor/sides (fixed geometry of the M4 model).
+#
+# Formulation limits (stated, M8 review):
+# * Receiver infrastructure is NOT penalised: no objective or constraint acts on the receiver
+#   radius/area (the mass proxy is the satellite's only), so the optimiser drives
+#   receiver.radius_m to its 10 km upper bound for free (82 % of the union front above 9 km).
+#   The receiver-radius result is an artefact of this formulation, not a design finding; a
+#   receiver_area_m2 objective or a receiver-cost constraint is needed before it is.
+# * Both fidelity levels use models.beam = airy_far_field (the base file's model). Designs with
+#   N_F = D^2/(lambda R) > 0.5 raise BeamModelValidityError and are recorded as failed
+#   (infeasible) designs at screening, so the search is restricted to the far-field regime and
+#   the fresnel_hankel model is never used here. For every re-evaluated finalist Airy is the
+#   high-fidelity answer (largest N_F 0.21; Fresnel-vs-Airy capture 1.8e-7 at that epoch,
+#   scripts/m8_fresnel_vs_airy_check.py).
+optimization_schema_version: 1
+name: m8_helio_optical
+description: >-
+  Single heliocentric optical satellite + laser-PV receiver (example site): orbit, collector,
+  transmitter, receiver, thermal and operations variables; maximise time-averaged grid power and
+  availability above 1 kW, minimise the mass proxy; clear-sky screening (L0, 3896 s, batched Airy),
+  high-fidelity re-evaluation (L1, 974 s, per-epoch reference capture, ERA5 cloud outages).
+evaluator: forward_model
+base_config: comparison/helio_1au_optical.yaml
+search_fidelity: screening
+workers: 8
+
+fidelity:
+  screening:
+    description: >-
+      L0 two-body Kepler orbit (planets and SRP omitted; M7b measured 0.02 % on P_grid of the
+      1 au case), the day-incommensurate 3896 s grid of M7 (8101 epochs; diurnal aliasing
+      checked per run), Airy far-field expected capture through the batched kernel (numpy_batch,
+      tested against the M5 reference; capture percentiles not computed), scenario clear sky
+      (weather upper bound).
+    unset:
+      - orbit.include_planetary_perturbations
+      - orbit.include_solar_radiation_pressure
+      - orbit.cr
+      - orbit.area_to_mass_m2_kg
+      - time.integrator_step_s
+    overrides:
+      orbit.model: two_body_kepler
+      time.output_step_s: 3896
+    backend: numpy_batch
+    capture_percentiles: false   # p05/p50/p95 capture diagnostics skipped (powers unchanged)
+  high:
+    description: >-
+      L1 test particle with planets and SRP (DOP853, 300 s integrator step), the 974 s grid of
+      M7b (32 400 epochs), per-epoch M5 reference capture (adaptive quadrature), ERA5 hourly
+      total cloud cover at the receiver (threshold 0.5, nearest node, weather year 2019 mapped
+      onto 2030; M8a).
+    overrides:
+      time.output_step_s: 974
+      models.weather_source: era5
+      weather.era5_dataset: reanalysis-era5-single-levels-timeseries
+      weather.era5_first_year: 2014
+      weather.era5_last_year: 2023
+      weather.interpolation: nearest
+      weather.outage_model: threshold
+      weather.cloud_cover_threshold: 0.5
+      weather.year_mapping: fixed
+      weather.historical_year: 2019
+    backend: numpy
+  high_clear:
+    # Diagnostic level (added after the search; not used by it): 'high' without the ERA5
+    # weather, so the re-evaluation separates the orbit/grid/capture-model differences
+    # (L0 -> L1, 3896 -> 974 s, batched -> reference capture) from the weather.
+    # `helioswarm optimize configs/optimization.yaml --out ... --reevaluate --fidelity high_clear`
+    description: >-
+      As 'high' (L1 with planets and SRP, 974 s grid, per-epoch reference capture) but with the
+      scenario clear sky of the screening level.
+    overrides:
+      time.output_step_s: 974
+    backend: numpy
+
+evaluation:
+  power_threshold_W: 1000.0          # availability_above_threshold: P_grid >= 1 kW (assumed)
+  mass_proxy:                         # M7 demo specific masses (assumed; radiator: thermal.*)
+    collector_areal_mass_kg_m2: 1.0
+    transmitter_areal_mass_kg_m2: 50.0
+    bus_mass_kg: 500.0
+
+variables:
+  # Orbit (PDF §12.1): semimajor axis, eccentricity, inclination, Earth-relative phase.
+  - {name: semimajor_axis, kind: real, key: orbit.semimajor_axis_au, lower: 0.7, upper: 1.3, unit: au,
+     description: "heliocentric semimajor axis"}
+  - {name: eccentricity, kind: real, key: orbit.eccentricity, lower: 0.0, upper: 0.2, unit: "1"}
+  - {name: inclination, kind: real, key: orbit.inclination_deg, lower: 0.0, upper: 20.0, unit: deg}
+  - {name: phase, kind: real, key: orbit.true_anomaly_deg, lower: 10.0, upper: 350.0, unit: deg,
+     description: "Earth-relative phase at epoch (+ ahead of the Earth; 0 excluded: co-located with the Earth)"}
+  # Constellation-level per-satellite design: collector area.
+  - {name: collector_area, kind: real, key: collector.area_m2, lower: 1.0e3, upper: 1.0e5, log: true, unit: m^2}
+  # Transmitter: aperture, wavelength, pointing sigma.
+  - {name: aperture_diameter, kind: real, key: transmitter.aperture_diameter_m, lower: 1.0, upper: 150.0,
+     log: true, unit: m}
+  - {name: wavelength, kind: real, key: transmitter.wavelength_m, lower: 0.8e-6, upper: 1.6e-6, unit: m}
+  # Pointing: 0.1-10 nrad. Upper bound limited by evaluation cost (measured, M8.md D): with
+  # jitter >> the beam feature scale (sigma D / lambda >> 1) the expected capture is tiny and
+  # its offset quadrature costs minutes per design (e.g. 1e-7 rad, D = 100 m: > 10 min).
+  - {name: pointing_sigma, kind: real, key: transmitter.pointing_sigma_rad, lower: 1.0e-10, upper: 1.0e-8,
+     log: true, unit: rad}
+  # Receiver: radius.
+  - {name: receiver_radius, kind: real, key: receiver.radius_m, lower: 100.0, upper: 10000.0, log: true,
+     unit: m}
+  # Thermal: radiator temperature limit, emissivity, radiator specific mass.
+  - {name: radiator_temperature, kind: real, key: thermal.radiator_temperature_limit_K, lower: 350.0,
+     upper: 550.0, unit: K}
+  - {name: emissivity, kind: real, key: thermal.emissivity, lower: 0.70, upper: 0.95, unit: "1"}
+  - {name: radiator_specific_mass, kind: real, key: thermal.radiator_specific_mass_kg_m2, lower: 1.0,
+     upper: 10.0, unit: kg m^-2}
+  # Operations: minimum elevation (>= 10 deg: the plane-parallel air-mass validity floor).
+  - {name: min_elevation, kind: real, key: receiver.min_elevation_deg, lower: 10.0, upper: 30.0, unit: deg}
+
+objectives:
+  - {metric: p_grid_mean_W, sense: max, reference: 0.0}
+  - {metric: mass_proxy_kg, sense: min, reference: 2.0e6}
+  - {metric: availability_above_threshold, sense: max, reference: 0.0}
+
+constraints:
+  - {name: thermal, metric: thermal_feasible_fraction, op: ">=", limit: 1.0, scale: 0.01,
+     description: "radiator/PV thermally feasible at every epoch (M4 model)"}
+  - {name: min_availability, metric: availability, op: ">=", limit: 0.2,
+     description: "link available >= 20 % of the year (assumed requirement)"}
+  - {name: max_irradiance, metric: peak_incident_irradiance_W_m2, op: "<=", limit: 1000.0,
+     description: "peak incident beam irradiance <= 1000 W/m^2 (ASSUMED illustrative cap below one sun; no sourced laser-PV/eye-safety limit is used)"}
+  - {name: receiver_capacity, metric: captured_power_peak_W, op: "<=", limit: 1.0e7,
+     description: "captured power <= 10 MW receiver capacity (assumed)"}
+  - {name: pointing, metric: pointing_sigma_rad, op: "<=", limit: 5.0e-9,
+     description: "achievable pointing jitter <= 5 nrad (assumed requirement; bounds extend to 10 nrad)"}
+  - {name: aperture_size, metric: aperture_diameter_m, op: "<=", limit: 100.0,
+     description: "deployable aperture <= 100 m (assumed; bounds extend to 150 m)"}
+
+algorithm:
+  # 100 generations: a first run with 30 (seeds 20261114/5, M8.md D) met the per-seed HV rule
+  # but its two seeds' final hypervolumes differed by 12 % (> the 5 % seed tolerance).
+  pop_size: 40
+  n_generations: 100
+  seeds: [20261114, 20261115, 20261116, 20261117]
+  crossover_prob: 0.9
+  crossover_eta: 15.0
+  mutation_eta: 20.0
+
+convergence:
+  window: 5
+  hv_relative_tolerance: 0.01
+  seed_hv_relative_tolerance: 0.05
+
+reevaluation:
+  fidelity: high
+  n_candidates: 6
+
+sanity_checks:
+  # Aperture vs delivered power with an areal aperture penalty of 20 W per m^2 of aperture (a
+  # sanity-check device only, not a design objective): dense sweep vs scipy bounded optimum.
+  - {name: aperture_net_power, variable: aperture_diameter, metric: p_grid_mean_W, sense: max,
+     penalty_metric: transmitter_aperture_area_m2, penalty_weight: 20.0, sweep_points: 21}

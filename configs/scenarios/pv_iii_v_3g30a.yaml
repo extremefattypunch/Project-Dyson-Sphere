@@ -1,0 +1,25 @@
+# PV technology scenario (M8; closes the deferred PDF §8.4 'PV efficiency and temperature vs
+# technology scenario' item): the nominal scenario (nominal.yaml) with the collector of the
+# III-V triple-junction (AZUR SPACE 3G30A-Advanced CIC, BOL) case. Everything else is the nominal scenario.
+#
+# Provenance: ALL SOURCED/DERIVED from the AZUR SPACE datasheet DB 00010892-01 (TJ 3G30-Advanced (8x8), issue 11-Apr-2025, retrieved 2026-11-14 from https://www.azurspace.com/media/uploads/file_links/file/bdb_00010892-01-00_tj3g30-advanced_8x8.pdf, SHA-256 07a7f5ff5cbaa358a79cd1430fbaa496a51a0c62e03b82221f249f5bd77821ff): CIC BOL efficiency 29.0 % at AM0 1367 W/m2 and 28 C; absorptivity <= 0.91 (threshold value, 100 um AR coverglass, used as the value); dVmp/dT = -6.7 mV/C and dImp/dT = 0.48 mA/C at Vmp = 2400 mV, Imp = 998 mA. Derived: gamma = -6.7/2400 + 0.48/998 = -0.00231 /K; eta_ref(P_PV/P_abs, 300 K) = (0.290/0.91)(1 - 0.00231 (300 - 301.15)) = 0.3195. The datasheet's coefficients are measured over 28-140 C, so the linear law is used within its range here (cells run ~300-310 K at 1 au).
+#
+# The data are fetched copies under /n/netscratch/hekstra_lab/Lab/ian_poon/helioswarm/sources/
+# pv_datasheets/ (not committed; checksums above and in docs/data_provenance.md M8).
+extends: nominal.yaml
+
+project:
+  name: "scenario_pv_iii_v_3g30a"
+  description: "M8 PV technology scenario: III-V triple-junction (AZUR SPACE 3G30A-Advanced CIC, BOL) (sourced: AZUR SPACE 3G30A-Advanced datasheet DB 00010892-01, 11-Apr-2025)"
+
+collector:
+  pv_efficiency_reference: 0.3195
+  reference_temperature_K: 300.0
+  temperature_coefficient_per_K: -0.00231
+  absorptivity: 0.91
+
+# Machine-readable provenance (PDF §13.4): derived = stated arithmetic on sourced numbers.
+provenance_overrides:
+  collector.pv_efficiency_reference: "sourced"
+  collector.temperature_coefficient_per_K: "sourced"
+  collector.absorptivity: "sourced"

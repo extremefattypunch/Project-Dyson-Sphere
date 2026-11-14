@@ -14,6 +14,13 @@ if [[ -n "${HELIOSWARM_ENV_OVERLAY:-}" ]]; then
     source "$HELIOSWARM_ENV_OVERLAY"
     echo "environment overlay: $HELIOSWARM_ENV_OVERLAY (UV_PROJECT_ENVIRONMENT=$UV_PROJECT_ENVIRONMENT)"
 fi
+# Optional frozen source snapshot (M8; scripts/m8_snapshot.sh): long studies run the package
+# from a read-only copy of src/ so that edits in the checkout while jobs are queued or running
+# cannot mix code versions (manifests record the snapshot's source-tree SHA-256). Default: unset.
+if [[ -n "${HELIOSWARM_SRC_SNAPSHOT:-}" ]]; then
+    export PYTHONPATH="$HELIOSWARM_SRC_SNAPSHOT/src${PYTHONPATH:+:$PYTHONPATH}"
+    echo "source snapshot: $HELIOSWARM_SRC_SNAPSHOT ($(cat "$HELIOSWARM_SRC_SNAPSHOT/SNAPSHOT.json" | tr -d '\n' | cut -c1-200))"
+fi
 TMP="/scratch/${USER}_${SLURM_JOB_ID}"
 mkdir -p "$TMP"
 trap 'rm -rf "$TMP"' EXIT

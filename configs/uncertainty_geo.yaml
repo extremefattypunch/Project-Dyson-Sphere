@@ -1,0 +1,138 @@
+# helioswarm UNCERTAINTY study (M8; PDF §12.4): the GEO BASELINE twin of uncertainty.yaml --
+# the same epistemic/aleatory inputs, distributions, seeds and outputs on the harmonised M7b GEO
+# optical case (comparison/geo_optical.yaml: geostationary above the example site 0 N 0 E,
+# Fresnel-Hankel beam on the validated Chebyshev table), so the GEO and heliocentric intervals
+# are comparable (one system boundary, PDF §16). Scenarios: scenarios/geo_*.yaml (the same
+# technology values as the heliocentric scenarios).
+#
+#   helioswarm uncertainty configs/uncertainty_geo.yaml --out $HELIOSWARM_RUNS_DIR/uncertainty_geo
+#
+# The GEO orbit is already L0 (station-keeping assumption, M7b), so the fidelity only sets the
+# 3896 s grid, the ERA5 weather and the GEO economics scenario (explicit LEO->GEO delta-v).
+uncertainty_schema_version: 1
+name: m8_uncertainty_geo_optical
+description: >-
+  Nested Monte Carlo of the GEO optical baseline with ERA5 weather (3896 s, Fresnel-Hankel
+  Chebyshev beam table, ERA5 cloud outages), plus the explicit scenarios.
+evaluator: forward_model
+base_config: comparison/geo_optical.yaml
+fidelity_name: screening_era5
+fidelity:
+  description: >-
+    GEO L0 orbit (as configured), 3896 s grid, Fresnel-Hankel capture evaluated on the validated
+    Chebyshev (range, elevation) table (M7b), ERA5 total cloud cover at the receiver (threshold
+    0.5, nearest node; the weather year is an aleatory input).
+  overrides:
+    time.output_step_s: 3896
+    models.weather_source: era5
+    weather.era5_dataset: reanalysis-era5-single-levels-timeseries
+    weather.era5_first_year: 2014
+    weather.era5_last_year: 2023
+    weather.interpolation: nearest
+    weather.outage_model: threshold
+    weather.cloud_cover_threshold: 0.5
+    weather.year_mapping: fixed
+    weather.historical_year: 2019   # base value (scenarios); the samples set the aleatory year
+  backend: numpy
+workers: 8
+
+evaluation:
+  power_threshold_W: 1000.0
+  mass_proxy:                      # M7 demo specific masses (assumed); radiator term varied below
+    collector_areal_mass_kg_m2: 1.0
+    transmitter_areal_mass_kg_m2: 50.0
+    bus_mass_kg: 500.0
+  economics_config: economics/geo_nominal.yaml
+
+outputs:
+  - p_grid_mean_W
+  - availability
+  - availability_above_threshold
+  - pv_temperature_max_K
+  - mass_proxy_kg
+  - lcoe_usd_per_kWh
+
+epistemic:
+  - name: pv_efficiency
+    key: collector.pv_efficiency_reference
+    distribution: {type: triangular, low: 0.1642, mode: 0.30, high: 0.3195}
+    provenance: derived
+    source: "ends derived from sourced cell data (AZUR SPACE 3G30A-Advanced datasheet DB 00010892-01; JPL Pub. 78-15 Vol. VIII Table 7), mode assumed (PDF §5 example); configs/scenarios/*.yaml"
+    unit: "1"
+  - name: pv_temperature_coefficient
+    key: collector.temperature_coefficient_per_K
+    distribution: {type: triangular, low: -0.0044, mode: -0.00231, high: -0.0004}
+    provenance: derived
+    source: "low derived from JPL Pub. 78-15 Vol. VIII (K7 silicon), mode derived from the 3G30A datasheet dVmp/dT, dImp/dT, high = PDF §5 example (assumed)"
+    unit: K^-1
+  - name: electrical_to_beam_efficiency
+    key: transmitter.electrical_to_beam_efficiency
+    distribution: {type: triangular, low: 0.35, mode: 0.50, high: 0.60}
+    provenance: assumed
+    unit: "1"
+  - name: receiver_conversion
+    key: receiver.conversion_efficiency
+    distribution: {type: triangular, low: 0.30, mode: 0.40, high: 0.55}
+    provenance: assumed
+    unit: "1"
+  - name: pointing_jitter
+    key: transmitter.pointing_sigma_rad
+    distribution: {type: triangular, low: 5.0e-10, mode: 1.0e-9, high: 3.0e-9}
+    provenance: assumed
+    unit: rad
+  - name: radiator_specific_mass
+    key: thermal.radiator_specific_mass_kg_m2
+    distribution: {type: triangular, low: 2.0, mode: 5.0, high: 10.0}
+    provenance: assumed
+    unit: kg m^-2
+  - name: launch_cost
+    key: economics.transport.launch_cost_per_kg_leo_usd
+    distribution: {type: triangular, low: 85.0, mode: 850.0, high: 1500.0}
+    provenance: sourced
+    source: "configs/economics/geo_{optimistic,nominal,conservative}.yaml (NASA OTPS 2024, PDF pp. 28, 38, 90; 85 USD/kg derived)"
+    unit: USD kg^-1
+  - name: manufacturing_cost
+    key: economics.manufacturing_cost_per_kg_usd
+    distribution: {type: triangular, low: 500.0, mode: 2000.0, high: 10000.0}
+    provenance: assumed
+    source: "configs/economics/geo_nominal.yaml uncertainty range (M8a)"
+    unit: USD kg^-1
+
+aleatory:
+  - name: weather_year
+    key: weather.historical_year
+    distribution: {type: discrete_uniform, values: [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]}
+    nominal: 2019
+    provenance: sourced
+    source: "ERA5 hourly total cloud cover 2014-2023 at the site node (Hersbach et al. 2020, doi:10.1002/qj.3803; CDS doi:10.24381/1cf1ad76); each year equally likely (assumed)"
+    unit: year
+  - name: pointing_bias
+    key: transmitter.pointing_bias_rad
+    distribution: {type: rayleigh, scale: 1.0e-9}
+    nominal: 0.0
+    provenance: assumed
+    description: "static boresight bias realisation of one unit: |2-D isotropic Gaussian| with 1 nrad per axis"
+    unit: rad
+  - name: wavefront_error
+    key: transmitter.rms_wavefront_error_m
+    distribution: {type: uniform, low: 0.0, high: 5.0e-8}
+    nominal: 0.0
+    provenance: assumed
+    description: "RMS wavefront (phase) error realisation of one unit, 0 to lambda/20 (Ruze/Strehl factor)"
+    unit: m
+
+monte_carlo:
+  # Smaller than the heliocentric 64 x 8: one GEO evaluation costs ~150 s (Fresnel-Hankel
+  # Chebyshev table fitted per run; measured, M8.md D).
+  seed: 20261114
+  n_epistemic: 32
+  n_aleatory: 4
+
+# No Sobol design for GEO: 256 x 13 = 3328 evaluations at ~150 s each (measured, M8.md D) would
+# need ~140 CPU-hours; dropped (documented), the nested Monte Carlo and scenarios are run.
+
+scenarios:
+  - {name: optimistic, config: scenarios/geo_optimistic.yaml}
+  - {name: nominal, config: scenarios/geo_nominal.yaml}
+  - {name: conservative, config: scenarios/geo_conservative.yaml}
+scenario_consistency: true

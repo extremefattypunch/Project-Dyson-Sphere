@@ -44,7 +44,7 @@ Extras:
 - `weather` adds `cdsapi`, `xarray` and `h5netcdf` for ERA5 site weather
   (`models.weather_source: era5`, `helioswarm weather download|climatology`; M8a). Downloading
   needs a Copernicus CDS account (`~/.cdsapirc`, ERA5 licence accepted); tests never download.
-- `opt` adds pymoo and SALib (M8).
+- `opt` adds pymoo and SALib (M8: `helioswarm optimize`, `helioswarm uncertainty`).
 - `gpu` adds the CUDA 12 JAX build (~4.4 GB of NVIDIA wheels); only the GPU benchmark needs it.
   CI installs every extra except `gpu` and `opt`.
 
@@ -217,8 +217,19 @@ sbatch --array=0 --export=ALL,SWEEP_ARRAY_COUNT=1 -t 0-00:30 --mem=1G slurm/swee
 uv run helioswarm economics $HELIOSWARM_RUNS_DIR/constellation_demo_sweep \
        --config configs/economics/optimistic.yaml --config configs/economics/nominal.yaml \
        --config configs/economics/conservative.yaml --out $HELIOSWARM_RUNS_DIR/economics/demo
+# M8: optimisation, uncertainty, ERA5 comparison (frozen source snapshot; docs/milestones/M8.md C)
+export HELIOSWARM_SRC_SNAPSHOT=$(scripts/m8_snapshot.sh); S=$HELIOSWARM_SRC_SNAPSHOT
+sbatch --export=ALL --array=0-3 slurm/m8_optimize.sbatch $S/configs/optimization.yaml $HELIOSWARM_RUNS_DIR/m8_optimization
+sbatch --export=ALL,MODE=collate -c 1 --mem=2G -t 0-00:10 slurm/m8_optimize.sbatch $S/configs/optimization.yaml $HELIOSWARM_RUNS_DIR/m8_optimization
+sbatch --export=ALL,MODE=reevaluate slurm/m8_optimize.sbatch $S/configs/optimization.yaml $HELIOSWARM_RUNS_DIR/m8_optimization
+sbatch --export=ALL slurm/m8_uncertainty.sbatch $S/configs/uncertainty.yaml $HELIOSWARM_RUNS_DIR/m8_uncertainty_helio
+sbatch --export=ALL slurm/m8_sweeps.sbatch $HELIOSWARM_RUNS_DIR/m8_sweeps $S/configs/comparison/era5/*_sweep.yaml
+uv run helioswarm optimize configs/optimization.yaml --out runs/optimization   # small studies: in one process
 seff <jobid>; jobstats <jobid>                                       # right-sizing check after each job
 ```
+
+`slurm/common.sh` honours `HELIOSWARM_SRC_SNAPSHOT` (M8): the package is imported from a frozen
+copy of `src/` so that edits in the checkout cannot mix code versions within a study.
 
 A worktree with its own venv submits with `HELIOSWARM_REPO=<worktree>` and
 `HELIOSWARM_ENV_OVERLAY=<overlay.sh>` exported: `slurm/common.sh` sources the overlay after
@@ -274,7 +285,7 @@ runs on the cluster environment (the one skip is the real-GPU test, run by
 | M7 Constellation | rings/phases (Earth-relative), stacked L1, link candidates per satellite × site, deterministic capacity-constrained scheduler (greedy + exact), incoherent network sums, network/receiver/satellite outputs, mass proxy, Slurm arrays, GPU benchmark | done | 1155 passed, 1 skipped |
 | M7b GEO baseline | geocentric orbits + geostationary preset, Earth-shadow eclipses, Fresnel-Hankel at the GEO range on a validated Chebyshev beam table, `extends` configs, harmonised comparison (`helioswarm compare`), Slurm sweeps | done | 1257 passed, 2 skipped |
 | M8a ERA5 weather + economics | ERA5 download/cache with provenance, cloud-cover outage per site and arrival hour (threshold/Bernoulli; year mapping), climatology and joint statistics, parameterised LCOE/NPV with scenarios and Monte Carlo from saved runs | done | 1278 passed, 2 skipped |
-| M8 Optimisation/uncertainty | sweeps, constrained optimisation, sensitivity | not started | — |
+| M8 Optimisation/uncertainty | forward-model design evaluation at stated fidelity levels, NSGA-II with constraints over seeds (hypervolume convergence, full populations saved), scipy sanity checks, synthetic known optima, high-fidelity re-evaluation; nested Monte Carlo (epistemic vs aleatory), Sobol indices with bootstrap CIs, explicit scenarios incl. sourced PV technologies; helio-vs-GEO economics and ERA5 comparison | done | see `docs/milestones/M8.md` D |
 | M9 Paper package | frozen configs, figures, methods/validation notes | not started | — |
 
 ## Headline results so far
@@ -334,6 +345,15 @@ recommended engineering design").
 - **Economics (M8a; scenarios, not predictions)**: every simulated case is 3–6 orders of
   magnitude above 0.05 USD/kWh (e.g. N = 10 demo 93 / 417 / 1 750 USD/kWh optimistic / nominal /
   conservative); the microwave MVP's LCOE is undefined (2.8 kWh/yr).
+- **Optimisation and uncertainty (M8)**: NSGA-II fronts of one heliocentric optical satellite
+  (P_grid vs mass proxy vs availability; 4 seeds × 4 000 evaluations) — the screening model is
+  confirmed at high fidelity (≤ 0.2 % on P_grid), but ERA5 weather at the cloudy example site
+  removes ~60 % of the energy and makes every re-evaluated design infeasible; the orbit
+  variables exploit the one-year objective window (negative result). Sobol: PV efficiency,
+  receiver conversion and laser efficiency dominate P_grid (ST 0.36 / 0.29 / 0.22), the
+  weather year 0.13; nanoradian pointing is negligible. Real weather keeps the GEO/heliocentric
+  power ratio at ~90, and GEO is ~80–95× cheaper per kWh on the same economic boundary
+  (`docs/milestones/M8.md`).
 
 ## Reproducing from a fresh clone
 
@@ -367,7 +387,9 @@ sweeps reproduce with the `sweep` commands in the Slurm section.
 - `docs/validation_report.md`: tests, independent comparisons, tolerances and discrepancies.
 - `docs/milestones/`: per-milestone implementation notes (sections A–F of PDF §18).
 - `docs/milestones/M8a.md`: ERA5 site weather and economics (results, commands, limitations).
-- `docs/compliance_matrix.md`: every PDF requirement in M0–M7b and M8a scope with its evidence and status
+- `docs/milestones/M8.md`: optimisation, uncertainty/sensitivity, PV technology scenarios, ERA5
+  comparison and helio-vs-GEO economics (results, Slurm jobs, limitations).
+- `docs/compliance_matrix.md`: every PDF requirement in M0–M8 scope with its evidence and status
   (M6b audit), including the deferred M7–M9 items and the fresh-clone reproduction.
 - `experiments/README.md`: the experiment log convention.
 

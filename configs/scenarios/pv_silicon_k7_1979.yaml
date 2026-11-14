@@ -1,0 +1,25 @@
+# PV technology scenario (M8; closes the deferred PDF §8.4 'PV efficiency and temperature vs
+# technology scenario' item): the nominal scenario (nominal.yaml) with the collector of the
+# silicon BSF/BSR (Spectrolab K7, 1979 characterisation) case. Everything else is the nominal scenario.
+#
+# Provenance: SOURCED from B. E. Anspaugh et al., 'Characterization of Solar Cells for Space Applications, Volume VIII: Electrical Characteristics of Spectrolab BSF, BSR, Textured 290-Micron Solar Cells (K7) as a Function of Intensity, Temperature and Irradiation', JPL Publication 78-15 Vol. VIII (NASA-CR-162290), 1 Sep 1979 (NTRS metadata verified 2026-11-14 via https://ntrs.nasa.gov/api/citations/19790024459), NTRS 19790024459 (https://ntrs.nasa.gov/api/citations/19790024459/downloads/19790024459.pdf, retrieved 2026-11-14, SHA-256 4d55c65a6f3b91ff9b52b1f89cf5fdec1d044b5a1bbbc2cffee8e0ea857e7f95), Table 7 (average AM0 efficiency, 135.3 mW/cm2 column): 15.24 % at 20 C, 13.90 % at 40 C (bare cells, no coverslide). Derived: gamma = (13.90 - 15.24)/(20 x 15.24) = -0.0044 /K; eta_ref(300 K) = (0.1524/0.90)(1 - 0.0044 x 6.85) = 0.1642. ASSUMED: absorptivity 0.90 (not in the source). A 1979 cell: a conservative LEGACY silicon case, not the state of the art.
+#
+# The data are fetched copies under /n/netscratch/hekstra_lab/Lab/ian_poon/helioswarm/sources/
+# pv_datasheets/ (not committed; checksums above and in docs/data_provenance.md M8).
+extends: nominal.yaml
+
+project:
+  name: "scenario_pv_silicon_k7_1979"
+  description: "M8 PV technology scenario: silicon BSF/BSR (Spectrolab K7, 1979 characterisation) (sourced: JPL Pub. 78-15 Vol. VIII (1979) Table 7; absorptivity assumed)"
+
+collector:
+  pv_efficiency_reference: 0.1642
+  reference_temperature_K: 300.0
+  temperature_coefficient_per_K: -0.0044
+  absorptivity: 0.90
+
+# Machine-readable provenance (PDF §13.4): derived = stated arithmetic on sourced numbers.
+provenance_overrides:
+  collector.pv_efficiency_reference: "sourced"
+  collector.temperature_coefficient_per_K: "sourced"
+  collector.absorptivity: "assumed"

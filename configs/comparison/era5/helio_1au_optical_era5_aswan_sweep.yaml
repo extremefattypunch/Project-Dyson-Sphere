@@ -1,0 +1,8 @@
+# M8 ERA5 comparison sweep: helio_1au_optical_era5_aswan over the ten ERA5 weather years (each mapped onto 2030; base
+# point 2019). Run with slurm/m8_sweeps.sbatch; compared by comparison_era5*.yaml.
+sweep_schema_version: 1
+name: cmp_helio_1au_optical_era5_aswan
+description: "M8 ERA5 comparison: helio_1au_optical_era5_aswan x weather year"
+base_config: helio_1au_optical_era5_aswan.yaml
+parameters:
+  weather.historical_year: [2014, 2015, 2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023]
