@@ -391,4 +391,3 @@ long): the 45-point optical sweep and the 3896 s aliasing run; the new 15-point 
 ran from the main checkout (array 60141210; its 1.0 au / 1 km point reproduces the microwave
 MVP exactly, 0.3145 W). `validate-models` was not re-run: M6b changes outputs, not physics, and
 its checks run under pytest (`tests/unit/test_validation_report.py`), which passed.
-
